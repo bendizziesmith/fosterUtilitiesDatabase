@@ -171,7 +171,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
       
       return [
       new Date(timesheet.week_ending).toLocaleDateString(),
-     timesheet.employee?.full_name || timesheet.employee?.name || 'Unknown',
+      timesheet.employee?.name || 'Unknown',
       timesheet.employee?.role || '',
       timesheet.team_name || '',
       timesheet.job_number,
@@ -807,10 +807,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
                               <div>
                                 <h4 className="text-lg font-semibold text-slate-900">{teamLeader.employeeName}</h4>
                                 <p className="text-sm text-slate-600">{teamLeader.employeeRole}</p>
-                             {entry.work_rate_id ? 
-                               `${entry.total_hours || entry.quantity || 0}h × £${(entry.work_rate?.rate_value || timesheet.employee?.rate || 0).toFixed(2)} = £${entry.line_total.toFixed(2)}` :
-                               `${entry.quantity || 0}m × £${(entry.ipsom_rate?.rate_gbp || entry.mollsworth_rate?.rate_gbp || 0).toFixed(2)} = £${entry.line_total.toFixed(2)}`
-                             }
+                              </div>
                             </div>
                           </div>
                           <div className="text-right">
@@ -1049,7 +1046,6 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
               
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
                 <div className="text-sm space-y-1">
-                  <div><strong>Employee:</strong> {deleteConfirmation.timesheet.employee?.name}</div>
                   <div><strong>Employee:</strong> {deleteConfirmation.timesheet.employee?.full_name || deleteConfirmation.timesheet.employee?.name}</div>
                   <div><strong>Job Number:</strong> {deleteConfirmation.timesheet.job_number}</div>
                   <div><strong>Week Ending:</strong> {new Date(deleteConfirmation.timesheet.week_ending).toLocaleDateString()}</div>
