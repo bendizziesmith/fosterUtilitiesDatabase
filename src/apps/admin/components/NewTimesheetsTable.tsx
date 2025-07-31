@@ -17,6 +17,7 @@ interface TeamLeaderGroup {
   employeeName: string;
   employeeId: string;
   employeeRole: string;
+  employeeRate: number;
   timesheets: Timesheet[];
   totalValue: number;
   totalTimesheets: number;
@@ -102,6 +103,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
           employeeName,
           employeeId,
           employeeRole,
+          employeeRate: 0,
           timesheets: [],
           totalValue: 0,
           totalTimesheets: 0
@@ -170,16 +172,16 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
       }
       
       return [
-      new Date(timesheet.week_ending).toLocaleDateString(),
-      timesheet.employee?.name || 'Unknown',
-      timesheet.employee?.role || '',
-      timesheet.team_name || '',
-      timesheet.job_number,
-      timesheet.address || '',
-      workingDays.join(', ') || 'Not specified',
-      timesheet.total_value.toFixed(2),
-      timesheet.timesheet_entries?.length || 0,
-      new Date(timesheet.submitted_at!).toLocaleDateString(),
+        new Date(timesheet.week_ending).toLocaleDateString(),
+        timesheet.employee?.name || 'Unknown',
+        timesheet.employee?.role || '',
+        timesheet.team_name || '',
+        timesheet.job_number,
+        timesheet.address || '',
+        workingDays.join(', ') || 'Not specified',
+        timesheet.total_value.toFixed(2),
+        timesheet.timesheet_entries?.length || 0,
+        new Date(timesheet.submitted_at!).toLocaleDateString(),
       ];
     });
 
