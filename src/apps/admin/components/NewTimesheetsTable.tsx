@@ -171,7 +171,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
       
       return [
       new Date(timesheet.week_ending).toLocaleDateString(),
-      timesheet.employee?.name || 'Unknown',
+     timesheet.employee?.full_name || timesheet.employee?.name || 'Unknown',
       timesheet.employee?.role || '',
       timesheet.team_name || '',
       timesheet.job_number,
