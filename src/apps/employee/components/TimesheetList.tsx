@@ -353,7 +353,7 @@ export const TimesheetList: React.FC<TimesheetListProps> = ({
         work_item: entry.ipsom_rate?.work_item || 
                   entry.mollsworth_rate?.col1_work_item || 
                   entry.work_rate?.work_type || 
-                  'Unknown',
+                  'Day Rate',
         col2: entry.ipsom_rate?.col2 || '-',
         col3: entry.ipsom_rate?.col3 || '-',
         col4: entry.ipsom_rate?.col4 || '-',

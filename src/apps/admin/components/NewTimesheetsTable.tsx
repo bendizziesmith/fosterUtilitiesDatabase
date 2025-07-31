@@ -263,7 +263,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
                     0;
 
         rows.push([
-          timesheet.employee?.full_name || 'Unknown',
+          timesheet.employee?.full_name || timesheet.employee?.name || 'Unknown',
           timesheet.employee?.role || '',
           timesheet.job_number,
           timesheet.team_name || '',
@@ -400,7 +400,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
           const workItem = entry.work_rate?.work_type || 
                           entry.ipsom_rate?.work_item || 
                           entry.mollsworth_rate?.col1_work_item || 
-                          'Unknown';
+                          'Day Rate';
           
           const col2 = entry.work_rate?.voltage_type || 
                       entry.ipsom_rate?.col2 || 
@@ -999,7 +999,7 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
                         <tbody>
                           {selectedTimesheet.timesheet_entries.map((line, index) => (
                             <tr key={index} className="hover:bg-slate-50">
-                              <td className="border border-slate-300 p-2 text-xs">{line.work_rate?.work_type || line.ipsom_rate?.work_item || line.mollsworth_rate?.col1_work_item}</td>
+                              <td className="border border-slate-300 p-2 text-xs">{line.work_rate?.work_type || line.ipsom_rate?.work_item || line.mollsworth_rate?.col1_work_item || 'Day Rate'}</td>
                               <td className="border border-slate-300 p-2 text-xs text-center">{line.work_rate?.voltage_type || line.ipsom_rate?.col2 || line.mollsworth_rate?.col2_param}</td>
                               <td className="border border-slate-300 p-2 text-xs text-center">{line.work_rate?.site_type || line.ipsom_rate?.col3 || line.mollsworth_rate?.col3_param || '-'}</td>
                               <td className="border border-slate-300 p-2 text-xs text-center">£{(line.work_rate?.rate_value || line.ipsom_rate?.rate_gbp || line.mollsworth_rate?.rate_gbp || 0).toFixed(2)}</td>
