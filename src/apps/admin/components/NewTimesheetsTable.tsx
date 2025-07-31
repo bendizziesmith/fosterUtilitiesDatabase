@@ -807,7 +807,10 @@ export const NewTimesheetsTable: React.FC<NewTimesheetsTableProps> = ({
                               <div>
                                 <h4 className="text-lg font-semibold text-slate-900">{teamLeader.employeeName}</h4>
                                 <p className="text-sm text-slate-600">{teamLeader.employeeRole}</p>
-                              </div>
+                             {entry.work_rate_id ? 
+                               `${entry.total_hours || entry.quantity || 0}h × £${(entry.work_rate?.rate_value || timesheet.employee?.rate || 0).toFixed(2)} = £${entry.line_total.toFixed(2)}` :
+                               `${entry.quantity || 0}m × £${(entry.ipsom_rate?.rate_gbp || entry.mollsworth_rate?.rate_gbp || 0).toFixed(2)} = £${entry.line_total.toFixed(2)}`
+                             }
                             </div>
                           </div>
                           <div className="text-right">
