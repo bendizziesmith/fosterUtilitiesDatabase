@@ -236,41 +236,50 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     setRefreshing(false);
   };
 
-  // ADD EMPLOYEE: insert only (no auth signup here)
-  const handleAddEmployee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null); setSuccess(null);
+ const handleAddEmployee = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError(null); setSuccess(null);
 
-    if (!newEmployee.full_name.trim() || !newEmployee.role || !newEmployee.rate || !newEmployee.email.trim() || !newEmployee.password.trim()) {
-      setError('Please fill in all required fields'); return;
-    }
+  if (
+    !newEmployee.full_name.trim() ||
+    !newEmployee.role ||
+    !newEmployee.rate ||
+    !newEmployee.email.trim() ||
+    !newEmployee.password.trim()
+  ) {
+    setError('Please fill in all required fields');
+    return;
+  }
 
-    setLoading(true);
-    try {
-      const { error: insertErr } = await supabase
-        .from('employees')
-        .insert({
-          role: newEmployee.role,
-          email: newEmployee.email.trim(),
-          rate: parseFloat(newEmployee.rate),
-          full_name: newEmployee.full_name.trim(),
-          password: newEmployee.password.trim(),              // <— put back to satisfy NOT NULL
-          assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
-          created_at: new Date().toISOString(),
-        });
+  setLoading(true);
+  try {
+    const { data, error: fnError } = await supabase.functions.invoke('add-employee', {
+      body: {
+        full_name: newEmployee.full_name.trim(),
+        role: newEmployee.role,
+        rate: parseFloat(newEmployee.rate),
+        email: newEmployee.email.trim().toLowerCase(),
+        password: newEmployee.password.trim(),
+        assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
+      },
+    });
 
-      if (insertErr) throw insertErr;
+    if (fnError) throw new Error(fnError.message || 'Edge Function error');
+    if (!data?.ok) throw new Error(data?.error || 'Failed to add employee');
 
-      setSuccess(`Employee ${newEmployee.full_name} added. Use the key icon to enable login when ready.`);
-      setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
-      setShowAddForm(false);
-      await loadData();
-      onEmployeesUpdate && onEmployeesUpdate();
-    } catch (err: any) {
-      console.error('Error adding employee:', err);
-      setError(err?.message || 'Failed to add employee');
-    } finally { setLoading(false); }
-  };
+    setSuccess(`Employee ${newEmployee.full_name} added and login created.`);
+    setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
+    setShowAddForm(false);
+    await loadData();
+    onEmployeesUpdate && onEmployeesUpdate();
+  } catch (err: any) {
+    console.error('Error adding employee:', err);
+    setError(err?.message || 'Failed to add employee');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
