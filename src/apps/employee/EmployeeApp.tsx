@@ -252,40 +252,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
       case 'landing':
         return (
           <div className="max-w-4xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-              {/* Daily Vehicle Check */}
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('inspection')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Daily Plant and Vehicle Check</h3>
-                  <p className="text-slate-600 text-sm">Complete safety inspections and equipment checks with photo documentation</p>
-                </div>
-              </div>
-              
-              {/* Timesheets */}
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('timesheet')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Price Work Timesheets</h3>
-                  <p className="text-slate-600 text-sm">Submit price work and day rate timesheets</p>
-                </div>
-              </div>
-              
-              {/* HAVs Timesheet */}
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('havs')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">HAVs Timesheet</h3>
-                  <p className="text-slate-600 text-sm">Record exposure time for vibrating equipment</p>
-                </div>
-              </div>
-            </div>
+            <EmployeeLanding 
+              onTaskSelect={handleTaskSelect}
+              selectedEmployee={selectedEmployee}
+            />
           </div>
         );
       
@@ -347,37 +317,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
       default:
         return (
           <div className="max-w-4xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('inspection')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Daily Plant and Vehicle Check</h3>
-                  <p className="text-slate-600 text-sm">Complete safety inspections and equipment checks</p>
-                </div>
-              </div>
-              
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('timesheet')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Price Work Timesheets</h3>
-                  <p className="text-slate-600 text-sm">Submit price work and day rate timesheets</p>
-                </div>
-              </div>
-              
-              <div
-                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
-                onClick={() => handleTaskSelect('havs')}
-              >
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">HAVs Timesheet</h3>
-                  <p className="text-slate-600 text-sm">Record exposure time for vibrating equipment</p>
-                </div>
-              </div>
-            </div>
+            <EmployeeLanding 
+              onTaskSelect={handleTaskSelect}
+              selectedEmployee={selectedEmployee}
+            />
           </div>
         );
     }

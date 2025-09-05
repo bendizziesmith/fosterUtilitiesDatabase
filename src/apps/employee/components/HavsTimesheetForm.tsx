@@ -73,6 +73,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Check if current week is submitted to prevent overlap
+  const isCurrentWeekSubmitted = timesheetData.status === 'submitted';
+  const canStartNewWeek = isCurrentWeekSubmitted || timesheetData.total_hours === 0;
+
   useEffect(() => {
     loadExistingTimesheet();
   }, [selectedEmployee.id, timesheetData.week_ending]);
@@ -478,14 +482,50 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Week Ending:</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Week Ending (Sunday):
+              {isCurrentWeekSubmitted && (
+                <span className="ml-2 text-green-600 text-xs">✓ Submitted</span>
+              )}
+            </label>
             <input
               type="date"
               value={timesheetData.week_ending}
               onChange={(e) => updateField('week_ending', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              readOnly={isReadOnly}
+              readOnly={isReadOnly || !canStartNewWeek}
+              onFocus={(e) => {
+                if (!isReadOnly && canStartNewWeek) {
+                  // Only allow Sundays to be selected
+                  const today = new Date();
+                  const currentSunday = new Date(today);
+                  currentSunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
+                  
+                  // Set min to current Sunday
+                  e.target.min = currentSunday.toISOString().split('T')[0];
+                  
+                  // Add event listener to only allow Sundays
+                  e.target.addEventListener('input', (event) => {
+                    const selectedDate = new Date((event.target as HTMLInputElement).value);
+                    if (selectedDate.getDay() !== 0) { // 0 = Sunday
+                      // Find the next Sunday
+                      const nextSunday = new Date(selectedDate);
+                      nextSunday.setDate(selectedDate.getDate() + (7 - selectedDate.getDay()));
+                      (event.target as HTMLInputElement).value = nextSunday.toISOString().split('T')[0];
+                      updateField('week_ending', nextSunday.toISOString().split('T')[0]);
+                    }
+                  });
+                }
+              }}
             />
+            {!canStartNewWeek && (
+              <p className="mt-1 text-xs text-amber-600">
+                Complete and submit current week before starting a new one
+              </p>
+            )}
+            <p className="mt-1 text-xs text-slate-500">
+              Week ending must be a Sunday
+            </p>
           </div>
         </div>
       </div>
