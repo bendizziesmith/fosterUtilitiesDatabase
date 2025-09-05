@@ -1,0 +1,96 @@
+// Supabase Edge Function (Deno)
+// Path: supabase/functions/create-employee-with-auth/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  try {
+    const { full_name, role, rate, email, password, assigned_vehicle_id } = await req.json();
+
+    // Basic validation
+    if (!full_name || !role || !rate || !email || !password) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Missing required fields' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    // 1) Create auth user (admin API, confirmed)
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name },
+    });
+    if (createErr) {
+      // If user already exists, return a clear message
+      const msg = createErr.message || '';
+      const status = /already/i.test(msg) ? 409 : 400;
+      return new Response(
+        JSON.stringify({ ok: false, code: 'auth_create_failed', error: msg }),
+        { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const authUser = created.user!;
+    // 2) Insert employee row (your schema currently requires password NOT NULL)
+    const { data: employee, error: empErr } = await supabase
+      .from('employees')
+      .insert({
+        full_name,
+        role,
+        rate,
+        email,
+        password,                       // NOTE: your table requires NOT NULL here
+        assigned_vehicle_id: assigned_vehicle_id ?? null,
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (empErr) {
+      // rollback auth user if employee insert fails
+      await supabase.auth.admin.deleteUser(authUser.id);
+      return new Response(
+        JSON.stringify({ ok: false, code: 'employee_insert_failed', error: empErr.message }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // 3) Link profile (non-fatal if it fails)
+    const { error: profileErr } = await supabase.from('user_profiles').insert({
+      id: authUser.id,             // auth user id
+      employee_id: employee.id,
+      // App role for app-level perms
+      role: 'employee',
+    });
+    if (profileErr) {
+      // Not fatal; log so you can investigate later
+      console.log('user_profiles insert failed:', profileErr.message);
+    }
+
+    return new Response(
+      JSON.stringify({ ok: true, employee, user_id: authUser.id }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (e) {
+    return new Response(
+      JSON.stringify({ ok: false, code: 'unexpected', error: e?.message || 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
