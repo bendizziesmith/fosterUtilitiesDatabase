@@ -9,6 +9,7 @@ import { TimesheetSuccessMessage } from './components/TimesheetSuccessMessage';
 import { HavsTimesheetForm } from './components/HavsTimesheetForm';
 import { supabase, Vehicle, ChecklistTemplate, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
+import { EmployeeLanding } from './components/EmployeeLanding';
 
 interface EmployeeAppProps {
   onBack: () => void;
