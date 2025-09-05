@@ -62,7 +62,7 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
 
     const headers = [
       'Week Ending', 'Employee Name', 'Employee No', 'Status', 'Total Hours (minutes)',
-      'Total Hours (decimal)', 'Comments', 'Actions', 'Supervisor', 'Submitted Date'
+      'Comments', 'Actions', 'Supervisor', 'Submitted Date'
     ];
     
     const rows = filteredTimesheets.map(timesheet => [
@@ -70,8 +70,7 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
       timesheet.employee_name,
       timesheet.employee_no || '',
       timesheet.status,
-      timesheet.total_hours.toFixed(2),
-      (timesheet.total_hours / 60).toFixed(2),
+      `${timesheet.total_hours} min`,
       timesheet.comments || '',
       timesheet.actions || '',
       timesheet.supervisor_name || '',
@@ -94,7 +93,7 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
   const exportDetailedCSV = (timesheet: HavsTimesheet) => {
     const headers = [
       'Employee Name', 'Employee No', 'Week Ending', 'Equipment Category', 'Equipment Name',
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Total Hours'
+      'Monday (min)', 'Tuesday (min)', 'Wednesday (min)', 'Thursday (min)', 'Friday (min)', 'Saturday (min)', 'Sunday (min)', 'Total (min)'
     ];
 
     const rows: string[][] = [];
@@ -107,14 +106,14 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
           new Date(timesheet.week_ending).toLocaleDateString('en-GB'),
           entry.equipment_category,
           entry.equipment_name,
-          entry.monday_hours.toFixed(2),
-          entry.tuesday_hours.toFixed(2),
-          entry.wednesday_hours.toFixed(2),
-          entry.thursday_hours.toFixed(2),
-          entry.friday_hours.toFixed(2),
-          entry.saturday_hours.toFixed(2),
-          entry.sunday_hours.toFixed(2),
-          entry.total_hours.toFixed(2)
+          entry.monday_hours.toString(),
+          entry.tuesday_hours.toString(),
+          entry.wednesday_hours.toString(),
+          entry.thursday_hours.toString(),
+          entry.friday_hours.toString(),
+          entry.saturday_hours.toString(),
+          entry.sunday_hours.toString(),
+          entry.total_hours.toString()
         ]);
       });
     }
@@ -133,7 +132,7 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
       '',
       '',
       '',
-      timesheet.total_hours.toFixed(2)
+      timesheet.total_hours.toString()
     ]);
 
     const csvContent = [headers, ...rows]
@@ -228,8 +227,8 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
             <div className="text-sm text-amber-600">Draft</div>
           </div>
           <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-            <div className="text-2xl font-bold text-orange-700">{(totalExposureHours / 60).toFixed(1)}h</div>
-            <div className="text-sm text-orange-600">Total Exposure</div>
+            <div className="text-2xl font-bold text-orange-700">{totalExposureHours}</div>
+            <div className="text-sm text-orange-600">Total Minutes</div>
           </div>
         </div>
 
@@ -363,11 +362,13 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
                         <Clock className="h-4 w-4 text-slate-400" />
                         <div>
                           <div className="text-sm font-medium text-slate-900">
-                            {timesheet.total_hours.toFixed(2)} min
+                            {timesheet.total_hours} min
                           </div>
-                          <div className="text-xs text-slate-500">
-                            {(timesheet.total_hours / 60).toFixed(2)} hours
-                          </div>
+                          {timesheet.total_hours > 0 && (
+                            <div className="text-xs text-slate-500">
+                              {(timesheet.total_hours / 60).toFixed(1)} hours
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -442,11 +443,13 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
                   <div>
                     <div className="text-sm font-medium text-slate-500">Total Exposure</div>
                     <div className="text-lg font-semibold text-orange-600">
-                      {selectedTimesheet.total_hours.toFixed(2)} min
+                      {selectedTimesheet.total_hours} min
                     </div>
-                    <div className="text-sm text-slate-600">
-                      ({(selectedTimesheet.total_hours / 60).toFixed(2)} hours)
-                    </div>
+                    {selectedTimesheet.total_hours > 0 && (
+                      <div className="text-sm text-slate-600">
+                        ({(selectedTimesheet.total_hours / 60).toFixed(1)} hours)
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -479,15 +482,15 @@ export const HavsTimesheetsTable: React.FC<HavsTimesheetsTableProps> = ({
                                 <div className="font-medium">{entry.equipment_name}</div>
                                 <div className="text-xs text-slate-500">{entry.equipment_category}</div>
                               </td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.monday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.tuesday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.wednesday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.thursday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.friday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.saturday_hours.toFixed(2)}</td>
-                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.sunday_hours.toFixed(2)}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.monday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.tuesday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.wednesday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.thursday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.friday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.saturday_hours}</td>
+                              <td className="border border-slate-300 px-3 py-2 text-center text-sm">{entry.sunday_hours}</td>
                               <td className="border border-slate-300 px-3 py-2 text-center text-sm font-bold text-blue-700 bg-blue-50">
-                                {entry.total_hours.toFixed(2)}
+                                {entry.total_hours}
                               </td>
                             </tr>
                           ))}
