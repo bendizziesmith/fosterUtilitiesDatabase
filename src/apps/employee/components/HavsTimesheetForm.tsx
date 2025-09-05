@@ -571,7 +571,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   {/* Category Header */}
                   <tr>
                     <td 
-                      colSpan={8} 
+                      colSpan={9} 
                       className="border border-slate-300 bg-slate-200 px-4 py-2 text-sm font-bold text-slate-900 text-center"
                     >
                       {category}
@@ -740,6 +740,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           </div>
         </div>
       )}
+
+      {/* Week Selector Section */}
+      {!isReadOnly && (
+        <div className="bg-white rounded-xl shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">Week Selection</h3>
           <button
             type="button"
             onClick={() => !isReadOnly && setShowWeekSelector(true)}
