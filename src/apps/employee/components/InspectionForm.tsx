@@ -1,5 +1,5 @@
 import React from 'react';
-import { VehicleInspectionWorkflow } from './VehicleInspectionWorkflow';
+import { SingleQuestionInspection } from './SingleQuestionInspection';
 import { Vehicle, ChecklistTemplate, Employee } from '../../../lib/supabase';
 
 interface InspectionFormProps {
@@ -16,10 +16,11 @@ export const InspectionForm: React.FC<InspectionFormProps> = ({
   onSubmissionSuccess,
 }) => {
   return (
-    <VehicleInspectionWorkflow
+    <SingleQuestionInspection
       vehicles={vehicles}
       selectedEmployee={selectedEmployee}
       onSubmissionSuccess={onSubmissionSuccess}
+      onBack={() => {}} // This will be handled by the parent component
     />
   );
 };
