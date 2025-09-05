@@ -738,34 +738,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               Auto-saves every 30 seconds • Enter time in minutes
             </p>
           </div>
-        </div>
-      )}
-
-      {/* Week Selector Section */}
-      {!isReadOnly && (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Week Selection</h3>
-          <button
-            type="button"
-            onClick={() => !isReadOnly && setShowWeekSelector(true)}
-            disabled={isReadOnly}
-            className={`w-full px-3 py-2 border border-slate-300 rounded-lg text-left transition-colors ${
-              isReadOnly 
-                ? 'bg-slate-50 text-slate-500 cursor-not-allowed' 
-                : 'hover:border-orange-400 hover:bg-orange-50 cursor-pointer'
-            }`}
-          >
-            {new Date(timesheetData.week_ending).toLocaleDateString('en-GB', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric'
-            })}
-          </button>
-          <p className="text-green-700 text-sm mt-2">
-            Click to select a different week ending (Sunday)
-          </p>
-        </div>
       )}
 
       {/* Week Selector Modal */}
@@ -796,31 +768,32 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   >
                     <div className="font-medium text-slate-900">
                       {new Date(week).toLocaleDateString('en-GB', {
-                        weekday: 'long',
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric'
-                      })}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      Week ending: {new Date(week).toLocaleDateString('en-GB')}
-                    </div>
-                  </button>
-                ))}
-              </div>
-              
-              <div className="mt-6 text-center">
-                <button
-                  onClick={() => setShowWeekSelector(false)}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-slate-900 mb-4">Week Selection</h3>
+        <button
+          type="button"
+          onClick={() => !isReadOnly && setShowWeekSelector(true)}
+          disabled={isReadOnly}
+          className={`w-full px-3 py-2 border border-slate-300 rounded-lg text-left transition-colors ${
+            isReadOnly 
+              ? 'bg-slate-50 text-slate-500 cursor-not-allowed' 
+              : 'hover:border-orange-400 hover:bg-orange-50 cursor-pointer'
+          }`}
+        >
+          {new Date(timesheetData.week_ending).toLocaleDateString('en-GB', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+          })}
+        </button>
+        <p className="text-green-700 text-sm mt-2">
+          {isReadOnly 
+            ? `Week ending: ${new Date(timesheetData.week_ending).toLocaleDateString('en-GB')} (Submitted)`
+            : 'Click to select a different week ending (Sunday)'
+          }
+        </p>
+      </div>
     </div>
   );
 };
