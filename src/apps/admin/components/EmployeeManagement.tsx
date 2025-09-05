@@ -1,18 +1,12 @@
+// src/apps/admin/components/EmployeeManagement.tsx
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle } from 'lucide-react';
+import {
+  Plus, Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle,
+  KeyRound, Loader2
+} from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 
-interface Employee {
-  id: string;
-  full_name: string;
-  role: 'Ganger' | 'Labourer' | 'Backup Driver';
-  rate: number;
-  email: string;
-  password: string;
-  assigned_vehicle?: string;
-  created_at: string;
-}
-
+// ---------- Types ----------
 interface Vehicle {
   id: string;
   registration_number: string;
@@ -21,12 +15,24 @@ interface Vehicle {
   year: number;
 }
 
+interface Employee {
+  id: string;
+  full_name: string;
+  role: 'Ganger' | 'Labourer' | 'Backup Driver';
+  rate: number;
+  email: string;
+  // Avoid storing plaintext password in employees table
+  assigned_vehicle_id?: string | null;
+  assigned_vehicle?: Vehicle | null;
+  created_at: string;
+}
+
 interface EmployeeFormData {
   full_name: string;
   role: 'Ganger' | 'Labourer' | 'Backup Driver' | '';
   rate: string;
   email: string;
-  password: string;
+  password: string; // only for creating auth; we don't save it in employees
   assigned_vehicle_id: string | null;
 }
 
@@ -35,8 +41,134 @@ interface EmployeeManagementProps {
   onEmployeesUpdate: () => void;
 }
 
+// ---------- Inline Enable Login button + modal ----------
+const EnableLoginButton: React.FC<{ employee: Employee; onCreated?: () => void }> = ({ employee, onCreated }) => {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState((employee.email || '').toLowerCase());
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'employee' | 'admin'>('employee');
+  const [submitting, setSubmitting] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const reset = () => { setPassword(''); setRole('employee'); setMsg(null); };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg(null);
+    if (!email || !password) {
+      setMsg({ type: 'error', text: 'Email and temporary password are required.' });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { email, password, role, employee_id: employee.id },
+      });
+      if (error) throw new Error(error.message || 'Function call failed');
+      if (!data?.ok) throw new Error(data?.error || 'Server error creating user');
+      setMsg({ type: 'success', text: `Login enabled for ${data.email} (role: ${data.role}).` });
+      onCreated && onCreated();
+      setTimeout(() => { setOpen(false); reset(); }, 900);
+    } catch (err: any) {
+      setMsg({ type: 'error', text: err?.message || 'Failed to create user.' });
+    } finally { setSubmitting(false); }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="p-2 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
+        title="Enable login for this employee"
+      >
+        <KeyRound className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setOpen(false); reset(); }} />
+          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-blue-600" />
+                </div>
+                <h2 className="text-lg font-semibold text-slate-900">Enable Login</h2>
+              </div>
+              <button onClick={() => { setOpen(false); reset(); }} className="p-1 rounded hover:bg-slate-100" aria-label="Close">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            {msg && (
+              <div className={`mb-3 rounded-lg p-3 text-sm ${msg.type === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                {msg.text}
+              </div>
+            )}
+
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="employee@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Temporary Password</label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Temporary password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <p className="text-xs text-slate-500 mt-1">Ask them to change this after first login.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input type="radio" name={`role-${employee.id}`} value="employee" checked={role === 'employee'} onChange={() => setRole('employee')} />
+                    <span>Employee</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="radio" name={`role-${employee.id}`} value="admin" checked={role === 'admin'} onChange={() => setRole('admin')} />
+                    <span>Admin</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button type="button" onClick={() => { setOpen(false); reset(); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {submitting ? (<><Loader2 className="w-4 h-4 animate-spin" />Creating…</>) : (<><UserPlus className="w-4 h-4" />Create Login</>)}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+// ---------- Main ----------
 export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
-  employees: propEmployees,
+  employees: _propEmployees,
   onEmployeesUpdate,
 }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -69,147 +201,101 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     assigned_vehicle_id: null,
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Load employees
+      setLoading(true); setError(null);
+
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select(`
           *,
-          assigned_vehicle:vehicles!assigned_vehicle_id(*)
+          assigned_vehicle:vehicles!assigned_vehicle_id(id, registration_number, make, model, year)
         `)
         .order('created_at', { ascending: false });
-
       if (employeesError) throw employeesError;
 
-      // Load vehicles
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
         .select('*')
         .order('registration_number');
-
       if (vehiclesError) throw vehiclesError;
 
-      setEmployees(employeesData || []);
+      setEmployees((employeesData || []) as unknown as Employee[]);
       setVehicles(vehiclesData || []);
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Failed to load data. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const refreshData = async () => {
     setRefreshing(true);
     await loadData();
-    if (onEmployeesUpdate) onEmployeesUpdate();
+    onEmployeesUpdate && onEmployeesUpdate();
     setRefreshing(false);
   };
 
+  // Keep your existing add flow; just don't store plaintext password in employees
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccess(null);
-
+    setError(null); setSuccess(null);
     if (!newEmployee.full_name.trim() || !newEmployee.role || !newEmployee.rate || !newEmployee.email.trim() || !newEmployee.password.trim()) {
-      setError('Please fill in all required fields');
-      return;
+      setError('Please fill in all required fields'); return;
     }
-
     setLoading(true);
-    
     try {
-      // Create auth user first
+      // 1) Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newEmployee.email.trim(),
         password: newEmployee.password.trim(),
-        options: {
-          emailRedirectTo: undefined, // Disable email confirmation
-          data: {
-            full_name: newEmployee.full_name.trim()
-          }
-        }
+        options: { data: { full_name: newEmployee.full_name.trim() } }
       });
+      if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
+      if (!authData.user) throw new Error('Failed to create user account - no user data returned');
 
-      if (authError) {
-        throw new Error(`Failed to create user account: ${authError.message}`);
-      }
-
-      if (!authData.user) {
-        throw new Error('Failed to create user account - no user data returned');
-      }
-
-      // Create employee record
+      // 2) Create employee row
       const { data: employee, error: employeeError } = await supabase
         .from('employees')
         .insert({
           role: newEmployee.role,
           email: newEmployee.email.trim(),
           rate: parseFloat(newEmployee.rate),
-          password: newEmployee.password.trim(),
           full_name: newEmployee.full_name.trim(),
+          assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
           created_at: new Date().toISOString(),
         })
         .select()
         .single();
-
       if (employeeError) {
-        // Clean up auth user if employee creation fails
-        await supabase.auth.admin.deleteUser(authData.user.id);
+        await supabase.auth.admin.deleteUser(authData.user.id); // rollback
         throw employeeError;
       }
 
-      // Create user profile linking auth user to employee
-      const { error: profileError } = await supabase
-        .from('user_profiles')
-        .insert({
-          id: authData.user.id,
-          employee_id: employee.id,
-          role: 'employee'
-        });
-
-      if (profileError) {
-        console.error('Error creating user profile:', profileError);
-        // Don't fail the entire process if profile creation fails
-        // The user can still log in and we'll create the profile during login
-      }
+      // 3) Link profile
+      const { error: profileError } = await supabase.from('user_profiles').insert({
+        id: authData.user.id,
+        employee_id: employee.id,
+        role: 'employee',
+      });
+      if (profileError) console.warn('Profile insert failed (user can still log in):', profileError);
 
       setSuccess(`Employee ${newEmployee.full_name} added successfully!`);
-      setNewEmployee({
-        full_name: '',
-        role: '',
-        rate: '',
-        email: '',
-        password: '',
-        assigned_vehicle_id: null,
-      });
+      setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
       setShowAddForm(false);
       await loadData();
-      if (onEmployeesUpdate) onEmployeesUpdate();
-    } catch (err) {
+      onEmployeesUpdate && onEmployeesUpdate();
+    } catch (err: any) {
       console.error('Error adding employee:', err);
-      setError(err instanceof Error ? err.message : 'Failed to add employee');
-    } finally {
-      setLoading(false);
-    }
+      setError(err?.message || 'Failed to add employee');
+    } finally { setLoading(false); }
   };
 
   const handleEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEmployee) return;
-
-    setError(null);
-    setSuccess(null);
-    setLoading(true);
-
+    setError(null); setSuccess(null); setLoading(true);
     try {
       const { error } = await supabase
         .from('employees')
@@ -218,50 +304,45 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
           role: editForm.role,
           rate: parseFloat(editForm.rate),
           email: editForm.email.trim(),
-          password: editForm.password.trim(),
           assigned_vehicle_id: editForm.assigned_vehicle_id || null,
         })
         .eq('id', editingEmployee.id);
-
       if (error) throw error;
 
-      setSuccess(`Employee updated successfully!`);
+      setSuccess('Employee updated successfully!');
       setEditingEmployee(null);
       await loadData();
-      if (onEmployeesUpdate) onEmployeesUpdate();
+      onEmployeesUpdate && onEmployeesUpdate();
     } catch (err) {
       console.error('Error updating employee:', err);
       setError('Failed to update employee');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
+  // Delete fully: remove linked auth + profile (server function), then employee row
   const handleDeleteEmployee = async (employee: Employee) => {
-    if (!confirm(`Are you sure you want to delete ${employee.full_name}?`)) {
-      return;
-    }
+    if (!confirm(`Delete ${employee.full_name}? This also removes their login if it exists.`)) return;
 
-    setLoading(true);
-    setError(null);
-
+    setLoading(true); setError(null);
     try {
-      const { error } = await supabase
-        .from('employees')
-        .delete()
-        .eq('id', employee.id);
+      // 1) Try to delete login/profile (non-fatal if none)
+      const { data: delData, error: delFnErr } = await supabase.functions.invoke('delete-user-by-employee', {
+        body: { employee_id: employee.id },
+      });
+      if (delFnErr) console.warn('delete-user-by-employee warning:', delFnErr.message);
+      else if (delData?.error) console.warn('delete-user-by-employee:', delData.error);
 
+      // 2) Delete employee row
+      const { error } = await supabase.from('employees').delete().eq('id', employee.id);
       if (error) throw error;
 
       setSuccess(`Employee ${employee.full_name} deleted successfully!`);
       await loadData();
-      if (onEmployeesUpdate) onEmployeesUpdate();
+      onEmployeesUpdate && onEmployeesUpdate();
     } catch (err) {
       console.error('Error deleting employee:', err);
       setError('Failed to delete employee');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const openAssignVehicleModal = (employee: Employee) => {
@@ -271,31 +352,20 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
   };
 
   const handleAssignVehicle = async (employeeId: string, vehicleId: string | null) => {
-    setLoading(true);
-    setError(null);
-
+    setLoading(true); setError(null);
     try {
-      const { error } = await supabase
-        .from('employees')
-        .update({
-          assigned_vehicle_id: vehicleId,
-        })
-        .eq('id', employeeId);
-
+      const { error } = await supabase.from('employees').update({ assigned_vehicle_id: vehicleId }).eq('id', employeeId);
       if (error) throw error;
-
-      setSuccess(`Vehicle assignment updated successfully!`);
+      setSuccess('Vehicle assignment updated successfully!');
       setShowAssignVehicleModal(false);
       setAssigningEmployee(null);
       setSelectedVehicleForAssignment('');
       await loadData();
-      if (onEmployeesUpdate) onEmployeesUpdate();
+      onEmployeesUpdate && onEmployeesUpdate();
     } catch (err) {
       console.error('Error assigning vehicle:', err);
       setError('Failed to assign vehicle');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const startEdit = (employee: Employee) => {
@@ -305,21 +375,14 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       role: employee.role,
       rate: employee.rate.toString(),
       email: employee.email,
-      password: employee.password,
-      assigned_vehicle_id: employee.assigned_vehicle || null,
+      password: '', // not used
+      assigned_vehicle_id: employee.assigned_vehicle_id || null,
     });
   };
 
   const cancelEdit = () => {
     setEditingEmployee(null);
-    setEditForm({
-      full_name: '',
-      role: '',
-      rate: '',
-      email: '',
-      password: '',
-      assigned_vehicle_id: null,
-    });
+    setEditForm({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
   };
 
   return (
@@ -328,9 +391,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       <div className="bg-white rounded-2xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-3">
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <Users className="h-6 w-6 text-blue-600" />
-            </div>
+            <div className="p-3 bg-blue-100 rounded-lg"><Users className="h-6 w-6 text-blue-600" /></div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Employee Management</h1>
               <p className="text-slate-600">Add, edit, and manage employee accounts</p>
@@ -362,21 +423,17 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
             <div className="text-sm text-blue-600">Total Employees</div>
           </div>
           <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-            <div className="text-2xl font-bold text-green-700">
-              {employees.filter(e => e.role === 'Ganger').length}
-            </div>
+            <div className="text-2xl font-bold text-green-700">{employees.filter(e => e.role === 'Ganger').length}</div>
             <div className="text-sm text-green-600">Gangers</div>
           </div>
           <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-            <div className="text-2xl font-bold text-purple-700">
-              {employees.filter(e => e.role === 'Labourer').length}
-            </div>
+            <div className="text-2xl font-bold text-purple-700">{employees.filter(e => e.role === 'Labourer').length}</div>
             <div className="text-sm text-purple-600">Labourers</div>
           </div>
         </div>
       </div>
 
-      {/* Success/Error Messages */}
+      {/* Success/Error */}
       {success && (
         <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center space-x-2 text-green-800">
@@ -385,7 +442,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
           </div>
         </div>
       )}
-
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <div className="flex items-center space-x-2 text-red-800">
@@ -402,9 +458,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
           <form onSubmit={handleAddEmployee} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Full Name *
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
                 <input
                   type="text"
                   value={newEmployee.full_name}
@@ -415,9 +469,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Role *
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role *</label>
                 <select
                   value={newEmployee.role}
                   onChange={(e) => setNewEmployee(prev => ({ ...prev, role: e.target.value as any }))}
@@ -434,9 +486,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Hourly Rate (£) *
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Hourly Rate (£) *</label>
                 <input
                   type="number"
                   step="0.01"
@@ -448,9 +498,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Email *
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
                 <input
                   type="email"
                   value={newEmployee.email}
@@ -464,9 +512,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Password *
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
                 <input
                   type="password"
                   value={newEmployee.password}
@@ -477,9 +523,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Assigned Vehicle (Optional)
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Assigned Vehicle (Optional)</label>
                 <select
                   value={newEmployee.assigned_vehicle_id || ''}
                   onChange={(e) => setNewEmployee(prev => ({ ...prev, assigned_vehicle_id: e.target.value || null }))}
@@ -494,7 +538,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                 </select>
               </div>
             </div>
-            
+
             <div className="flex space-x-3">
               <button
                 type="submit"
@@ -508,16 +552,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                 type="button"
                 onClick={() => {
                   setShowAddForm(false);
-                  setNewEmployee({
-                    full_name: '',
-                    role: '',
-                    rate: '',
-                    email: '',
-                    password: '',
-                    assigned_vehicle_id: null,
-                  });
-                  setError(null);
-                  setSuccess(null);
+                  setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
+                  setError(null); setSuccess(null);
                 }}
                 className="flex items-center space-x-2 bg-slate-200 hover:bg-slate-300 text-slate-700 px-6 py-3 rounded-lg transition-colors"
               >
@@ -532,11 +568,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       {/* Employees List */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-900">
-            Employees ({employees.length})
-          </h3>
+          <h3 className="text-lg font-semibold text-slate-900">Employees ({employees.length})</h3>
         </div>
-        
+
         {loading && !refreshing ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -630,33 +664,23 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                         <Users className="h-6 w-6 text-blue-600" />
                       </div>
                       <div>
-                        <h4 className="text-lg font-semibold text-slate-900">
-                          {employee.full_name}
-                        </h4>
+                        <h4 className="text-lg font-semibold text-slate-900">{employee.full_name}</h4>
                         <div className="space-y-1">
+                          <p className="text-sm text-slate-600"><span className="font-medium">Role:</span> {employee.role}</p>
+                          <p className="text-sm text-slate-600"><span className="font-medium">Rate:</span> £{employee.rate}/hour</p>
+                          <p className="text-sm text-slate-600"><span className="font-medium">Email:</span> {employee.email}</p>
                           <p className="text-sm text-slate-600">
-                            <span className="font-medium">Role:</span> {employee.role}
+                            <span className="font-medium">Vehicle:</span>{' '}
+                            {employee.assigned_vehicle
+                              ? `${employee.assigned_vehicle.registration_number} - ${employee.assigned_vehicle.make} ${employee.assigned_vehicle.model}`
+                              : 'Not assigned'}
                           </p>
-                          <p className="text-sm text-slate-600">
-                            <span className="font-medium">Rate:</span> £{employee.rate}/hour
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            <span className="font-medium">Email:</span> {employee.email}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            <span className="font-medium">Vehicle:</span> {
-                              employee.assigned_vehicle
-                                ? `${employee.assigned_vehicle.registration_number} - ${employee.assigned_vehicle.make_model}`
-                                : 'Not assigned'
-                            }
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Added: {new Date(employee.created_at).toLocaleDateString()}
-                          </p>
+                          <p className="text-xs text-slate-500">Added: {new Date(employee.created_at).toLocaleDateString()}</p>
                         </div>
                       </div>
                     </div>
                     <div className="flex space-x-2">
+                      {/* Assign Vehicle */}
                       <button
                         onClick={() => openAssignVehicleModal(employee)}
                         className="p-2 text-slate-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -666,12 +690,19 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                         </svg>
                       </button>
+
+                      {/* Enable Login (NEW) */}
+                      <EnableLoginButton employee={employee} onCreated={refreshData} />
+
+                      {/* Edit */}
                       <button
                         onClick={() => startEdit(employee)}
                         className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
                         <Edit className="h-4 w-4" />
                       </button>
+
+                      {/* Delete */}
                       <button
                         onClick={() => handleDeleteEmployee(employee)}
                         className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -695,11 +726,9 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
               <h3 className="text-xl font-bold text-slate-900 mb-4">
                 Assign Vehicle to {assigningEmployee.full_name}
               </h3>
-              
+
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Select Vehicle
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Select Vehicle</label>
                 <select
                   value={selectedVehicleForAssignment}
                   onChange={(e) => setSelectedVehicleForAssignment(e.target.value)}
@@ -716,14 +745,10 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                   })}
                 </select>
               </div>
-              
+
               <div className="flex space-x-3">
                 <button
-                  onClick={() => {
-                    setShowAssignVehicleModal(false);
-                    setAssigningEmployee(null);
-                    setSelectedVehicleForAssignment('');
-                  }}
+                  onClick={() => { setShowAssignVehicleModal(false); setAssigningEmployee(null); setSelectedVehicleForAssignment(''); }}
                   className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
                 >
                   Cancel
