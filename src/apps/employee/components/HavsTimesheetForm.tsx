@@ -105,8 +105,34 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (existingTimesheet) {
         const entriesMap: { [key: string]: HavsTimesheetEntry } = {};
         
+        // Initialize all equipment items first
+        EQUIPMENT_ITEMS.forEach(item => {
+          entriesMap[item.name] = {
+            id: '',
+            timesheet_id: existingTimesheet.id,
+            equipment_name: item.name,
+            equipment_category: item.category,
+            monday_hours: 0,
+            tuesday_hours: 0,
+            wednesday_hours: 0,
+            thursday_hours: 0,
+            friday_hours: 0,
+            saturday_hours: 0,
+            sunday_hours: 0,
+            total_hours: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        });
+        
+        // Then override with existing data
         existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
-          entriesMap[entry.equipment_name] = entry;
+          if (entriesMap[entry.equipment_name]) {
+            entriesMap[entry.equipment_name] = {
+              ...entriesMap[entry.equipment_name],
+              ...entry
+            };
+          }
         });
 
         setTimesheetData({
@@ -138,8 +164,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             saturday_hours: 0,
             sunday_hours: 0,
             total_hours: 0,
-            created_at: '',
-            updated_at: '',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           };
         });
 
@@ -154,12 +180,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const updateHours = (equipmentName: string, day: string, hours: number) => {
+    console.log('Updating hours for:', equipmentName, day, hours);
+    
     setTimesheetData(prev => {
       const updatedEntries = { ...prev.entries };
       const entry = updatedEntries[equipmentName];
       
       if (entry) {
-        const updatedEntry = { ...entry, [`${day}_hours`]: Math.round(hours) };
+        const updatedEntry = { 
+          ...entry, 
+          [`${day}_hours`]: Math.max(0, Math.round(hours)) // Ensure non-negative
+        };
         
         // Calculate total minutes for this equipment
         updatedEntry.total_hours = 
@@ -172,6 +203,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           updatedEntry.sunday_hours;
         
         updatedEntries[equipmentName] = updatedEntry;
+      } else {
+        console.warn('Entry not found for equipment:', equipmentName);
       }
 
       // Calculate total minutes for entire timesheet
@@ -509,20 +542,21 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                           <td key={day} className="border border-slate-300 px-2 py-2">
                             <input
                               type="number"
-                              step="1"
                               min="0"
                               max="1440"
-                              value={entry ? formatMinutes(entry[`${day}_hours` as keyof HavsTimesheetEntry] as number || 0) : '0'}
+                              value={entry && entry[`${day}_hours` as keyof HavsTimesheetEntry] !== undefined 
+                                ? (entry[`${day}_hours` as keyof HavsTimesheetEntry] as number || 0).toString()
+                                : '0'}
                               onChange={(e) => updateHours(item.name, day, parseMinutes(e.target.value))}
                               onFocus={(e) => e.target.select()}
-                              className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded transition-all duration-200"
+                              className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded transition-all duration-200 text-sm"
                               placeholder="0"
                               readOnly={isReadOnly}
                             />
                           </td>
                         ))}
                         <td className="border border-slate-300 px-4 py-3 text-center text-sm font-bold text-blue-700 bg-blue-50">
-                          {entry ? formatMinutes(entry.total_hours || 0) : '0'}
+                          {entry && entry.total_hours !== undefined ? entry.total_hours.toString() : '0'}
                         </td>
                       </tr>
                     );
