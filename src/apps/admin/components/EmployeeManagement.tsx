@@ -10,7 +10,7 @@ import { supabase } from '../../../lib/supabase';
 interface Vehicle {
   id: string;
   registration_number: string;
-  make_model: string; // your schema uses make_model (no separate make/model/year)
+  make_model: string; // your schema uses make_model
 }
 
 interface Employee {
@@ -19,6 +19,7 @@ interface Employee {
   role: 'Ganger' | 'Labourer' | 'Backup Driver';
   rate: number;
   email: string;
+  password: string; // stored in employees table (current schema requires NOT NULL)
   assigned_vehicle_id?: string | null;
   assigned_vehicle?: Vehicle | null;
   created_at: string;
@@ -29,7 +30,7 @@ interface EmployeeFormData {
   role: 'Ganger' | 'Labourer' | 'Backup Driver' | '';
   rate: string;
   email: string;
-  password: string; // only for creating auth; we don't save it in employees
+  password: string; // for employees table only; login created later via Enable Login
   assigned_vehicle_id: string | null;
 }
 
@@ -63,6 +64,7 @@ const EnableLoginButton: React.FC<{ employee: Employee; onCreated?: () => void }
       });
       if (error) throw new Error(error.message || 'Function call failed');
       if (!data?.ok) throw new Error(data?.error || 'Server error creating user');
+
       setMsg({ type: 'success', text: `Login enabled for ${data.email} (role: ${data.role}).` });
       onCreated && onCreated();
       setTimeout(() => { setOpen(false); reset(); }, 900);
@@ -204,7 +206,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     try {
       setLoading(true); setError(null);
 
-      // IMPORTANT: vehicles table has no 'year' column
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select(`
@@ -216,7 +217,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
 
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
-        .select('id, registration_number, make_model') // explicit (no year)
+        .select('id, registration_number, make_model')
         .order('registration_number');
       if (vehiclesError) throw vehiclesError;
 
@@ -235,51 +236,32 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     setRefreshing(false);
   };
 
-  // Keep your existing add flow; just don't store plaintext password in employees
+  // ADD EMPLOYEE: insert only (no auth signup here)
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null); setSuccess(null);
+
     if (!newEmployee.full_name.trim() || !newEmployee.role || !newEmployee.rate || !newEmployee.email.trim() || !newEmployee.password.trim()) {
       setError('Please fill in all required fields'); return;
     }
+
     setLoading(true);
     try {
-      // 1) Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newEmployee.email.trim(),
-        password: newEmployee.password.trim(),
-        options: { data: { full_name: newEmployee.full_name.trim() } }
-      });
-      if (authError) throw new Error(`Failed to create user account: ${authError.message}`);
-      if (!authData.user) throw new Error('Failed to create user account - no user data returned');
-
-      // 2) Create employee row
-      const { data: employee, error: employeeError } = await supabase
+      const { error: insertErr } = await supabase
         .from('employees')
         .insert({
           role: newEmployee.role,
           email: newEmployee.email.trim(),
           rate: parseFloat(newEmployee.rate),
           full_name: newEmployee.full_name.trim(),
+          password: newEmployee.password.trim(),              // <— put back to satisfy NOT NULL
           assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
           created_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-      if (employeeError) {
-        await supabase.auth.admin.deleteUser(authData.user.id); // rollback
-        throw employeeError;
-      }
+        });
 
-      // 3) Link profile
-      const { error: profileError } = await supabase.from('user_profiles').insert({
-        id: authData.user.id,
-        employee_id: employee.id,
-        role: 'employee',
-      });
-      if (profileError) console.warn('Profile insert failed (user can still log in):', profileError);
+      if (insertErr) throw insertErr;
 
-      setSuccess(`Employee ${newEmployee.full_name} added successfully!`);
+      setSuccess(`Employee ${newEmployee.full_name} added. Use the key icon to enable login when ready.`);
       setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
       setShowAddForm(false);
       await loadData();
@@ -293,6 +275,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
   const handleEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEmployee) return;
+
     setError(null); setSuccess(null); setLoading(true);
     try {
       const { error } = await supabase
@@ -303,8 +286,11 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
           rate: parseFloat(editForm.rate),
           email: editForm.email.trim(),
           assigned_vehicle_id: editForm.assigned_vehicle_id || null,
+          // optional: if you want to edit stored password too, add:
+          // password: editForm.password ? editForm.password.trim() : undefined,
         })
         .eq('id', editingEmployee.id);
+
       if (error) throw error;
 
       setSuccess('Employee updated successfully!');
@@ -323,14 +309,14 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
 
     setLoading(true); setError(null);
     try {
-      // 1) Try to delete login/profile (non-fatal if none)
+      // Try to delete login/profile (non-fatal if none or function not set up)
       const { data: delData, error: delFnErr } = await supabase.functions.invoke('delete-user-by-employee', {
         body: { employee_id: employee.id },
       });
       if (delFnErr) console.warn('delete-user-by-employee warning:', delFnErr.message);
       else if (delData?.error) console.warn('delete-user-by-employee:', delData.error);
 
-      // 2) Delete employee row
+      // Remove employee row
       const { error } = await supabase.from('employees').delete().eq('id', employee.id);
       if (error) throw error;
 
@@ -373,7 +359,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       role: employee.role,
       rate: employee.rate.toString(),
       email: employee.email,
-      password: '', // not used
+      password: '', // not used unless you decide to edit stored password
       assigned_vehicle_id: employee.assigned_vehicle_id || null,
     });
   };
@@ -689,7 +675,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                         </svg>
                       </button>
 
-                      {/* Enable Login (NEW) */}
+                      {/* Enable Login (server creates auth user) */}
                       <EnableLoginButton employee={employee} onCreated={refreshData} />
 
                       {/* Edit */}
