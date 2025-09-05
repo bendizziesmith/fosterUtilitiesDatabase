@@ -670,41 +670,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         </div>
       </div>
 
-      {/* Supervisor Section */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">Supervisor Information</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Supervisor Name</label>
-            <input
-              type="text"
-              value={timesheetData.supervisor_name}
-              onChange={(e) => updateField('supervisor_name', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              placeholder="Enter supervisor name..."
-              readOnly={isReadOnly}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Supervisor Signature</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50"
-              placeholder="Digital signature (to be added)"
-              readOnly
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-            <input
-              type="date"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-slate-50"
-              value={new Date().toISOString().split('T')[0]}
-              readOnly
-            />
-          </div>
-        </div>
-      </div>
 
       {/* Action Buttons */}
       {!isReadOnly && (
