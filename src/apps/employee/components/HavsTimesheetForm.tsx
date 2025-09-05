@@ -738,6 +738,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               Auto-saves every 30 seconds • Enter time in minutes
             </p>
           </div>
+        </div>
       )}
 
       {/* Week Selector Modal */}
@@ -768,6 +769,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   >
                     <div className="font-medium text-slate-900">
                       {new Date(week).toLocaleDateString('en-GB', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric'
+                      })}
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      Week ending: {new Date(week).toLocaleDateString('en-GB')}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-sm p-6">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Week Selection</h3>
         <button
