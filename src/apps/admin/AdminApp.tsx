@@ -17,6 +17,7 @@ import { IpsomRatesManagement } from './components/IpsomRatesManagement';
 import { MollsworthRatesManagement } from './components/MollsworthRatesManagement';
 import { MollsworthWorkRatesManagement } from './components/MollsworthWorkRatesManagement';
 import { HavsTimesheetsTable } from './components/HavsTimesheetsTable';
+import { HavsComplianceTable } from './components/HavsComplianceTable';
 import { supabase, VehicleInspection, PlantRecord, Employee, Timesheet } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -329,7 +330,12 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         />
         <Route 
           path="/havs-timesheets" 
-          element={<HavsTimesheetsTable employees={employees} />} 
+          element={
+            <div className="space-y-6">
+              <HavsComplianceTable employees={employees} />
+              <HavsTimesheetsTable employees={employees} />
+            </div>
+          } 
         />
       </Routes>
     </Layout>
