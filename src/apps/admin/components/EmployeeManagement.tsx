@@ -10,8 +10,7 @@ import { supabase } from '../../../lib/supabase';
 interface Vehicle {
   id: string;
   registration_number: string;
-  make_model: string;    // <-- uses make_model (not make + model)
-  year?: number | null;
+  make_model: string; // your schema uses make_model (no separate make/model/year)
 }
 
 interface Employee {
@@ -205,19 +204,19 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     try {
       setLoading(true); setError(null);
 
-      // NOTE: vehicles table uses make_model
+      // IMPORTANT: vehicles table has no 'year' column
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select(`
           *,
-          assigned_vehicle:vehicles!assigned_vehicle_id(id, registration_number, make_model, year)
+          assigned_vehicle:vehicles!assigned_vehicle_id(id, registration_number, make_model)
         `)
         .order('created_at', { ascending: false });
       if (employeesError) throw employeesError;
 
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
-        .select('id, registration_number, make_model, year') // explicit columns to match schema
+        .select('id, registration_number, make_model') // explicit (no year)
         .order('registration_number');
       if (vehiclesError) throw vehiclesError;
 
@@ -483,7 +482,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md/grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Hourly Rate (£) *</label>
                 <input
