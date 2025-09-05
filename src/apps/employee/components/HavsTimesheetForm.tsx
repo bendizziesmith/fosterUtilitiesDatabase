@@ -159,9 +159,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       const entry = updatedEntries[equipmentName];
       
       if (entry) {
-        const updatedEntry = { ...entry, [`${day}_hours`]: hours };
+        const updatedEntry = { ...entry, [`${day}_hours`]: Math.round(hours) };
         
-        // Calculate total hours for this equipment
+        // Calculate total minutes for this equipment
         updatedEntry.total_hours = 
           updatedEntry.monday_hours +
           updatedEntry.tuesday_hours +
@@ -174,7 +174,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         updatedEntries[equipmentName] = updatedEntry;
       }
 
-      // Calculate total hours for entire timesheet
+      // Calculate total minutes for entire timesheet
       const totalHours = Object.values(updatedEntries).reduce((sum, entry) => sum + entry.total_hours, 0);
 
       return {
@@ -189,7 +189,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (timesheetData.status === 'draft') {
         autoSave();
       }
-    }, 2000);
+    }, 1000);
   };
 
   const updateField = (field: keyof TimesheetData, value: string) => {
@@ -348,13 +348,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const formatHours = (hours: number): string => {
-    return hours.toFixed(2);
+  const formatMinutes = (minutes: number): string => {
+    return minutes.toString();
   };
 
-  const parseHours = (value: string): number => {
+  const parseMinutes = (value: string): number => {
     const parsed = parseFloat(value);
-    return isNaN(parsed) ? 0 : Math.round(parsed * 100) / 100; // Round to 2 decimal places
+    return isNaN(parsed) ? 0 : Math.round(parsed); // Round to whole minutes
   };
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
@@ -461,7 +461,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="bg-slate-100 p-4">
           <h2 className="text-lg font-semibold text-slate-900 text-center">
-            EXPOSURE TIME TO BE RECORDED IN MINUTES AGAINST THE EQUIPMENT USED
+            EXPOSURE TIME IN MINUTES AGAINST THE EQUIPMENT USED
           </h2>
         </div>
 
@@ -479,7 +479,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Friday</th>
                 <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Saturday</th>
                 <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Sunday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700 bg-blue-50">Total</th>
+                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700 bg-blue-50">Total (min)</th>
               </tr>
             </thead>
             <tbody>
@@ -509,19 +509,20 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                           <td key={day} className="border border-slate-300 px-2 py-2">
                             <input
                               type="number"
-                              step="0.01"
+                              step="1"
                               min="0"
-                              max="24"
-                              value={entry ? formatHours(entry[`${day}_hours` as keyof HavsTimesheetEntry] as number) : '0.00'}
-                              onChange={(e) => updateHours(item.name, day, parseHours(e.target.value))}
-                              className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded"
-                              placeholder="0.00"
+                              max="1440"
+                              value={entry ? formatMinutes(entry[`${day}_hours` as keyof HavsTimesheetEntry] as number) : '0'}
+                              onChange={(e) => updateHours(item.name, day, parseMinutes(e.target.value))}
+                              onFocus={(e) => e.target.select()}
+                              className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded transition-all duration-200"
+                              placeholder="0"
                               readOnly={isReadOnly}
                             />
                           </td>
                         ))}
                         <td className="border border-slate-300 px-4 py-3 text-center text-sm font-bold text-blue-700 bg-blue-50">
-                          {entry ? formatHours(entry.total_hours) : '0.00'}
+                          {entry ? formatMinutes(entry.total_hours) : '0'}
                         </td>
                       </tr>
                     );
@@ -536,11 +537,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         <div className="bg-blue-50 border-t border-slate-300 p-4">
           <div className="text-center">
             <div className="text-lg font-bold text-blue-700">
-              Total Weekly Exposure: {formatHours(timesheetData.total_hours)} minutes
+              Total Weekly Exposure: {formatMinutes(timesheetData.total_hours)} minutes
             </div>
-            <div className="text-sm text-blue-600">
-              ({(timesheetData.total_hours / 60).toFixed(2)} hours)
-            </div>
+            {timesheetData.total_hours > 0 && (
+              <div className="text-sm text-blue-600">
+                ({(timesheetData.total_hours / 60).toFixed(1)} hours)
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -645,10 +648,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           <div className="mt-4 text-center">
             <div className="text-lg font-bold text-orange-600">
               <Clock className="h-5 w-5 inline mr-2" />
-              Total Weekly Exposure: {formatHours(timesheetData.total_hours)} minutes
+              Total Weekly Exposure: {formatMinutes(timesheetData.total_hours)} minutes
             </div>
             <p className="text-sm text-slate-600 mt-1">
-              Auto-saves every 30 seconds • Changes are saved automatically as you type
+              Auto-saves every 30 seconds • Enter time in minutes
             </p>
           </div>
         </div>
