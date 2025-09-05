@@ -740,15 +740,25 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           </div>
         </div>
       )}
-
-      {isReadOnly && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center">
-          <div className="flex items-center justify-center space-x-2 text-green-800">
-            <CheckCircle className="h-5 w-5" />
-            <span className="font-medium">This timesheet has been submitted to your employer</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => !isReadOnly && setShowWeekSelector(true)}
+            disabled={isReadOnly}
+            className={`w-full px-3 py-2 border border-slate-300 rounded-lg text-left transition-colors ${
+              isReadOnly 
+                ? 'bg-slate-50 text-slate-500 cursor-not-allowed' 
+                : 'hover:border-orange-400 hover:bg-orange-50 cursor-pointer'
+            }`}
+          >
+            {new Date(timesheetData.week_ending).toLocaleDateString('en-GB', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric'
+            })}
+          </button>
           <p className="text-green-700 text-sm mt-2">
-            No further changes can be made. Contact your supervisor if corrections are needed.
+            Click to select a different week ending (Sunday)
           </p>
         </div>
       )}
