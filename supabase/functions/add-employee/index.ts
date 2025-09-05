@@ -1,196 +1,141 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// supabase/functions/add-employee/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+};
+
+type Role = 'Ganger' | 'Labourer' | 'Backup Driver';
 
 interface AddEmployeeRequest {
-  firstName: string
-  lastName: string
-  role: string
-  email: string
-  password: string
-  assignedVehicle: string
+  // match your Admin form / DB schema
+  full_name: string;
+  role: Role;
+  rate: number;                         // number, not string
+  email: string;
+  password: string;                     // your employees table currently requires NOT NULL
+  assigned_vehicle_id?: string | null;  // FK to vehicles.id (optional)
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Only allow POST requests
     if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ error: 'Method not allowed' }),
-        { 
-          status: 405, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), {
+        status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Create Supabase client with service role key for admin operations
-    const supabaseAdmin = createClient(
+    const body = (await req.json()) as Partial<AddEmployeeRequest>;
+
+    // ---- Validation ----
+    const { full_name, role, rate, email, password, assigned_vehicle_id } = body;
+
+    if (!full_name || !role || rate === undefined || rate === null || !email || !password) {
+      return new Response(JSON.stringify({
+        ok: false,
+        error: 'Missing required fields: full_name, role, rate, email, password',
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const validRoles: Role[] = ['Ganger', 'Labourer', 'Backup Driver'];
+    if (!validRoles.includes(role)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid role' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if (!emailOk) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid email format' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (String(password).length < 6) {
+      return new Response(JSON.stringify({ ok: false, error: 'Password must be at least 6 characters' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
 
-    // Parse request body
-    const { firstName, lastName, role, email, password, assignedVehicle }: AddEmployeeRequest = await req.json()
+    // ---- 1) Create Auth user (service role) ----
+    const { data: authCreated, error: authErr } = await supabase.auth.admin.createUser({
+      email: email.trim().toLowerCase(),
+      password: String(password),
+      email_confirm: true,
+      user_metadata: { full_name },
+    });
 
-    // Validate required fields
-    if (!firstName || !lastName || !role || !email || !password) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: firstName, lastName, role, email, and password are required' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    if (authErr) {
+      const msg = authErr.message || 'Failed to create auth user';
+      const status = /already/i.test(msg) ? 409 : 400;
+      return new Response(JSON.stringify({ ok: false, code: 'auth_create_failed', error: msg }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid email format' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    const authUser = authCreated.user;
+    if (!authUser) {
+      return new Response(JSON.stringify({ ok: false, error: 'Auth user missing from response' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Validate password length
-    if (password.length < 6) {
-      return new Response(
-        JSON.stringify({ error: 'Password must be at least 6 characters long' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Validate role
-    const validRoles = ['Ganger', 'Labourer', 'Backup Driver']
-    if (!validRoles.includes(role)) {
-      return new Response(
-        JSON.stringify({ error: 'Role must be either "Ganger", "Labourer", or "Backup Driver"' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Create the auth user using admin client
-    const { data: authUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
-      email: email.trim(),
-      password: password,
-      email_confirm: true, // Auto-confirm email
-      user_metadata: {
-        full_name: `${firstName.trim()} ${lastName.trim()}`
-      }
-    })
-
-    if (createUserError) {
-      console.error('Error creating auth user:', createUserError)
-      return new Response(
-        JSON.stringify({ 
-          error: `Failed to create user account: ${createUserError.message}` 
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    if (!authUser.user) {
-      return new Response(
-        JSON.stringify({ error: 'User creation failed - no user data returned' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Insert employee record
-    const { data: employee, error: insertEmployeeError } = await supabaseAdmin
+    // ---- 2) Insert employees row (matches your table columns) ----
+    const { data: employee, error: empErr } = await supabase
       .from('employees')
       .insert({
-        first_name: firstName.trim(),
-        last_name: lastName.trim(),
-        email: email.trim(),
-        role: role.trim(),
-        assigned_vehicle: assignedVehicle.trim() || null,
+        full_name: full_name.trim(),
+        role,
+        rate: Number(rate),
+        email: email.trim().toLowerCase(),
+        password: String(password),                 // NOTE: your table has NOT NULL on password
+        assigned_vehicle_id: assigned_vehicle_id || null,
         created_at: new Date().toISOString(),
       })
       .select()
-      .single()
+      .single();
 
-    if (insertEmployeeError) {
-      console.error('Error inserting employee record:', insertEmployeeError)
-      
-      // Clean up the auth user if database insert fails
-      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)
-      
-      return new Response(
-        JSON.stringify({ 
-          error: `Failed to create employee record: ${insertEmployeeError.message}` 
-        }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    if (empErr) {
+      // rollback auth user so we don't leave an orphaned login
+      await supabase.auth.admin.deleteUser(authUser.id);
+      return new Response(JSON.stringify({
+        ok: false, code: 'employee_insert_failed', error: empErr.message,
+      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Return success response
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'Employee added successfully',
-        user_id: authUser.user.id,
+    // ---- 3) Link user_profiles (non-fatal if it fails) ----
+    const { error: profileErr } = await supabase
+      .from('user_profiles')
+      .insert({
+        id: authUser.id,       // auth user id
         employee_id: employee.id,
-        employee: {
-          id: employee.id,
-          first_name: employee.first_name,
-          last_name: employee.last_name,
-          email: employee.email,
-          role: employee.role,
-          created_at: employee.created_at
-        }
-      }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
+        role: 'employee',
+      });
+    if (profileErr) console.log('user_profiles insert failed:', profileErr.message);
 
-  } catch (error) {
-    console.error('Unexpected error:', error)
-    return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message 
-      }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
+    return new Response(JSON.stringify({
+      ok: true,
+      user_id: authUser.id,
+      employee_id: employee.id,
+      employee,
+    }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+  } catch (e: any) {
+    console.error('Unexpected error:', e);
+    return new Response(JSON.stringify({
+      ok: false, code: 'unexpected', error: e?.message || 'Internal server error',
+    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
-})
+});
