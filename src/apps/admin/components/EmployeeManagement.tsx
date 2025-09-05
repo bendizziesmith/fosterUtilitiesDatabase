@@ -1,8 +1,7 @@
 // src/apps/admin/components/EmployeeManagement.tsx
 import React, { useState, useEffect } from 'react';
 import {
-  Plus, Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle,
-  KeyRound, Loader2
+  Plus, Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 
@@ -10,7 +9,7 @@ import { supabase } from '../../../lib/supabase';
 interface Vehicle {
   id: string;
   registration_number: string;
-  make_model: string; // your schema uses make_model
+  make_model: string;
 }
 
 interface Employee {
@@ -19,7 +18,7 @@ interface Employee {
   role: 'Ganger' | 'Labourer' | 'Backup Driver';
   rate: number;
   email: string;
-  password: string; // stored in employees table (current schema requires NOT NULL)
+  password: string;
   assigned_vehicle_id?: string | null;
   assigned_vehicle?: Vehicle | null;
   created_at: string;
@@ -30,7 +29,7 @@ interface EmployeeFormData {
   role: 'Ganger' | 'Labourer' | 'Backup Driver' | '';
   rate: string;
   email: string;
-  password: string; // for employees table only; login created later via Enable Login
+  password: string;
   assigned_vehicle_id: string | null;
 }
 
@@ -38,132 +37,6 @@ interface EmployeeManagementProps {
   employees: any[];
   onEmployeesUpdate: () => void;
 }
-
-// ---------- Inline Enable Login button + modal ----------
-const EnableLoginButton: React.FC<{ employee: Employee; onCreated?: () => void }> = ({ employee, onCreated }) => {
-  const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState((employee.email || '').toLowerCase());
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'employee' | 'admin'>('employee');
-  const [submitting, setSubmitting] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const reset = () => { setPassword(''); setRole('employee'); setMsg(null); };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMsg(null);
-    if (!email || !password) {
-      setMsg({ type: 'error', text: 'Email and temporary password are required.' });
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('create-user', {
-        body: { email, password, role, employee_id: employee.id },
-      });
-      if (error) throw new Error(error.message || 'Function call failed');
-      if (!data?.ok) throw new Error(data?.error || 'Server error creating user');
-
-      setMsg({ type: 'success', text: `Login enabled for ${data.email} (role: ${data.role}).` });
-      onCreated && onCreated();
-      setTimeout(() => { setOpen(false); reset(); }, 900);
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err?.message || 'Failed to create user.' });
-    } finally { setSubmitting(false); }
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="p-2 text-slate-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors"
-        title="Enable login for this employee"
-      >
-        <KeyRound className="h-4 w-4" />
-      </button>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => { setOpen(false); reset(); }} />
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-xl border border-slate-200">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <KeyRound className="w-5 h-5 text-blue-600" />
-                </div>
-                <h2 className="text-lg font-semibold text-slate-900">Enable Login</h2>
-              </div>
-              <button onClick={() => { setOpen(false); reset(); }} className="p-1 rounded hover:bg-slate-100" aria-label="Close">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-
-            {msg && (
-              <div className={`mb-3 rounded-lg p-3 text-sm ${msg.type === 'success'
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                {msg.text}
-              </div>
-            )}
-
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="employee@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value.toLowerCase())}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Temporary Password</label>
-                <input
-                  type="text"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Temporary password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-slate-500 mt-1">Ask them to change this after first login.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name={`role-${employee.id}`} value="employee" checked={role === 'employee'} onChange={() => setRole('employee')} />
-                    <span>Employee</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name={`role-${employee.id}`} value="admin" checked={role === 'admin'} onChange={() => setRole('admin')} />
-                    <span>Admin</span>
-                  </label>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button type="button" onClick={() => { setOpen(false); reset(); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 text-white px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {submitting ? (<><Loader2 className="w-4 h-4 animate-spin" />Creating…</>) : (<><UserPlus className="w-4 h-4" />Create Login</>)}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </>
-  );
-};
 
 // ---------- Main ----------
 export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
@@ -236,50 +109,41 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     setRefreshing(false);
   };
 
- const handleAddEmployee = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError(null); setSuccess(null);
+  // ADD via your existing add-employee function (you already wired this)
+  const handleAddEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null); setSuccess(null);
 
-  if (
-    !newEmployee.full_name.trim() ||
-    !newEmployee.role ||
-    !newEmployee.rate ||
-    !newEmployee.email.trim() ||
-    !newEmployee.password.trim()
-  ) {
-    setError('Please fill in all required fields');
-    return;
-  }
+    if (!newEmployee.full_name.trim() || !newEmployee.role || !newEmployee.rate || !newEmployee.email.trim() || !newEmployee.password.trim()) {
+      setError('Please fill in all required fields'); return;
+    }
 
-  setLoading(true);
-  try {
-    const { data, error: fnError } = await supabase.functions.invoke('add-employee', {
-      body: {
-        full_name: newEmployee.full_name.trim(),
-        role: newEmployee.role,
-        rate: parseFloat(newEmployee.rate),
-        email: newEmployee.email.trim().toLowerCase(),
-        password: newEmployee.password.trim(),
-        assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
-      },
-    });
+    setLoading(true);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('add-employee', {
+        body: {
+          full_name: newEmployee.full_name.trim(),
+          role: newEmployee.role,
+          rate: parseFloat(newEmployee.rate),
+          email: newEmployee.email.trim().toLowerCase(),
+          password: newEmployee.password.trim(),
+          assigned_vehicle_id: newEmployee.assigned_vehicle_id || null,
+        },
+      });
 
-    if (fnError) throw new Error(fnError.message || 'Edge Function error');
-    if (!data?.ok) throw new Error(data?.error || 'Failed to add employee');
+      if (fnError) throw new Error(fnError.message || 'Edge Function error');
+      if (!data?.ok) throw new Error(data?.error || 'Failed to add employee');
 
-    setSuccess(`Employee ${newEmployee.full_name} added and login created.`);
-    setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
-    setShowAddForm(false);
-    await loadData();
-    onEmployeesUpdate && onEmployeesUpdate();
-  } catch (err: any) {
-    console.error('Error adding employee:', err);
-    setError(err?.message || 'Failed to add employee');
-  } finally {
-    setLoading(false);
-  }
-};
-
+      setSuccess(`Employee ${newEmployee.full_name} added and login created.`);
+      setNewEmployee({ full_name: '', role: '', rate: '', email: '', password: '', assigned_vehicle_id: null });
+      setShowAddForm(false);
+      await loadData();
+      onEmployeesUpdate && onEmployeesUpdate();
+    } catch (err: any) {
+      console.error('Error adding employee:', err);
+      setError(err?.message || 'Failed to add employee');
+    } finally { setLoading(false); }
+  };
 
   const handleEditEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,11 +159,8 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
           rate: parseFloat(editForm.rate),
           email: editForm.email.trim(),
           assigned_vehicle_id: editForm.assigned_vehicle_id || null,
-          // optional: if you want to edit stored password too, add:
-          // password: editForm.password ? editForm.password.trim() : undefined,
         })
         .eq('id', editingEmployee.id);
-
       if (error) throw error;
 
       setSuccess('Employee updated successfully!');
@@ -312,29 +173,24 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     } finally { setLoading(false); }
   };
 
-  // Delete fully: remove linked auth + profile (server function), then employee row
+  // DELETE via Edge Function (service role): removes auth user, profile, and employee row
   const handleDeleteEmployee = async (employee: Employee) => {
-    if (!confirm(`Delete ${employee.full_name}? This also removes their login if it exists.`)) return;
+    if (!confirm(`Delete ${employee.full_name}? This also removes their login (if any).`)) return;
 
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setSuccess(null);
     try {
-      // Try to delete login/profile (non-fatal if none or function not set up)
-      const { data: delData, error: delFnErr } = await supabase.functions.invoke('delete-user-by-employee', {
+      const { data, error: fnErr } = await supabase.functions.invoke('delete-employee', {
         body: { employee_id: employee.id },
       });
-      if (delFnErr) console.warn('delete-user-by-employee warning:', delFnErr.message);
-      else if (delData?.error) console.warn('delete-user-by-employee:', delData.error);
-
-      // Remove employee row
-      const { error } = await supabase.from('employees').delete().eq('id', employee.id);
-      if (error) throw error;
+      if (fnErr) throw new Error(fnErr.message || 'Edge Function error');
+      if (!data?.ok) throw new Error(data?.error || 'Failed to delete employee');
 
       setSuccess(`Employee ${employee.full_name} deleted successfully!`);
       await loadData();
       onEmployeesUpdate && onEmployeesUpdate();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting employee:', err);
-      setError('Failed to delete employee');
+      setError(err?.message || 'Failed to delete employee');
     } finally { setLoading(false); }
   };
 
@@ -368,7 +224,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       role: employee.role,
       rate: employee.rate.toString(),
       email: employee.email,
-      password: '', // not used unless you decide to edit stored password
+      password: '',
       assigned_vehicle_id: employee.assigned_vehicle_id || null,
     });
   };
@@ -673,7 +529,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                       </div>
                     </div>
                     <div className="flex space-x-2">
-                      {/* Assign Vehicle */}
                       <button
                         onClick={() => openAssignVehicleModal(employee)}
                         className="p-2 text-slate-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
@@ -684,10 +539,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                         </svg>
                       </button>
 
-                      {/* Enable Login (server creates auth user) */}
-                      <EnableLoginButton employee={employee} onCreated={refreshData} />
-
-                      {/* Edit */}
                       <button
                         onClick={() => startEdit(employee)}
                         className="p-2 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -695,7 +546,6 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                         <Edit className="h-4 w-4" />
                       </button>
 
-                      {/* Delete */}
                       <button
                         onClick={() => handleDeleteEmployee(employee)}
                         className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
