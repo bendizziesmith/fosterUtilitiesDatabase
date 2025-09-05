@@ -42,7 +42,6 @@ const EQUIPMENT_ITEMS: EquipmentItem[] = [
 interface TimesheetData {
   id?: string;
   employee_name: string;
-  employee_no: string;
   week_ending: string;
   comments: string;
   actions: string;
@@ -56,9 +55,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   selectedEmployee,
   onBack,
 }) => {
+  const [showWeekSelector, setShowWeekSelector] = useState(false);
+  const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [timesheetData, setTimesheetData] = useState<TimesheetData>({
     employee_name: selectedEmployee.full_name,
-    employee_no: selectedEmployee.id.slice(-6).toUpperCase(),
     week_ending: getWeekEndDate().toISOString().split('T')[0],
     comments: '',
     actions: '',
@@ -75,7 +75,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   // Check if current week is submitted to prevent overlap
   const isCurrentWeekSubmitted = timesheetData.status === 'submitted';
-  const canStartNewWeek = isCurrentWeekSubmitted || timesheetData.total_hours === 0;
+
+  useEffect(() => {
+    generateAvailableWeeks();
+  }, []);
 
   useEffect(() => {
     loadExistingTimesheet();
@@ -91,6 +94,41 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
     return () => clearInterval(interval);
   }, [timesheetData]);
+
+  const generateAvailableWeeks = () => {
+    const weeks = [];
+    const today = new Date();
+    
+    // Generate next 8 Sundays (week endings)
+    for (let i = 0; i < 8; i++) {
+      const sunday = new Date(today);
+      const daysUntilSunday = (7 - today.getDay()) % 7;
+      sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
+      weeks.push(sunday.toISOString().split('T')[0]);
+    }
+    
+    setAvailableWeeks(weeks);
+  };
+
+  const handleStartNewWeek = () => {
+    setShowWeekSelector(true);
+  };
+
+  const handleWeekSelect = (weekEnding: string) => {
+    setTimesheetData(prev => ({
+      employee_name: selectedEmployee.full_name,
+      week_ending: weekEnding,
+      comments: '',
+      actions: '',
+      supervisor_name: '',
+      entries: {},
+      status: 'draft',
+      total_hours: 0,
+    }));
+    setShowWeekSelector(false);
+    setLastSaved(null);
+    setSaveError(null);
+  };
 
   const loadExistingTimesheet = async () => {
     try {
@@ -142,7 +180,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         setTimesheetData({
           id: existingTimesheet.id,
           employee_name: existingTimesheet.employee_name,
-          employee_no: existingTimesheet.employee_no || selectedEmployee.id.slice(-6).toUpperCase(),
           week_ending: existingTimesheet.week_ending,
           comments: existingTimesheet.comments || '',
           actions: existingTimesheet.actions || '',
@@ -266,7 +303,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         .from('havs_timesheets')
         .update({
           employee_name: timesheetData.employee_name,
-          employee_no: timesheetData.employee_no,
           week_ending: timesheetData.week_ending,
           comments: timesheetData.comments,
           actions: timesheetData.actions,
@@ -283,7 +319,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         .insert({
           employee_id: selectedEmployee.id,
           employee_name: timesheetData.employee_name,
-          employee_no: timesheetData.employee_no,
           week_ending: timesheetData.week_ending,
           comments: timesheetData.comments,
           actions: timesheetData.actions,
@@ -457,26 +492,29 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               </div>
             )}
           </div>
+          
+          {/* Start New Week Button for Submitted Timesheets */}
+          {timesheetData.status === 'submitted' && (
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleStartNewWeek}
+                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
+              >
+                <HardHat className="h-5 w-5" />
+                <span>Start New Week HAVs</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Basic Information */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Employee Name</label>
             <input
               type="text"
               value={timesheetData.employee_name}
               onChange={(e) => updateField('employee_name', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              readOnly={isReadOnly}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Employee No:</label>
-            <input
-              type="text"
-              value={timesheetData.employee_no}
-              onChange={(e) => updateField('employee_no', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               readOnly={isReadOnly}
             />
@@ -493,36 +531,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               value={timesheetData.week_ending}
               onChange={(e) => updateField('week_ending', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              readOnly={isReadOnly || !canStartNewWeek}
-              onFocus={(e) => {
-                if (!isReadOnly && canStartNewWeek) {
-                  // Only allow Sundays to be selected
-                  const today = new Date();
-                  const currentSunday = new Date(today);
-                  currentSunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
-                  
-                  // Set min to current Sunday
-                  e.target.min = currentSunday.toISOString().split('T')[0];
-                  
-                  // Add event listener to only allow Sundays
-                  e.target.addEventListener('input', (event) => {
-                    const selectedDate = new Date((event.target as HTMLInputElement).value);
-                    if (selectedDate.getDay() !== 0) { // 0 = Sunday
-                      // Find the next Sunday
-                      const nextSunday = new Date(selectedDate);
-                      nextSunday.setDate(selectedDate.getDate() + (7 - selectedDate.getDay()));
-                      (event.target as HTMLInputElement).value = nextSunday.toISOString().split('T')[0];
-                      updateField('week_ending', nextSunday.toISOString().split('T')[0]);
-                    }
-                  });
-                }
-              }}
+              readOnly={isReadOnly}
             />
-            {!canStartNewWeek && (
-              <p className="mt-1 text-xs text-amber-600">
-                Complete and submit current week before starting a new one
-              </p>
-            )}
             <p className="mt-1 text-xs text-slate-500">
               Week ending must be a Sunday
             </p>
@@ -740,6 +750,60 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           <p className="text-green-700 text-sm mt-2">
             No further changes can be made. Contact your supervisor if corrections are needed.
           </p>
+        </div>
+      )}
+
+      {/* Week Selector Modal */}
+      {showWeekSelector && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-slate-900">Select Week Ending</h3>
+                <button
+                  onClick={() => setShowWeekSelector(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <p className="text-slate-600 mb-6">
+                Choose the Sunday (week ending) for your new HAVs timesheet:
+              </p>
+              
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {availableWeeks.map((week) => (
+                  <button
+                    key={week}
+                    onClick={() => handleWeekSelect(week)}
+                    className="w-full p-4 text-left border-2 border-slate-200 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-colors"
+                  >
+                    <div className="font-medium text-slate-900">
+                      {new Date(week).toLocaleDateString('en-GB', {
+                        weekday: 'long',
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric'
+                      })}
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      Week ending: {new Date(week).toLocaleDateString('en-GB')}
+                    </div>
+                  </button>
+                ))}
+              </div>
+              
+              <div className="mt-6 text-center">
+                <button
+                  onClick={() => setShowWeekSelector(false)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
