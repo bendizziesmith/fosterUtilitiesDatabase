@@ -26,62 +26,116 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
   });
 
   useEffect(() => {
+    if (!selectedEmployee?.id) return;
     checkComplianceStatus();
-  }, [selectedEmployee.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmployee?.id]);
+
+  // Local midnight → next local midnight, returned as ISO strings
+  const getTodayRangeISO = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local 00:00
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1); // next local 00:00
+    return { startISO: start.toISOString(), endISO: end.toISOString() };
+  };
+
+  // Return next Sunday (week ending) as YYYY-MM-DD
+  const getCurrentWeekEnding = () => {
+    const today = new Date();
+    const d = new Date(today);
+    const daysUntilSunday = (7 - d.getDay()) % 7; // 0=Sun, 6=Sat
+    d.setDate(d.getDate() + daysUntilSunday);
+    return d.toISOString().split('T')[0];
+  };
+
+  // Robust “did employee submit any vehicle checks today?” detector.
+  // Tries submitted_at, then created_at, then inspection_date (DATE), using .limit(1)
+  const didSubmitVehicleCheckToday = async (employeeId: string): Promise<boolean> => {
+    const { startISO, endISO } = getTodayRangeISO();
+
+    // 1) Try submitted_at
+    let { data, error } = await supabase
+      .from('vehicle_inspections')
+      .select('id')
+      .eq('employee_id', employeeId)
+      .gte('submitted_at', startISO)
+      .lt('submitted_at', endISO)
+      .limit(1);
+
+    if (!error) {
+      return Array.isArray(data) && data.length > 0;
+    }
+
+    // If the error is “column does not exist”, try created_at
+    if (error?.code === '42703' || /column .*submitted_at.* does not exist/i.test(error.message || '')) {
+      const createdResp = await supabase
+        .from('vehicle_inspections')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .gte('created_at', startISO)
+        .lt('created_at', endISO)
+        .limit(1);
+
+      if (!createdResp.error) {
+        return Array.isArray(createdResp.data) && createdResp.data.length > 0;
+      }
+
+      // If created_at also fails, try DATE column inspection_date = today (local)
+      const todayStr = new Date().toISOString().split('T')[0];
+      const dateResp = await supabase
+        .from('vehicle_inspections')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .eq('inspection_date', todayStr) // only works if you actually have a DATE column
+        .limit(1);
+
+      if (!dateResp.error) {
+        return Array.isArray(dateResp.data) && dateResp.data.length > 0;
+      }
+
+      // Fallthrough: all failed
+      console.warn('Vehicle check date fallback failed:', createdResp.error || dateResp.error);
+      return false;
+    }
+
+    // Other errors (network, RLS, etc.)
+    console.warn('Vehicle check query error:', error);
+    return false;
+  };
 
   const checkComplianceStatus = async () => {
     try {
       setCompliance(prev => ({ ...prev, loading: true }));
 
-      // Get today's date
-      const today = new Date();
-      const todayStr = today.toISOString().split('T')[0];
+      const employeeId = selectedEmployee.id;
+      const weekEndingStr = getCurrentWeekEnding();
 
-      // Get current week ending (next Sunday)
-      const currentSunday = new Date(today);
-      const daysUntilSunday = (7 - today.getDay()) % 7;
-      currentSunday.setDate(today.getDate() + daysUntilSunday);
-      const weekEndingStr = currentSunday.toISOString().split('T')[0];
+      // Daily vehicle inspection (any record today counts as complete)
+      const todayDone = await didSubmitVehicleCheckToday(employeeId);
 
-      // Check today's vehicle inspection - look for any inspection submitted today
-      const { data: todayInspection } = await supabase
-        .from('vehicle_inspections')
-        .select('id')
-        .eq('employee_id', selectedEmployee.id)
-        .gte('submitted_at', `${todayStr}T00:00:00.000Z`)
-        .lt('submitted_at', `${new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}T00:00:00.000Z`)
-        .maybeSingle();
-
-      console.log('Checking vehicle inspection for employee:', selectedEmployee.id, 'on date:', todayStr);
-      console.log('Found today inspection:', todayInspection);
-
-      // Check current week timesheet - look for ANY submitted timesheet for this week
-      const { data: weekTimesheet } = await supabase
+      // Weekly timesheet — existence check for submitted sheet
+      const { data: ts } = await supabase
         .from('new_timesheets')
-        .select('id, status, submitted_at')
-        .eq('employee_id', selectedEmployee.id)
-        .eq('week_ending', weekEndingStr)
-        .eq('status', 'submitted');
-
-      console.log('Checking timesheet for employee:', selectedEmployee.id, 'week ending:', weekEndingStr);
-      console.log('Found week timesheets:', weekTimesheet);
-
-      // Check current week HAVs timesheet - look for submitted HAVs for this week
-      const { data: weekHavs } = await supabase
-        .from('havs_timesheets')
-        .select('id, status, submitted_at')
-        .eq('employee_id', selectedEmployee.id)
+        .select('id')
+        .eq('employee_id', employeeId)
         .eq('week_ending', weekEndingStr)
         .eq('status', 'submitted')
-        .maybeSingle();
+        .limit(1);
 
-      console.log('Checking HAVs for employee:', selectedEmployee.id, 'week ending:', weekEndingStr);
-      console.log('Found week HAVs:', weekHavs);
+      // Weekly HAVs — existence check for submitted sheet
+      const { data: havs } = await supabase
+        .from('havs_timesheets')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .eq('week_ending', weekEndingStr)
+        .eq('status', 'submitted')
+        .limit(1);
 
       setCompliance({
-        todayVehicleCheck: !!todayInspection,
-        currentWeekTimesheet: !!(weekTimesheet && weekTimesheet.length > 0),
-        currentWeekHavs: !!weekHavs,
+        todayVehicleCheck: Array.isArray(ts) ? todayDone : todayDone,
+        currentWeekTimesheet: Array.isArray(ts) && ts.length > 0,
+        currentWeekHavs: Array.isArray(havs) && havs.length > 0,
         loading: false,
       });
     } catch (error) {
@@ -103,7 +157,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       hoverColor: 'hover:border-blue-400',
       frequency: 'Daily',
       isCompleted: compliance.todayVehicleCheck,
-      urgency: 'high' // Daily tasks are high priority
+      urgency: 'high'
     },
     {
       id: 'timesheet' as const,
@@ -139,29 +193,20 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     if (compliance.loading) {
       return <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-slate-400"></div>;
     }
-    
-    if (isCompleted) {
-      return <CheckCircle className="h-5 w-5 text-green-600" />;
-    }
-    
-    if (urgency === 'high') {
-      return <AlertTriangle className="h-5 w-5 text-red-600" />;
-    }
-    
+    if (isCompleted) return <CheckCircle className="h-5 w-5 text-green-600" />;
+    if (urgency === 'high') return <AlertTriangle className="h-5 w-5 text-red-600" />;
     return <X className="h-5 w-5 text-amber-600" />;
   };
 
   const getStatusText = (isCompleted: boolean, frequency: string) => {
     if (compliance.loading) return 'Checking...';
-    if (isCompleted) return `${frequency} - Complete`;
-    return `${frequency} - Pending`;
+    return isCompleted ? `${frequency} - Complete` : `${frequency} - Pending`;
   };
 
   const getStatusColor = (isCompleted: boolean, urgency: string) => {
     if (compliance.loading) return 'text-slate-500';
     if (isCompleted) return 'text-green-600';
-    if (urgency === 'high') return 'text-red-600';
-    return 'text-amber-600';
+    return urgency === 'high' ? 'text-red-600' : 'text-amber-600';
   };
 
   return (
@@ -262,7 +307,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
               </button>
             )}
             
-            {/* Show completion message when all tasks are done */}
+            {/* Completed message */}
             {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekTimesheet && compliance.currentWeekHavs && (
               <div className="w-full text-center py-4">
                 <div className="inline-flex items-center space-x-2 bg-green-100 text-green-800 px-4 py-2 rounded-lg">
@@ -279,7 +324,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {tasks.map((task) => {
           const Icon = task.icon;
-          
           return (
             <div
               key={task.id}
@@ -290,7 +334,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
               }`}
               onClick={() => onTaskSelect(task.id)}
             >
-              {/* Header */}
               <div className={`${task.lightColor} p-6 border-b border-slate-100`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className={`p-3 ${task.lightColor} rounded-xl border-2 border-white shadow-sm group-hover:scale-110 transition-transform duration-200`}>
@@ -303,17 +346,11 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                     </span>
                   </div>
                 </div>
-                
                 <h3 className="text-xl font-bold text-slate-900 group-hover:text-slate-700 transition-colors mb-2">
                   {task.title}
                 </h3>
-                
-                <p className="text-slate-600 leading-relaxed">
-                  {task.description}
-                </p>
+                <p className="text-slate-600 leading-relaxed">{task.description}</p>
               </div>
-
-              {/* Status Footer */}
               <div className="p-4">
                 <div className="flex items-center justify-between">
                   <span className={`text-sm font-medium ${getStatusColor(task.isCompleted, task.urgency)}`}>
