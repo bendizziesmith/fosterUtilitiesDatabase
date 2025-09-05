@@ -1,165 +1,85 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// supabase/functions/delete-user-by-employee/index.ts
+// Deno (Supabase Edge Function)
+// Deletes the auth user + user_profiles row linked to an employees.id
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.3";
 
-interface DeleteUserRequest {
-  user_id: string
-}
+type Payload = {
+  employee_id: string;
+};
 
 serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders(req) });
   }
 
   try {
-    // Only allow POST requests
-    if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ error: 'Method not allowed' }),
-        { 
-          status: 405, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    if (req.method !== "POST") {
+      return json({ error: "Method not allowed" }, 405);
     }
 
-    // Get the authorization header
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(
-        JSON.stringify({ error: 'Missing authorization header' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      return json({ error: "Server misconfigured: missing env" }, 500);
     }
 
-    // Create Supabase client with service role key for admin operations
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
+    });
 
-    // Create regular client to verify the requesting user
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    )
+    const body = (await req.json()) as Partial<Payload> | null;
+    if (!body?.employee_id) return json({ error: "employee_id is required" }, 400);
+    const employee_id = body.employee_id;
 
-    // Verify the requesting user is authenticated
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token)
-    
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid or expired token' }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+    // 1) Find user_profile linked to this employee
+    const { data: profile, error: profileErr } = await supabaseAdmin
+      .from("user_profiles")
+      .select("id")
+      .eq("employee_id", employee_id)
+      .maybeSingle();
+
+    if (profileErr) return json({ error: profileErr.message }, 400);
+
+    if (!profile) {
+      // No profile linked → nothing to remove in auth.users
+      return json({ ok: true, info: "No linked user profile; nothing to delete." }, 200);
     }
 
-    // Check if user is the admin account or has admin role
-    const isAdminEmail = user.email === 'nsfutilities@btinternet.com'
-    
-    if (!isAdminEmail) {
-      // Check if user has admin role in user_profiles
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
+    const authUserId = profile.id;
 
-      if (profileError || !profile || profile.role !== 'admin') {
-        return new Response(
-          JSON.stringify({ error: 'Insufficient permissions. Admin access required.' }),
-          { 
-            status: 403, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      }
-    }
+    // 2) Delete user_profile row first (to avoid dangling FK to employee if you cascade employee later)
+    const { error: delProfErr } = await supabaseAdmin
+      .from("user_profiles")
+      .delete()
+      .eq("id", authUserId);
 
-    // Parse request body
-    const { user_id }: DeleteUserRequest = await req.json()
+    if (delProfErr) return json({ error: delProfErr.message }, 400);
 
-    // Validate required fields
-    if (!user_id || typeof user_id !== 'string') {
-      return new Response(
-        JSON.stringify({ error: 'Missing or invalid user_id' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
+    // 3) Delete Auth user (requires service role)
+    const { error: delAuthErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
+    if (delAuthErr) return json({ error: delAuthErr.message }, 400);
 
-    // Prevent self-deletion
-    if (user_id === user.id) {
-      return new Response(
-        JSON.stringify({ error: 'Cannot delete your own account' }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Delete the user using admin client
-    const { data: deleteResult, error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user_id)
-
-    if (deleteError) {
-      console.error('Error deleting user:', deleteError)
-      return new Response(
-        JSON.stringify({ 
-          error: `Failed to delete user: ${deleteError.message}` 
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Return success response
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: 'User deleted successfully',
-        user_id: user_id
-      }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
-
-  } catch (error) {
-    console.error('Unexpected error:', error)
-    return new Response(
-      JSON.stringify({ 
-        error: 'Internal server error',
-        details: error.message 
-      }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      }
-    )
+    return json({ ok: true, deleted_auth_user_id: authUserId });
+  } catch (e) {
+    return json({ error: (e as Error).message ?? "Unexpected error" }, 500);
   }
-})
+});
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...corsHeaders() },
+  });
+}
+
+function corsHeaders(req?: Request): HeadersInit {
+  const origin = req?.headers.get("Origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  };
+}
