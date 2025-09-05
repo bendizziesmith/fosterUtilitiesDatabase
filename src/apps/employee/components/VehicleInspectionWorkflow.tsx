@@ -375,8 +375,8 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
             )}
 
             {/* Use Different Vehicle Option */}
-            <div className="space-y-4">
-              <label className={`block p-4 border-2 rounded-xl cursor-pointer transition-all ${
+            <div className="mb-6">
+              <label className={`block p-6 border-2 rounded-xl cursor-pointer transition-all ${
                 !formData.useAssignedVehicle
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
@@ -388,7 +388,7 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
                   onChange={() => handleVehicleToggle(false)}
                   className="sr-only"
                 />
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-4">
                   <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     !formData.useAssignedVehicle
                       ? 'border-blue-600 bg-blue-600'
@@ -398,7 +398,10 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
                       <div className="w-2 h-2 rounded-full bg-white"></div>
                     )}
                   </div>
-                  <div className="flex-1">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
+                      <Car className="h-8 w-8 text-orange-600" />
+                    </div>
                     <div className="font-medium text-slate-900">
                       Use different vehicle/plant today
                     </div>
@@ -408,48 +411,50 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
                   </div>
                 </div>
               </label>
-
-              {/* Different Vehicle Options */}
-              {!formData.useAssignedVehicle && (
-                <div className="ml-8 space-y-4 bg-slate-50 rounded-lg p-4">
-                  {/* Fleet Vehicle Selection */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Select from Fleet
-                    </label>
-                    <select
-                      value={formData.vehicleId}
-                      onChange={(e) => handleVehicleChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="">Choose a vehicle...</option>
-                      {vehicles.filter(v => v.id !== assignedVehicle?.id).map((vehicle) => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.registration_number} - {vehicle.make_model}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Manual Registration Entry */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">
-                      Or Enter Registration/ID Manually
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.overrideVehicleRegistration}
-                      onChange={(e) => handleOverrideRegistrationChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="e.g., ABC123 or Plant-ID-001"
-                    />
-                    <p className="mt-1 text-xs text-slate-500">
-                      Use this for vehicles/plant not in the fleet or temporary equipment
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
+
+            {/* Different Vehicle Options */}
+            {!formData.useAssignedVehicle && (
+              <div className="space-y-4 bg-slate-50 rounded-xl p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Alternative Vehicle Options</h3>
+                
+                {/* Fleet Vehicle Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Select from Fleet
+                  </label>
+                  <select
+                    value={formData.vehicleId}
+                    onChange={(e) => handleVehicleChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Choose a vehicle...</option>
+                    {vehicles.filter(v => v.id !== assignedVehicle?.id).map((vehicle) => (
+                      <option key={vehicle.id} value={vehicle.id}>
+                        {vehicle.registration_number} - {vehicle.make_model}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Manual Registration Entry */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Or Enter Registration/ID Manually
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.overrideVehicleRegistration}
+                    onChange={(e) => handleOverrideRegistrationChange(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., ABC123 or Plant-ID-001"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Use this for vehicles/plant not in the fleet or temporary equipment
+                  </p>
+                </div>
+              </div>
+            )}
 
             {errors.vehicle && (
               <p className="text-sm text-red-600">{errors.vehicle}</p>
