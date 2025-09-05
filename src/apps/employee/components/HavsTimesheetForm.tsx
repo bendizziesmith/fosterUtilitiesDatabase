@@ -512,7 +512,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                               step="1"
                               min="0"
                               max="1440"
-                              value={entry ? formatMinutes(entry[`${day}_hours` as keyof HavsTimesheetEntry] as number) : '0'}
+                              value={entry ? formatMinutes(entry[`${day}_hours` as keyof HavsTimesheetEntry] as number || 0) : '0'}
                               onChange={(e) => updateHours(item.name, day, parseMinutes(e.target.value))}
                               onFocus={(e) => e.target.select()}
                               className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded transition-all duration-200"
@@ -522,7 +522,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                           </td>
                         ))}
                         <td className="border border-slate-300 px-4 py-3 text-center text-sm font-bold text-blue-700 bg-blue-50">
-                          {entry ? formatMinutes(entry.total_hours) : '0'}
+                          {entry ? formatMinutes(entry.total_hours || 0) : '0'}
                         </td>
                       </tr>
                     );
