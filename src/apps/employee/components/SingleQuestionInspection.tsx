@@ -205,7 +205,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             inspection_id: inspection.id,
             item_name: item.name.trim(),
             status: item.status === 'ok' ? 'no_defect' : 'defect',
-            comments: item.comments.trim() || null,
+            notes: item.comments.trim() || null,
             photo_url: photoUrl,
             defect_severity: item.status === 'defect' ? 'medium' : null,
             action_required: item.status === 'defect',

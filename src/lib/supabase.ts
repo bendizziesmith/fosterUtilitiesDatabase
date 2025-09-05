@@ -64,7 +64,7 @@ export interface InspectionItem {
   inspection_id: string;
   item_name: string;
   status: 'no_defect' | 'defect';
-  comments?: string;
+  notes?: string;
   photo_url?: string;
 }
 
