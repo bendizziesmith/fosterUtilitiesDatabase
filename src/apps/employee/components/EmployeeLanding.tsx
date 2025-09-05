@@ -226,7 +226,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         {/* Quick Actions */}
         <div className="mt-6 pt-6 border-t border-slate-200">
           <div className="flex flex-wrap gap-3">
-            {!compliance.todayVehicleCheck && (
+            {!compliance.loading && !compliance.todayVehicleCheck && (
               <button
                 onClick={() => onTaskSelect('inspection')}
                 className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
@@ -235,7 +235,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 <span>Complete Daily Check</span>
               </button>
             )}
-            {!compliance.currentWeekTimesheet && (
+            {!compliance.loading && !compliance.currentWeekTimesheet && (
               <button
                 onClick={() => onTaskSelect('timesheet')}
                 className="flex items-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
@@ -244,7 +244,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 <span>Submit Timesheet</span>
               </button>
             )}
-            {!compliance.currentWeekHavs && (
+            {!compliance.loading && !compliance.currentWeekHavs && (
               <button
                 onClick={() => onTaskSelect('havs')}
                 className="flex items-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
@@ -252,6 +252,16 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 <HardHat className="h-4 w-4" />
                 <span>Submit HAVs</span>
               </button>
+            )}
+            
+            {/* Show completion message when all tasks are done */}
+            {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekTimesheet && compliance.currentWeekHavs && (
+              <div className="w-full text-center py-4">
+                <div className="inline-flex items-center space-x-2 bg-green-100 text-green-800 px-4 py-2 rounded-lg">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">All compliance requirements completed!</span>
+                </div>
+              </div>
             )}
           </div>
         </div>
