@@ -43,36 +43,44 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       currentSunday.setDate(today.getDate() + daysUntilSunday);
       const weekEndingStr = currentSunday.toISOString().split('T')[0];
 
-      // Check today's vehicle inspection
+      // Check today's vehicle inspection - look for any inspection submitted today
       const { data: todayInspection } = await supabase
         .from('vehicle_inspections')
         .select('id')
         .eq('employee_id', selectedEmployee.id)
-        .gte('submitted_at', `${todayStr}T00:00:00`)
-        .lte('submitted_at', `${todayStr}T23:59:59`)
+        .gte('submitted_at', `${todayStr}T00:00:00.000Z`)
+        .lt('submitted_at', `${new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]}T00:00:00.000Z`)
         .maybeSingle();
 
-      // Check current week timesheet
+      console.log('Checking vehicle inspection for employee:', selectedEmployee.id, 'on date:', todayStr);
+      console.log('Found today inspection:', todayInspection);
+
+      // Check current week timesheet - look for ANY submitted timesheet for this week
       const { data: weekTimesheet } = await supabase
         .from('new_timesheets')
-        .select('id')
+        .select('id, status, submitted_at')
+        .eq('employee_id', selectedEmployee.id)
+        .eq('week_ending', weekEndingStr)
+        .eq('status', 'submitted');
+
+      console.log('Checking timesheet for employee:', selectedEmployee.id, 'week ending:', weekEndingStr);
+      console.log('Found week timesheets:', weekTimesheet);
+
+      // Check current week HAVs timesheet - look for submitted HAVs for this week
+      const { data: weekHavs } = await supabase
+        .from('havs_timesheets')
+        .select('id, status, submitted_at')
         .eq('employee_id', selectedEmployee.id)
         .eq('week_ending', weekEndingStr)
         .eq('status', 'submitted')
         .maybeSingle();
 
-      // Check current week HAVs timesheet
-      const { data: weekHavs } = await supabase
-        .from('havs_timesheets')
-        .select('id')
-        .eq('employee_id', selectedEmployee.id)
-        .eq('week_ending', weekEndingStr)
-        .eq('status', 'submitted')
-        .maybeSingle();
+      console.log('Checking HAVs for employee:', selectedEmployee.id, 'week ending:', weekEndingStr);
+      console.log('Found week HAVs:', weekHavs);
 
       setCompliance({
         todayVehicleCheck: !!todayInspection,
-        currentWeekTimesheet: !!weekTimesheet,
+        currentWeekTimesheet: !!(weekTimesheet && weekTimesheet.length > 0),
         currentWeekHavs: !!weekHavs,
         loading: false,
       });
