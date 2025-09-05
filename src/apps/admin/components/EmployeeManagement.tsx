@@ -10,9 +10,8 @@ import { supabase } from '../../../lib/supabase';
 interface Vehicle {
   id: string;
   registration_number: string;
-  make: string;
-  model: string;
-  year: number;
+  make_model: string;    // <-- uses make_model (not make + model)
+  year?: number | null;
 }
 
 interface Employee {
@@ -21,7 +20,6 @@ interface Employee {
   role: 'Ganger' | 'Labourer' | 'Backup Driver';
   rate: number;
   email: string;
-  // Avoid storing plaintext password in employees table
   assigned_vehicle_id?: string | null;
   assigned_vehicle?: Vehicle | null;
   created_at: string;
@@ -207,23 +205,24 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
     try {
       setLoading(true); setError(null);
 
+      // NOTE: vehicles table uses make_model
       const { data: employeesData, error: employeesError } = await supabase
         .from('employees')
         .select(`
           *,
-          assigned_vehicle:vehicles!assigned_vehicle_id(id, registration_number, make, model, year)
+          assigned_vehicle:vehicles!assigned_vehicle_id(id, registration_number, make_model, year)
         `)
         .order('created_at', { ascending: false });
       if (employeesError) throw employeesError;
 
       const { data: vehiclesData, error: vehiclesError } = await supabase
         .from('vehicles')
-        .select('*')
+        .select('id, registration_number, make_model, year') // explicit columns to match schema
         .order('registration_number');
       if (vehiclesError) throw vehiclesError;
 
       setEmployees((employeesData || []) as unknown as Employee[]);
-      setVehicles(vehiclesData || []);
+      setVehicles((vehiclesData || []) as Vehicle[]);
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Failed to load data. Please try again.');
@@ -484,7 +483,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md/grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Hourly Rate (£) *</label>
                 <input
@@ -532,7 +531,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                   <option value="">Select Vehicle</option>
                   {vehicles.map((vehicle) => (
                     <option key={vehicle.id} value={vehicle.id}>
-                      {vehicle.registration_number} - {vehicle.make} {vehicle.model}
+                      {vehicle.registration_number} - {vehicle.make_model}
                     </option>
                   ))}
                 </select>
@@ -633,7 +632,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                         <option value="">Select Vehicle</option>
                         {vehicles.map((vehicle) => (
                           <option key={vehicle.id} value={vehicle.id}>
-                            {vehicle.registration_number} - {vehicle.make} {vehicle.model}
+                            {vehicle.registration_number} - {vehicle.make_model}
                           </option>
                         ))}
                       </select>
@@ -672,7 +671,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                           <p className="text-sm text-slate-600">
                             <span className="font-medium">Vehicle:</span>{' '}
                             {employee.assigned_vehicle
-                              ? `${employee.assigned_vehicle.registration_number} - ${employee.assigned_vehicle.make} ${employee.assigned_vehicle.model}`
+                              ? `${employee.assigned_vehicle.registration_number} - ${employee.assigned_vehicle.make_model}`
                               : 'Not assigned'}
                           </p>
                           <p className="text-xs text-slate-500">Added: {new Date(employee.created_at).toLocaleDateString()}</p>
@@ -739,7 +738,7 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
                     const isAssigned = employees.some(emp => emp.assigned_vehicle_id === vehicle.id && emp.id !== assigningEmployee.id);
                     return (
                       <option key={vehicle.id} value={vehicle.id} disabled={isAssigned}>
-                        {vehicle.registration_number} - {vehicle.make} {vehicle.model} {isAssigned ? '(Already assigned)' : ''}
+                        {vehicle.registration_number} - {vehicle.make_model} {isAssigned ? '(Already assigned)' : ''}
                       </option>
                     );
                   })}
