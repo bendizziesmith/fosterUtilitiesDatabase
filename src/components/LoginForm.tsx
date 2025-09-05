@@ -1,299 +1,173 @@
+// project/src/components/LoginForm.tsx
 import React, { useState } from 'react';
 import { Eye, EyeOff, LogIn, Car } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+/**
+ * Props:
+ * - onLoginSuccess: gets called with the user's role ('employee' | 'admin')
+ *   and (optionally) the employee data when role is 'employee'.
+ */
 interface LoginFormProps {
   onLoginSuccess: (userRole: 'employee' | 'admin', employeeData?: any) => void;
 }
 
+/**
+ * IMPORTANT:
+ * This login form ONLY signs the user in.
+ * It does NOT create users or elevate roles.
+ * Admin/user creation should happen on the server (Supabase Edge Function),
+ * not here in the browser.
+ */
 export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // error shown under the form (safe to show to users)
   const [error, setError] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
+    setLoading(true);
 
     try {
-      // Check if this is the admin account and create it if it doesn't exist
-      if (email.trim().toLowerCase() === 'nsfutilities@btinternet.com') {
-        // First try to sign in
-        let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password: password,
-        });
-
-        // If login fails due to invalid credentials, create the admin account
-        if (authError && authError.message === 'Invalid login credentials') {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: email.trim(),
-            password: password,
-            options: {
-              emailRedirectTo: undefined // Disable email confirmation
-            }
-          });
-
-          if (signUpError) throw new Error(`Failed to create admin account: ${signUpError.message}`);
-
-          if (!signUpData.user) {
-            throw new Error('Account creation failed - no user data received');
-          }
-
-          // Update authData and clear authError after successful sign up
-          authData = signUpData;
-          authError = null;
-
-          // Create admin profile
-          const { error: createAdminError } = await supabase
-            .from('user_profiles')
-            .insert({
-              id: authData.user.id,
-              employee_id: null,
-              role: 'admin'
-            });
-
-          if (createAdminError) {
-            console.error('Error creating admin profile:', createAdminError);
-          }
-
-          // Update user metadata to include admin role claim
-          try {
-            const { error: updateError } = await supabase.auth.updateUser({
-              data: { 
-                role: 'admin',
-                is_admin: true,
-                email: email.trim()
-              }
-            });
-            
-            if (updateError) {
-              console.error('Error updating user metadata:', updateError);
-            }
-          } catch (metadataError) {
-            console.error('Error setting admin metadata:', metadataError);
-          }
-        }
-
-        // If there was a different auth error, throw it
-        if (authError) throw authError;
-
-        // If sign in was successful, check/create admin profile
-        if (authData && authData.user) {
-          // Check if admin profile exists, create if not
-          const { data: adminProfile, error: adminProfileError } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', authData.user.id)
-            .single();
-
-          if (adminProfileError && adminProfileError.code === 'PGRST116') {
-            // Profile doesn't exist, create it
-            const { error: createAdminError } = await supabase
-              .from('user_profiles')
-              .insert({
-                id: authData.user.id,
-                employee_id: null,
-                role: 'admin'
-              });
-
-            if (createAdminError) {
-              console.error('Error creating admin profile:', createAdminError);
-            }
-          }
-
-          // Ensure admin metadata is set
-          try {
-            const { error: updateError } = await supabase.auth.updateUser({
-              data: { 
-                role: 'admin',
-                is_admin: true,
-                email: email.trim()
-              }
-            });
-            
-            if (updateError) {
-              console.error('Error updating user metadata:', updateError);
-            }
-          } catch (metadataError) {
-            console.error('Error setting admin metadata:', metadataError);
-          }
-          onLoginSuccess('admin');
-          return;
-        }
-      }
-
-      // Sign in with Supabase Auth
+      // 1) Try to sign in with Supabase
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password,
+        email: email.trim().toLowerCase(),
+        password,
       });
 
-      if (authError) throw authError;
-
-      if (!authData.user) {
-        throw new Error('Login failed - no user data received');
+      if (authError || !authData?.user) {
+        // Keep this message generic for security
+        throw new Error('Invalid email or password.');
       }
 
-      // Get user profile to determine role
+      // 2) Fetch user profile to determine the role
+      //    user_profiles includes role + (optionally) a linked employee
       const { data: profile, error: profileError } = await supabase
         .from('user_profiles')
-        .select(`
+        .select(
+          `
           *,
           employee:employees(*)
-        `)
+        `
+        )
         .eq('id', authData.user.id)
         .single();
 
-      if (profileError) {
-        // If no profile found, try to find employee by user_id
-        const { data: employee, error: employeeError } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('user_id', authData.user.id)
-          .single();
-
-        if (employeeError || !employee) {
-          throw new Error('User profile not found. Please contact your administrator.');
-        }
-
-        // Create missing profile
-        const { error: createProfileError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: authData.user.id,
-            employee_id: employee.id,
-            role: 'employee'
-          });
-
-        if (createProfileError) {
-          console.error('Error creating profile:', createProfileError);
-        }
-
-        // Login as employee
-        onLoginSuccess('employee', employee);
-        return;
+      // If there is no profile row, we can’t determine role → block access
+      if (profileError || !profile) {
+        // You can keep this friendly; it’s not leaking secrets
+        throw new Error(
+          'Your account is not fully set up. Please contact your administrator.'
+        );
       }
 
-      // Handle case where profile exists but no employee data
-      if (!profile.employee && profile.role === 'employee') {
-        throw new Error('Employee data not found. Please contact your administrator.');
-      }
-
-      // Login successful with existing profile
+      // 3) Send the user to the correct app based on role
       if (profile.role === 'admin') {
-        onLoginSuccess('admin');
+        onLoginSuccess('admin'); // No employee data for admin
+      } else if (profile.role === 'employee') {
+        // Some apps attach the employee data here
+        onLoginSuccess('employee', profile.employee ?? null);
       } else {
-        onLoginSuccess('employee', profile.employee);
+        // Unknown role fallback
+        throw new Error(
+          'Your role is not recognized. Please contact your administrator.'
+        );
       }
-
-    } catch (error: any) {
-      console.error('Login error:', error);
-      setError(error.message || 'Login failed. Please check your credentials.');
+    } catch (err: any) {
+      setError(err?.message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="mx-auto w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mb-6">
-            <Car className="h-10 w-10 text-blue-600" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center px-4">
+      <div className="w-full max-w-md">
+        {/* Card */}
+        <div className="bg-white shadow-xl rounded-2xl p-8 border border-slate-200">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+              <Car className="w-7 h-7 text-blue-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              Vehicle & Plant Portal
+            </h1>
+            <p className="text-slate-600 mt-1">Sign in to continue</p>
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            Vehicle Inspection System
-          </h1>
-          <p className="text-slate-600">
-            Sign in to access your dashboard
-          </p>
-        </div>
 
-        {/* Login Form */}
-        <div className="bg-white rounded-2xl shadow-lg p-8">
-          <form onSubmit={handleLogin} className="space-y-6">
-            {/* Email Field */}
+          {/* Error banner */}
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              {error}
+            </div>
+          )}
+
+          {/* Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            {/* Email */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Email Address
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Email
               </label>
               <input
                 type="email"
+                autoComplete="email"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                placeholder="Enter your email"
                 required
-                disabled={loading}
               />
             </div>
 
-            {/* Password Field */}
+            {/* Password with show/hide toggle */}
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
                 Password
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 pr-12 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                  placeholder="Enter your password"
                   required
-                  disabled={loading}
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-                  disabled={loading}
+                  onClick={() => setShowPassword((s) => !s)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-500 hover:text-slate-700"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-red-800 text-sm">{error}</p>
-              </div>
-            )}
-
-            {/* Login Button */}
+            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              className="w-full inline-flex items-center justify-center space-x-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-60"
             >
-              {loading ? (
-                <>
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn className="h-5 w-5" />
-                  <span>Sign In</span>
-                </>
-              )}
+              <LogIn className="w-4 h-4" />
+              <span>{loading ? 'Signing in…' : 'Sign In'}</span>
             </button>
           </form>
 
           {/* Footer */}
           <div className="mt-6 pt-6 border-t border-slate-200">
             <p className="text-center text-sm text-slate-600">
-              Need access? Contact your system administrator
+              Don’t have an account? Ask your administrator to create one for you.
             </p>
           </div>
         </div>
