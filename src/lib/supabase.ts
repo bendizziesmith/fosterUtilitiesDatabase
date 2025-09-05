@@ -65,7 +65,11 @@ export interface InspectionItem {
   item_name: string;
   status: 'no_defect' | 'defect';
   notes?: string;
+  comments?: string;
   photo_url?: string;
+  defect_severity?: string;
+  action_required?: boolean;
+  completion_date?: string;
 }
 
 export interface PlantRecord {
@@ -166,6 +170,44 @@ export interface MollsworthWorkRate {
   col4_param: string;
   rate_gbp: number;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// HAVs Timesheet types
+export interface HavsTimesheet {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  employee_no?: string;
+  week_ending: string;
+  comments?: string;
+  actions?: string;
+  supervisor_name?: string;
+  supervisor_signature?: string;
+  date_signed?: string;
+  status: 'draft' | 'submitted';
+  submitted_at?: string;
+  total_hours: number;
+  created_at: string;
+  updated_at: string;
+  employee?: Employee;
+  havs_entries?: HavsTimesheetEntry[];
+}
+
+export interface HavsTimesheetEntry {
+  id: string;
+  timesheet_id: string;
+  equipment_name: string;
+  equipment_category: 'CIVILS' | 'JOINTING' | 'OVERHEADS' | 'EARTH PIN DRIVER';
+  monday_hours: number;
+  tuesday_hours: number;
+  wednesday_hours: number;
+  thursday_hours: number;
+  friday_hours: number;
+  saturday_hours: number;
+  sunday_hours: number;
+  total_hours: number;
   created_at: string;
   updated_at: string;
 }

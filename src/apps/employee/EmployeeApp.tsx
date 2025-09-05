@@ -6,6 +6,7 @@ import { SuccessMessage } from './components/SuccessMessage';
 import { NewTimesheetForm } from '../../pages/employee/NewTimesheetForm';
 import { TimesheetList } from './components/TimesheetList';
 import { TimesheetSuccessMessage } from './components/TimesheetSuccessMessage';
+import { HavsTimesheetForm } from './components/HavsTimesheetForm';
 import { supabase, Vehicle, ChecklistTemplate, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -14,7 +15,7 @@ interface EmployeeAppProps {
   currentEmployee: Employee | null;
 }
 
-type CurrentView = 'landing' | 'inspection' | 'timesheet' | 'timesheet-form';
+type CurrentView = 'landing' | 'inspection' | 'timesheet' | 'timesheet-form' | 'havs';
 
 export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmployee }) => {
   const [currentView, setCurrentView] = useState<CurrentView>('landing');
@@ -113,6 +114,8 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
     if (tab === 'timesheet') {
       // For timesheet tab, show the list by default
       setCurrentView('timesheet');
+    } else if (tab === 'havs') {
+      setCurrentView('havs');
     } else {
       handleTaskSelect(tab);
     }
@@ -163,6 +166,8 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return 'Your Timesheets';
         case 'timesheet-form':
           return 'New Timesheet';
+        case 'havs':
+          return 'HAVs Timesheet';
         default:
           return `Home`;
       }
@@ -181,6 +186,8 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return 'Price Work & Day Rate Timesheets';
         case 'timesheet-form':
           return 'NSF Utilities Timesheet';
+        case 'havs':
+          return 'Hand Arm Vibration Syndrome Exposure Record';
         default:
           return selectedEmployee.role;
       }
@@ -267,6 +274,17 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
                   <p className="text-slate-600 text-sm">Submit price work and day rate timesheets</p>
                 </div>
               </div>
+              
+              {/* HAVs Timesheet */}
+              <div
+                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
+                onClick={() => handleTaskSelect('havs')}
+              >
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">HAVs Timesheet</h3>
+                  <p className="text-slate-600 text-sm">Record exposure time for vibrating equipment</p>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -309,6 +327,14 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           />
         );
 
+      case 'havs':
+        return (
+          <HavsTimesheetForm
+            selectedEmployee={selectedEmployee}
+            onBack={() => setCurrentView('landing')}
+          />
+        );
+
       case 'timesheet-form':
         return (
           <NewTimesheetForm
@@ -341,6 +367,16 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
                   <p className="text-slate-600 text-sm">Submit price work and day rate timesheets</p>
                 </div>
               </div>
+              
+              <div
+                className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden group cursor-pointer"
+                onClick={() => handleTaskSelect('havs')}
+              >
+                <div className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">HAVs Timesheet</h3>
+                  <p className="text-slate-600 text-sm">Record exposure time for vibrating equipment</p>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -358,9 +394,9 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
         {renderCurrentView()}
       </Layout>
       
-      {currentView !== 'landing' && currentView !== 'timesheet-form' && selectedEmployee && (
+      {currentView !== 'landing' && currentView !== 'timesheet-form' && currentView !== 'havs' && selectedEmployee && (
         <TabNavigation 
-          activeTab={currentView === 'timesheet' ? 'timesheet' : currentView as TabType} 
+          activeTab={currentView === 'timesheet' ? 'timesheet' : currentView === 'havs' ? 'havs' : currentView as TabType} 
           onTabChange={handleTabChange} 
         />
       )}

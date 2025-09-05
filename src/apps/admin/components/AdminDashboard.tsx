@@ -105,6 +105,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onClick: () => navigate('/timesheets')
     },
     {
+      title: 'HAVs Timesheets',
+      description: 'Monitor Hand Arm Vibration Syndrome exposure records',
+      icon: Shield,
+      color: 'from-orange-500 to-orange-600',
+      lightColor: 'bg-orange-50',
+      iconColor: 'text-orange-600',
+      stats: {
+        primary: 'Safety',
+        secondary: 'Exposure tracking',
+        status: 'positive'
+      },
+      onClick: () => navigate('/havs-timesheets')
+    },
+    {
       title: 'Management Hub',
       description: 'Manage staff, vehicles, and work rates',
       icon: Users,
@@ -138,7 +152,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Primary Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
         {primaryActions.map((action, index) => {
           const Icon = action.icon;
           

@@ -16,6 +16,7 @@ import { WorkRateManagement } from './components/WorkRateManagement';
 import { IpsomRatesManagement } from './components/IpsomRatesManagement';
 import { MollsworthRatesManagement } from './components/MollsworthRatesManagement';
 import { MollsworthWorkRatesManagement } from './components/MollsworthWorkRatesManagement';
+import { HavsTimesheetsTable } from './components/HavsTimesheetsTable';
 import { supabase, VehicleInspection, PlantRecord, Employee, Timesheet } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -176,6 +177,8 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Employee Management';
       case '/vehicles':
         return 'Vehicle Management';
+      case '/havs-timesheets':
+        return 'HAVs Timesheets';
       default:
         return 'Employer Dashboard';
     }
@@ -206,6 +209,8 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Mollsworth Work Rates & Pricing';
       case '/mollsworth-rates':
         return 'Mollsworth Work Rates & Pricing';
+      case '/havs-timesheets':
+        return 'Hand Arm Vibration Syndrome Records';
       default:
         return 'Management Overview';
     }
@@ -321,6 +326,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         <Route 
           path="/mollsworth-work-rates" 
           element={<MollsworthWorkRatesManagement />} 
+        />
+        <Route 
+          path="/havs-timesheets" 
+          element={<HavsTimesheetsTable employees={employees} />} 
         />
       </Routes>
     </Layout>
