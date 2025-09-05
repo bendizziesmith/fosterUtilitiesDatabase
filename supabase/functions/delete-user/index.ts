@@ -1,85 +1,72 @@
-// supabase/functions/delete-user-by-employee/index.ts
-// Deno (Supabase Edge Function)
-// Deletes the auth user + user_profiles row linked to an employees.id
+// supabase/functions/delete-employee/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.3";
-
-type Payload = {
-  employee_id: string;
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders(req) });
-  }
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405);
+    if (req.method !== 'POST') {
+      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), {
+        status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-      return json({ error: "Server misconfigured: missing env" }, 500);
+    const { employee_id } = await req.json();
+    if (!employee_id) {
+      return new Response(JSON.stringify({ ok: false, error: 'employee_id is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false },
-    });
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
 
-    const body = (await req.json()) as Partial<Payload> | null;
-    if (!body?.employee_id) return json({ error: "employee_id is required" }, 400);
-    const employee_id = body.employee_id;
-
-    // 1) Find user_profile linked to this employee
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("employee_id", employee_id)
+    // 1) If there is a linked auth user (via user_profiles), delete it first
+    const { data: profile, error: profErr } = await supabase
+      .from('user_profiles')
+      .select('id')              // id == auth user id
+      .eq('employee_id', employee_id)
       .maybeSingle();
-
-    if (profileErr) return json({ error: profileErr.message }, 400);
-
-    if (!profile) {
-      // No profile linked → nothing to remove in auth.users
-      return json({ ok: true, info: "No linked user profile; nothing to delete." }, 200);
+    if (profErr) {
+      return new Response(JSON.stringify({ ok: false, error: profErr.message }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    const authUserId = profile.id;
+    if (profile?.id) {
+      const { error: delAuthErr } = await supabase.auth.admin.deleteUser(profile.id);
+      if (delAuthErr) {
+        return new Response(JSON.stringify({ ok: false, error: delAuthErr.message }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      // remove the profile row
+      await supabase.from('user_profiles').delete().eq('employee_id', employee_id);
+    }
 
-    // 2) Delete user_profile row first (to avoid dangling FK to employee if you cascade employee later)
-    const { error: delProfErr } = await supabaseAdmin
-      .from("user_profiles")
-      .delete()
-      .eq("id", authUserId);
+    // 2) Finally delete the employee row
+    const { error: delEmpErr } = await supabase.from('employees').delete().eq('id', employee_id);
+    if (delEmpErr) {
+      return new Response(JSON.stringify({ ok: false, error: delEmpErr.message }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    if (delProfErr) return json({ error: delProfErr.message }, 400);
-
-    // 3) Delete Auth user (requires service role)
-    const { error: delAuthErr } = await supabaseAdmin.auth.admin.deleteUser(authUserId);
-    if (delAuthErr) return json({ error: delAuthErr.message }, 400);
-
-    return json({ ok: true, deleted_auth_user_id: authUserId });
-  } catch (e) {
-    return json({ error: (e as Error).message ?? "Unexpected error" }, 500);
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ ok: false, error: e?.message || 'Unexpected error' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
-
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...corsHeaders() },
-  });
-}
-
-function corsHeaders(req?: Request): HeadersInit {
-  const origin = req?.headers.get("Origin") || "*";
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  };
-}
