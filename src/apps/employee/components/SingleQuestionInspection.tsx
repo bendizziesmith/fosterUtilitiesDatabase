@@ -449,9 +449,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                         formData.useAssignedVehicle
                           ? 'border-blue-600 bg-blue-600'
                           : 'border-slate-300'
-                         <span className="text-sm text-red-700">
-                           {formData.inspectionItems[currentQuestionIndex].photo.name}
-                         </span>
+                      }`}>
+                        {formData.useAssignedVehicle && (
+                          <div className="w-2 h-2 rounded-full bg-white"></div>
                         )}
                       </div>
                       <div className="text-center">
@@ -483,7 +483,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                   className="sr-only"
                 />
                 <div className="flex items-center space-x-4">
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  <div className={\`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                     !formData.useAssignedVehicle
                       ? 'border-blue-600 bg-blue-600'
                       : 'border-slate-300'
@@ -581,7 +581,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                 type="number"
                 value={formData.odometerReading}
                 onChange={(e) => handleOdometerChange(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg ${
+                className={\`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg ${
                   errors.odometer ? 'border-red-300' : 'border-slate-300'
                 }`}
                 placeholder="Enter current reading..."
@@ -637,7 +637,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                     <button
                       type="button"
                       onClick={() => handleDefectFixedResponse(true)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                      className={\`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                         formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
                           ? 'bg-green-100 text-green-700 border-2 border-green-300'
                           : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent hover:border-green-200'
@@ -649,7 +649,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                     <button
                       type="button"
                       onClick={() => handleDefectFixedResponse(false)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                      className={\`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                         formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
                           ? 'bg-red-100 text-red-700 border-2 border-red-300'
                           : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent hover:border-red-200'
@@ -697,7 +697,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                   onClick={() => updateCurrentInspectionItem('status', 'ok')}
                   disabled={formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
                            formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false}
-                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
+                  className={\`p-8 rounded-2xl border-2 transition-all duration-200 ${
                     formData.inspectionItems[currentQuestionIndex].status === 'ok'
                       ? 'border-green-500 bg-green-50 shadow-lg scale-105'
                       : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
@@ -728,7 +728,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                   onClick={() => updateCurrentInspectionItem('status', 'defect')}
                   disabled={formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
                            formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true}
-                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
+                  className={\`p-8 rounded-2xl border-2 transition-all duration-200 ${
                     formData.inspectionItems[currentQuestionIndex].status === 'defect'
                       ? 'border-red-500 bg-red-50 shadow-lg scale-105'
                       : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
@@ -769,8 +769,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                       Comments {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect ? '(Optional - continuing previous defect)' : '(Required)'}
                     </label>
                     <textarea
-                      value={formData.inspectionItems[currentQuestionIndex].comments}
-                      onChange={(e) => updateCurrentInspectionItem('comments', e.target.value)}
+                      value={formData.inspectionItems[currentQuestionIndex].notes}
+                      onChange={(e) => updateCurrentInspectionItem('notes', e.target.value)}
                       className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                       rows={3}
                       placeholder={
@@ -797,8 +797,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                         />
                       </label>
                       {formData.inspectionItems[currentQuestionIndex].photo && (
-                        value={formData.inspectionItems[currentQuestionIndex].notes}
-                        onChange={(e) => updateCurrentInspectionItem('notes', e.target.value)}
+                        <span className="text-sm text-red-700">
+                          {formData.inspectionItems[currentQuestionIndex].photo.name}
                         </span>
                       )}
                     </div>
@@ -882,7 +882,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                           <button
                             type="button"
                             onClick={() => updateAdditionalItem(index, 'status', 'ok')}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={\`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
                               item.status === 'ok'
                                 ? 'bg-green-100 text-green-700 border-2 border-green-300'
                                 : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent hover:border-green-200'
@@ -894,7 +894,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                           <button
                             type="button"
                             onClick={() => updateAdditionalItem(index, 'status', 'defect')}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={\`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
                               item.status === 'defect'
                                 ? 'bg-red-100 text-red-700 border-2 border-red-300'
                                 : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent hover:border-red-200'
