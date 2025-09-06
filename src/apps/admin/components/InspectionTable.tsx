@@ -301,9 +301,17 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
       // Only count Monday-Friday checks (first 5 days)
       sum + emp.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length, 0
     ),
-    defectsFound: selectedWeekData.employees.reduce((sum, emp) => 
-      sum + emp.dailyChecks.filter(check => check.hasDefects).length, 0
-    ),
+    defectsFound: selectedWeekData.employees.reduce((sum, emp) => {
+      // Only count days with active defects (not fixed ones)
+      const activeDaysWithDefects = emp.dailyChecks.filter(check => {
+        if (!check.inspection || !check.inspection.inspection_items) return false;
+        return check.inspection.inspection_items.some(item => 
+          item.status === 'defect' && 
+          (!item.defect_status || item.defect_status === 'active')
+        );
+      }).length;
+      return sum + activeDaysWithDefects;
+    }, 0),
     totalAllChecks: selectedWeekData.employees.reduce((sum, emp) => 
       sum + emp.dailyChecks.filter(check => check.hasCheck).length, 0
     )
@@ -321,14 +329,24 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
     
     selectedWeekData.employees.forEach(empData => {
       empData.dailyChecks.forEach(dayCheck => {
-        if (dayCheck.hasDefects && dayCheck.inspection) {
-          const defectCount = dayCheck.inspection.inspection_items?.filter(item => item.status === 'defect').length || 0;
+        if (dayCheck.inspection) {
+          // Only count active defects (not fixed ones)
+          const activeDefects = dayCheck.inspection.inspection_items?.filter(item => 
+            item.status === 'defect' && 
+            (!item.defect_status || item.defect_status === 'active')
+          ) || [];
+          
+          const defectCount = activeDefects.length;
+          
+          // Only add to defects summary if there are active defects
+          if (defectCount > 0) {
           defects.push({
             employee: empData.employee,
             inspection: dayCheck.inspection,
             defectCount,
             date: dayCheck.date
           });
+          }
         }
       });
     });
@@ -505,7 +523,14 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
                 {selectedWeekData.employees.map((empData) => {
                   const weekdayChecks = empData.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length;
                   const weekendChecks = empData.dailyChecks.slice(5).filter(check => check.hasCheck).length;
-                  const defectDays = empData.dailyChecks.filter(check => check.hasDefects).length;
+                  // Only count days with active defects (not fixed ones)
+                  const defectDays = empData.dailyChecks.filter(check => {
+                    if (!check.inspection || !check.inspection.inspection_items) return false;
+                    return check.inspection.inspection_items.some(item => 
+                      item.status === 'defect' && 
+                      (!item.defect_status || item.defect_status === 'active')
+                    );
+                  }).length;
                   
                   return (
                     <tr key={empData.employee.id} className="hover:bg-slate-50">
@@ -531,21 +556,31 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
                           <div className="flex flex-col items-center space-y-1">
                             {dayCheck.hasCheck ? (
                               <>
+                                {(() => {
+                                  // Check if this inspection has any active defects
+                                  const hasActiveDefects = dayCheck.inspection?.inspection_items?.some(item => 
+                                    item.status === 'defect' && 
+                                    (!item.defect_status || item.defect_status === 'active')
+                                  ) || false;
+                                  
+                                  return (
                                 <div
                                   className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                                    dayCheck.hasDefects
+                                    hasActiveDefects
                                       ? 'bg-red-100 hover:bg-red-200'
                                       : 'bg-green-100 hover:bg-green-200'
                                   }`}
                                   onClick={() => dayCheck.inspection && onViewInspection(dayCheck.inspection)}
-                                  title={`Click to view details - ${dayCheck.hasDefects ? 'Has defects' : 'All clear'}`}
+                                  title={`Click to view details - ${hasActiveDefects ? 'Has active defects' : 'All clear'}`}
                                 >
-                                  {dayCheck.hasDefects ? (
+                                  {hasActiveDefects ? (
                                     <AlertTriangle className="h-4 w-4 text-red-600" />
                                   ) : (
                                     <CheckCircle className="h-4 w-4 text-green-600" />
                                   )}
                                 </div>
+                                  );
+                                })()}
                                 <div className="flex space-x-1">
                                   <button
                                     onClick={() => dayCheck.inspection && onViewInspection(dayCheck.inspection)}

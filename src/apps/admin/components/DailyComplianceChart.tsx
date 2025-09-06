@@ -35,32 +35,9 @@ export const DailyComplianceChart: React.FC<DailyComplianceChartProps> = ({
       .map(inspection => inspection.employee_id)
   );
 
-  const completedCount = employeesWithChecksToday.size;
-  const totalEmployees = employees.length;
-  const pendingCount = totalEmployees - completedCount;
-  
-  // Calculate inspections with fixed defects today
+  // Calculate inspections with fixed defects today (using defect_fixed flag)
   const inspectionsWithFixedDefectsToday = todayInspections.filter(inspection => {
-    const hasFixedDefects = inspection.inspection_items?.some(item => {
-      if (item.status !== 'no_defect') return false;
-      
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const previousInspections = inspections.filter(prevInspection => 
-        prevInspection.vehicle_id === inspection.vehicle_id &&
-        new Date(prevInspection.submitted_at) >= sevenDaysAgo &&
-        new Date(prevInspection.submitted_at) < new Date(inspection.submitted_at)
-      );
-      
-      return previousInspections.some(prevInspection =>
-        prevInspection.inspection_items?.some(prevItem =>
-          prevItem.item_name === item.item_name && prevItem.status === 'defect'
-        )
-      );
-    });
-    
-    return hasFixedDefects;
+    return inspection.inspection_items?.some(item => item.defect_fixed === true) || false;
   }).length;
   
   const completedPercentage = totalEmployees > 0 ? (completedCount / totalEmployees) * 100 : 0;

@@ -53,26 +53,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    const previousInspections = inspections.filter(prev => 
-      prev.vehicle_id === inspection.vehicle_id &&
-      new Date(prev.submitted_at) >= sevenDaysAgo &&
-      new Date(prev.submitted_at) < new Date(inspection.submitted_at) &&
-      prev.inspection_items && prev.inspection_items.length > 0
-    );
-    
-    if (previousInspections.length === 0) return false;
-    
-    // Check if any current OK items were previously defective
-    return inspection.inspection_items.some(currentItem => {
-      if (currentItem.status !== 'no_defect') return false;
-      
-      return previousInspections.some(prevInspection =>
-        prevInspection.inspection_items!.some(prevItem =>
-          prevItem.item_name === currentItem.item_name && 
-          prevItem.status === 'defect'
-        )
-      );
-    });
+    // Check if this inspection has any items marked as defect_fixed
+    return inspection.inspection_items?.some(item => item.defect_fixed === true) || false;
   }).length;
 
   const primaryActions = [
