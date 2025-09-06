@@ -9,6 +9,7 @@ interface InspectionDetailsProps {
 export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection }) => {
   const defectItems = inspection.inspection_items?.filter(item => item.status === 'defect') || [];
   const passedItems = inspection.inspection_items?.filter(item => item.status === 'no_defect') || [];
+  const fixedDefectItems = inspection.inspection_items?.filter(item => item.defect_fixed) || [];
   
   // Separate vehicle checks from plant requirements
   const vehicleDefects = defectItems.filter(item => !item.item_name.startsWith('Plant Required:'));
@@ -188,8 +189,19 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
             <h4 className="text-md font-semibold text-red-800 mb-3">Vehicle Defects Found ({vehicleDefects.length})</h4>
             <div className="space-y-4">
               {vehicleDefects.map((item) => (
-                <div key={item.id} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                <div key={item.id} className={`border rounded-lg p-4 ${
+                  item.defect_status === 'fixed' 
+                    ? 'border-green-200 bg-green-50' 
+                    : 'border-red-200 bg-red-50'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
                   <h5 className="font-medium text-slate-900 mb-2">{item.item_name}</h5>
+                    {item.defect_status === 'fixed' && (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                        Defect Fixed
+                      </span>
+                    )}
+                  </div>
                   
                   {item.comments && (
                     <div className="mb-3">
@@ -225,9 +237,41 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
             <h4 className="text-md font-semibold text-green-800 mb-3">Vehicle Items Passed ({vehiclePassed.length})</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {vehiclePassed.map((item) => (
-                <div key={item.id} className="flex items-center space-x-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                <div key={item.id} className={`flex items-center space-x-2 p-3 rounded-lg border ${
+                  item.defect_fixed 
+                    ? 'bg-blue-50 border-blue-200' 
+                    : 'bg-green-50 border-green-200'
+                }`}>
                   <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
                   <span className="text-sm text-slate-900">{item.item_name}</span>
+                  {item.defect_fixed && (
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium ml-auto">
+                      Fixed
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Fixed Defects Section */}
+        {fixedDefectItems.length > 0 && (
+          <div className="mt-6">
+            <h4 className="text-md font-semibold text-blue-800 mb-3">Defects Fixed This Inspection ({fixedDefectItems.length})</h4>
+            <div className="space-y-3">
+              {fixedDefectItems.map((item) => (
+                <div key={item.id} className="flex items-center space-x-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Wrench className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-slate-900">{item.item_name}</div>
+                    <div className="text-sm text-blue-700">Previous defect has been resolved</div>
+                  </div>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-medium">
+                    Fixed
+                  </span>
                 </div>
               ))}
             </div>

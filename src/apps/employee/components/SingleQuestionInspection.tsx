@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Car, CheckCircle, XCircle, Camera, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Car, CheckCircle, XCircle, Camera, ArrowRight, ArrowLeft, Wrench, AlertTriangle } from 'lucide-react';
 import { supabase, Vehicle, Employee, uploadInspectionPhoto } from '../../../lib/supabase';
 
 interface SingleQuestionInspectionProps {
@@ -14,6 +14,9 @@ interface InspectionItem {
   status: 'ok' | 'defect' | null;
   comments: string;
   photo: File | null;
+  previousDefectId?: string;
+  wasDefectFixed?: boolean;
+  hasPreviousDefect?: boolean;
 }
 
 interface FormData {
@@ -50,6 +53,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loadingPreviousDefects, setLoadingPreviousDefects] = useState(false);
 
   const [formData, setFormData] = useState<FormData>({
     vehicleId: assignedVehicle?.id || '',
@@ -64,6 +68,81 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     })),
     additionalItems: [],
   });
+
+  // Load previous defects when component mounts or vehicle changes
+  React.useEffect(() => {
+    if (formData.vehicleId || formData.overrideVehicleRegistration) {
+      loadPreviousDefects();
+    }
+  }, [formData.vehicleId, formData.overrideVehicleRegistration]);
+
+  const loadPreviousDefects = async () => {
+    setLoadingPreviousDefects(true);
+    try {
+      // Get the last 7 days of inspections for this vehicle
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      let vehicleQuery = supabase
+        .from('vehicle_inspections')
+        .select(`
+          *,
+          inspection_items(*)
+        `)
+        .gte('submitted_at', sevenDaysAgo.toISOString())
+        .order('submitted_at', { ascending: false });
+
+      // Filter by vehicle
+      if (formData.useAssignedVehicle && formData.vehicleId) {
+        vehicleQuery = vehicleQuery.eq('vehicle_id', formData.vehicleId);
+      } else if (formData.overrideVehicleRegistration) {
+        vehicleQuery = vehicleQuery.eq('override_vehicle_registration', formData.overrideVehicleRegistration);
+      } else if (formData.vehicleId) {
+        vehicleQuery = vehicleQuery.eq('vehicle_id', formData.vehicleId);
+      }
+
+      const { data: previousInspections, error } = await vehicleQuery;
+      
+      if (error) throw error;
+
+      // Find defects from previous inspections
+      const previousDefects: { [itemName: string]: any } = {};
+      
+      if (previousInspections) {
+        previousInspections.forEach(inspection => {
+          if (inspection.inspection_items) {
+            inspection.inspection_items.forEach((item: any) => {
+              if (item.status === 'defect' && item.defect_status !== 'fixed') {
+                // Only track the most recent defect for each item
+                if (!previousDefects[item.item_name] || 
+                    new Date(inspection.submitted_at) > new Date(previousDefects[item.item_name].submitted_at)) {
+                  previousDefects[item.item_name] = {
+                    ...item,
+                    submitted_at: inspection.submitted_at
+                  };
+                }
+              }
+            });
+          }
+        });
+      }
+
+      // Update inspection items with previous defect information
+      setFormData(prev => ({
+        ...prev,
+        inspectionItems: prev.inspectionItems.map(item => ({
+          ...item,
+          hasPreviousDefect: !!previousDefects[item.name],
+          previousDefectId: previousDefects[item.name]?.id,
+        }))
+      }));
+
+    } catch (error) {
+      console.error('Error loading previous defects:', error);
+    } finally {
+      setLoadingPreviousDefects(false);
+    }
+  };
 
   const handleVehicleToggle = (useAssigned: boolean) => {
     setFormData(prev => ({ 
@@ -97,6 +176,16 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         i === currentQuestionIndex ? { ...item, [field]: value } : item
       )
     }));
+  };
+
+  const handleDefectFixedResponse = (wasFixed: boolean) => {
+    updateCurrentInspectionItem('wasDefectFixed', wasFixed);
+    if (wasFixed) {
+      updateCurrentInspectionItem('status', 'ok');
+      updateCurrentInspectionItem('comments', 'Previous defect has been fixed');
+    } else {
+      updateCurrentInspectionItem('status', 'defect');
+    }
   };
 
   const validateVehicleStep = (): boolean => {
@@ -201,15 +290,34 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             photoUrl = await uploadInspectionPhoto(item.photo, inspection.id, item.name);
           }
 
-          itemsToInsert.push({
+          const itemData: any = {
             inspection_id: inspection.id,
             item_name: item.name.trim(),
             status: item.status === 'ok' ? 'no_defect' : 'defect',
-            notes: item.comments.trim() || null,
+            comments: item.comments.trim() || null,
             photo_url: photoUrl,
             defect_severity: item.status === 'defect' ? 'medium' : null,
             action_required: item.status === 'defect',
-          });
+          };
+
+          // Handle defect tracking
+          if (item.hasPreviousDefect && item.wasDefectFixed) {
+            itemData.defect_fixed = true;
+            itemData.previous_defect_id = item.previousDefectId;
+            itemData.defect_status = 'fixed';
+            
+            // Update the previous defect to mark it as fixed
+            if (item.previousDefectId) {
+              await supabase
+                .from('inspection_items')
+                .update({ defect_status: 'fixed' })
+                .eq('id', item.previousDefectId);
+            }
+          } else if (item.status === 'defect') {
+            itemData.defect_status = 'active';
+          }
+
+          itemsToInsert.push(itemData);
         }
       }
 
@@ -510,6 +618,51 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         {/* Step 3: Single Question Format */}
         {currentStep === 'inspection' && (
           <div className="space-y-6">
+            {/* Previous Defect Warning */}
+            {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="p-2 bg-amber-100 rounded-lg">
+                    <AlertTriangle className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-amber-800">Previous Defect Found</h3>
+                    <p className="text-amber-700">This item had a defect in a recent inspection.</p>
+                  </div>
+                </div>
+                
+                <div className="bg-white border border-amber-200 rounded-lg p-4 mb-4">
+                  <h4 className="font-medium text-slate-900 mb-2">Has this defect been fixed?</h4>
+                  <div className="flex space-x-3">
+                    <button
+                      type="button"
+                      onClick={() => handleDefectFixedResponse(true)}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
+                          ? 'bg-green-100 text-green-700 border-2 border-green-300'
+                          : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent hover:border-green-200'
+                      }`}
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Yes, Fixed</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDefectFixedResponse(false)}
+                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
+                          ? 'bg-red-100 text-red-700 border-2 border-red-300'
+                          : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent hover:border-red-200'
+                      }`}
+                    >
+                      <XCircle className="h-4 w-4" />
+                      <span>Still Defective</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="text-center mb-8">
               <div className="text-sm text-slate-500 mb-2">
                 Question {currentQuestionIndex + 1} of {formData.inspectionItems.length}
@@ -520,6 +673,12 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
               <p className="text-slate-600">
                 Check this item and select the appropriate status
               </p>
+              {loadingPreviousDefects && (
+                <div className="flex items-center justify-center space-x-2 text-blue-600 mt-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <span className="text-sm">Checking for previous defects...</span>
+                </div>
+              )}
             </div>
 
             {errors.question && (
@@ -529,60 +688,96 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             )}
 
             {/* Large Action Buttons */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <button
-                type="button"
-                onClick={() => updateCurrentInspectionItem('status', 'ok')}
-                className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
-                  formData.inspectionItems[currentQuestionIndex].status === 'ok'
-                    ? 'border-green-500 bg-green-50 shadow-lg scale-105'
-                    : 'border-slate-200 hover:border-green-300 hover:bg-green-50 hover:scale-102'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+            {/* Only show action buttons if no previous defect or defect response has been given */}
+            {(!formData.inspectionItems[currentQuestionIndex].hasPreviousDefect || 
+              formData.inspectionItems[currentQuestionIndex].wasDefectFixed !== undefined) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button
+                  type="button"
+                  onClick={() => updateCurrentInspectionItem('status', 'ok')}
+                  disabled={formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                           formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false}
+                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
+                    formData.inspectionItems[currentQuestionIndex].status === 'ok'
+                      ? 'border-green-500 bg-green-50 shadow-lg scale-105'
+                      : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
+                      ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
+                      : 'border-slate-200 hover:border-green-300 hover:bg-green-50 hover:scale-102'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle className="h-8 w-8 text-green-600" />
+                    </div>
+                    <div className="text-2xl font-bold text-green-700 mb-2">
+                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                       formData.inspectionItems[currentQuestionIndex].wasDefectFixed ? 'Fixed' : 'OK'}
+                    </div>
+                    <div className="text-sm text-green-600">
+                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                       formData.inspectionItems[currentQuestionIndex].wasDefectFixed 
+                        ? 'Defect has been resolved' 
+                        : 'Item is in good condition'}
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-green-700 mb-2">OK</div>
-                  <div className="text-sm text-green-600">Item is in good condition</div>
-                </div>
-              </button>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => updateCurrentInspectionItem('status', 'defect')}
-                className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
-                  formData.inspectionItems[currentQuestionIndex].status === 'defect'
-                    ? 'border-red-500 bg-red-50 shadow-lg scale-105'
-                    : 'border-slate-200 hover:border-red-300 hover:bg-red-50 hover:scale-102'
-                }`}
-              >
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <XCircle className="h-8 w-8 text-red-600" />
+                <button
+                  type="button"
+                  onClick={() => updateCurrentInspectionItem('status', 'defect')}
+                  disabled={formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                           formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true}
+                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
+                    formData.inspectionItems[currentQuestionIndex].status === 'defect'
+                      ? 'border-red-500 bg-red-50 shadow-lg scale-105'
+                      : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
+                      ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
+                      : 'border-slate-200 hover:border-red-300 hover:bg-red-50 hover:scale-102'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <XCircle className="h-8 w-8 text-red-600" />
+                    </div>
+                    <div className="text-2xl font-bold text-red-700 mb-2">
+                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                       formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false ? 'Still Defective' : 'Defect'}
+                    </div>
+                    <div className="text-sm text-red-600">
+                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+                       formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
+                        ? 'Defect remains unfixed'
+                        : 'Item has issues or defects'}
+                    </div>
                   </div>
-                  <div className="text-2xl font-bold text-red-700 mb-2">Defect</div>
-                  <div className="text-sm text-red-600">Item has issues or defects</div>
-                </div>
-              </button>
-            </div>
+                </button>
+              </div>
+            )}
 
             {/* Defect Details */}
-            {formData.inspectionItems[currentQuestionIndex].status === 'defect' && (
+            {formData.inspectionItems[currentQuestionIndex].status === 'defect' && 
+             !(formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && 
+               formData.inspectionItems[currentQuestionIndex].wasDefectFixed) && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-6">
                 <h3 className="text-lg font-semibold text-red-800 mb-4">Defect Details</h3>
                 
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-red-700 mb-2">
-                      Comments (Required)
+                      Comments {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect ? '(Optional - continuing previous defect)' : '(Required)'}
                     </label>
                     <textarea
                       value={formData.inspectionItems[currentQuestionIndex].comments}
                       onChange={(e) => updateCurrentInspectionItem('comments', e.target.value)}
                       className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                       rows={3}
-                      placeholder="Describe the defect in detail..."
+                      placeholder={
+                        formData.inspectionItems[currentQuestionIndex].hasPreviousDefect 
+                          ? "Add any additional comments about this continuing defect..."
+                          : "Describe the defect in detail..."
+                      }
                     />
                   </div>
                   
