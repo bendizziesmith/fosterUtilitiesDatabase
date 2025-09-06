@@ -449,9 +449,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                         formData.useAssignedVehicle
                           ? 'border-blue-600 bg-blue-600'
                           : 'border-slate-300'
-                      }`}>
-                        {formData.useAssignedVehicle && (
-                          <div className="w-2 h-2 rounded-full bg-white"></div>
+                         <span className="text-sm text-red-700">
+                           {formData.inspectionItems[currentQuestionIndex].photo.name}
+                         </span>
                         )}
                       </div>
                       <div className="text-center">
