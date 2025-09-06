@@ -659,9 +659,9 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
                           .map((item, index) => (
                             <div key={index} className="text-sm text-red-700 bg-white rounded p-2">
                               • {item.item_name}
-                              {item.comments && (
+                              {item.notes && (
                                 <div className="text-xs text-slate-600 mt-1">
-                                  Comment: {item.comments}
+                                  Comment: {item.notes}
                                 </div>
                               )}
                             </div>

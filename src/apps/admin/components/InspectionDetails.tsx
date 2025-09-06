@@ -65,7 +65,7 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
           inspection.has_defects ? 'HAS DEFECTS' : 'ALL CLEAR',
           item.item_name,
           item.status === 'defect' ? 'DEFECT' : 'OK',
-          item.comments || '',
+          item.notes || '',
           item.defect_severity || '',
           item.action_required ? 'Yes' : 'No',
           item.photo_url ? 'Yes' : 'No'
@@ -203,11 +203,11 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
                     )}
                   </div>
                   
-                  {item.comments && (
+                  {item.notes && (
                     <div className="mb-3">
                       <p className="text-sm font-medium text-slate-700 mb-1">Comments:</p>
                       <p className="text-sm text-slate-600 bg-white p-2 rounded border">
-                        {item.comments}
+                        {item.notes}
                       </p>
                     </div>
                   )}
@@ -298,11 +298,11 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
                       {item.item_name.replace('Plant Required: ', '')}
                     </h5>
                     
-                    {item.comments && (
+                    {item.notes && (
                       <div className="mb-3">
                         <p className="text-sm font-medium text-slate-700 mb-1">Comments:</p>
                         <p className="text-sm text-slate-600 bg-white p-2 rounded border">
-                          {item.comments}
+                          {item.notes}
                         </p>
                       </div>
                     )}
