@@ -12,7 +12,7 @@ interface SingleQuestionInspectionProps {
 interface InspectionItem {
   name: string;
   status: 'ok' | 'defect' | null;
-  comments: string;
+  notes: string;
   photo: File | null;
   previousDefectId?: string;
   wasDefectFixed?: boolean;
@@ -63,7 +63,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     inspectionItems: DEFAULT_CHECKLIST_ITEMS.map(name => ({
       name,
       status: null,
-      comments: '',
+      notes: '',
       photo: null,
     })),
     additionalItems: [],
@@ -182,7 +182,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     updateCurrentInspectionItem('wasDefectFixed', wasFixed);
     if (wasFixed) {
       updateCurrentInspectionItem('status', 'ok');
-      updateCurrentInspectionItem('comments', 'Previous defect has been fixed');
+      updateCurrentInspectionItem('notes', 'Previous defect has been fixed');
     } else {
       updateCurrentInspectionItem('status', 'defect');
     }
@@ -226,7 +226,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       return;
     }
 
-    if (currentItem.status === 'defect' && !currentItem.comments.trim()) {
+    if (currentItem.status === 'defect' && !currentItem.notes.trim()) {
       setErrors({ question: 'Please add comments for defects before continuing' });
       return;
     }
@@ -294,7 +294,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             inspection_id: inspection.id,
             item_name: item.name.trim(),
             status: item.status === 'ok' ? 'no_defect' : 'defect',
-            comments: item.comments.trim() || null,
+            notes: item.notes.trim() || null,
             photo_url: photoUrl,
             defect_severity: item.status === 'defect' ? 'medium' : null,
             action_required: item.status === 'defect',
@@ -357,7 +357,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       additionalItems: [...prev.additionalItems, {
         name: '',
         status: null,
-        comments: '',
+        notes: '',
         photo: null,
       }]
     }));
@@ -797,8 +797,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                         />
                       </label>
                       {formData.inspectionItems[currentQuestionIndex].photo && (
-                        <span className="text-sm text-red-700">
-                          {formData.inspectionItems[currentQuestionIndex].photo.name}
+                        value={formData.inspectionItems[currentQuestionIndex].notes}
+                        onChange={(e) => updateCurrentInspectionItem('notes', e.target.value)}
                         </span>
                       )}
                     </div>
@@ -912,8 +912,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                                 Comments (Required for defects)
                               </label>
                               <textarea
-                                value={item.comments}
-                                onChange={(e) => updateAdditionalItem(index, 'comments', e.target.value)}
+                                value={item.notes}
+                                onChange={(e) => updateAdditionalItem(index, 'notes', e.target.value)}
                                 className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                                 rows={2}
                                 placeholder="Describe the defect..."
