@@ -40,6 +40,11 @@ export const DailyComplianceChart: React.FC<DailyComplianceChartProps> = ({
     return inspection.inspection_items?.some(item => item.defect_fixed === true) || false;
   }).length;
   
+  // Calculate totals
+  const totalEmployees = employees.length;
+  const completedCount = employeesWithChecksToday.size;
+  const pendingCount = totalEmployees - completedCount;
+  
   const completedPercentage = totalEmployees > 0 ? (completedCount / totalEmployees) * 100 : 0;
   const pendingPercentage = totalEmployees > 0 ? (pendingCount / totalEmployees) * 100 : 0;
 
