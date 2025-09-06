@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Car, CheckCircle, XCircle, Camera, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { supabase, Vehicle, Employee, uploadInspectionPhoto } from '../../../lib/supabase';
 
@@ -9,13 +9,15 @@ interface SingleQuestionInspectionProps {
   onBack: () => void;
 }
 
+type ItemStatus = 'ok' | 'defect' | null;
+
 interface InspectionItem {
   name: string;
-  status: 'ok' | 'defect' | null;
+  status: ItemStatus;
   notes: string;
   photo: File | null;
   previousDefectId?: string;
-  wasDefectFixed?: boolean;
+  wasDefectFixed?: boolean;  // only used when a previous defect exists
   hasPreviousDefect?: boolean;
 }
 
@@ -47,14 +49,15 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
   onSubmissionSuccess,
   onBack,
 }) => {
-  const assignedVehicle = selectedEmployee.assigned_vehicle as (Vehicle | null | undefined);
+  const assignedVehicle = (selectedEmployee.assigned_vehicle || null) as Vehicle | null;
 
   const [currentStep, setCurrentStep] =
     useState<'vehicle' | 'odometer' | 'inspection' | 'additional'>('vehicle');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingPreviousDefects, setLoadingPreviousDefects] = useState(false);
+
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState<FormData>({
     vehicleId: assignedVehicle?.id || '',
@@ -70,15 +73,17 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     additionalItems: [],
   });
 
-  // Small helpers so JSX stays simple
-  const goToOdometer = () => {
-    if (validateVehicleStep()) setCurrentStep('odometer');
-  };
-  const startDailyCheck = () => {
-    if (validateOdometerStep()) setCurrentStep('inspection');
-  };
+  // Reset when employee changes (e.g., admin switches user)
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      vehicleId: assignedVehicle?.id || '',
+      useAssignedVehicle: !!assignedVehicle,
+      overrideVehicleRegistration: '',
+    }));
+  }, [selectedEmployee.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load previous defects whenever vehicle changes
+  // Load “previous defects” whenever target vehicle changes
   useEffect(() => {
     if (formData.vehicleId || formData.overrideVehicleRegistration) {
       loadPreviousDefects();
@@ -92,49 +97,44 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      let vehicleQuery = supabase
+      // Pull recent inspections + items for this vehicle or override reg
+      let q = supabase
         .from('vehicle_inspections')
         .select(
           `
-          *,
-          inspection_items(*)
+          id,
+          submitted_at,
+          override_vehicle_registration,
+          vehicle_id,
+          inspection_items(id,item_name,status,defect_status)
         `
         )
         .gte('submitted_at', sevenDaysAgo.toISOString())
         .order('submitted_at', { ascending: false });
 
       if (formData.useAssignedVehicle && formData.vehicleId) {
-        vehicleQuery = vehicleQuery.eq('vehicle_id', formData.vehicleId);
+        q = q.eq('vehicle_id', formData.vehicleId);
       } else if (formData.overrideVehicleRegistration) {
-        vehicleQuery = vehicleQuery.eq('override_vehicle_registration', formData.overrideVehicleRegistration);
+        q = q.eq('override_vehicle_registration', formData.overrideVehicleRegistration);
       } else if (formData.vehicleId) {
-        vehicleQuery = vehicleQuery.eq('vehicle_id', formData.vehicleId);
+        q = q.eq('vehicle_id', formData.vehicleId);
       }
 
-      const { data: previousInspections, error } = await vehicleQuery;
+      const { data, error } = await q;
       if (error) throw error;
 
-      const previousDefects: { [itemName: string]: any } = {};
-
-      if (previousInspections) {
-        previousInspections.forEach((inspection: any) => {
-          if (inspection.inspection_items) {
-            inspection.inspection_items.forEach((item: any) => {
-              if (item.status === 'defect' && item.defect_status !== 'fixed') {
-                if (
-                  !previousDefects[item.item_name] ||
-                  new Date(inspection.submitted_at) > new Date(previousDefects[item.item_name].submitted_at)
-                ) {
-                  previousDefects[item.item_name] = {
-                    ...item,
-                    submitted_at: inspection.submitted_at,
-                  };
-                }
-              }
-            });
+      // Keep the most recent, still-active defect per item
+      const previousDefects: Record<string, { id: string; submitted_at: string }> = {};
+      (data || []).forEach((ins: any) => {
+        (ins.inspection_items || []).forEach((it: any) => {
+          if (it.status === 'defect' && it.defect_status !== 'fixed') {
+            const existing = previousDefects[it.item_name];
+            if (!existing || new Date(ins.submitted_at) > new Date(existing.submitted_at)) {
+              previousDefects[it.item_name] = { id: it.id, submitted_at: ins.submitted_at };
+            }
           }
         });
-      }
+      });
 
       setFormData((prev) => ({
         ...prev,
@@ -151,6 +151,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     }
   };
 
+  // --- UI handlers ----------------------------------------------------------
+
   const handleVehicleToggle = (useAssigned: boolean) => {
     setFormData((prev) => ({
       ...prev,
@@ -158,22 +160,22 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       vehicleId: useAssigned && assignedVehicle ? assignedVehicle.id : '',
       overrideVehicleRegistration: useAssigned ? '' : prev.overrideVehicleRegistration,
     }));
-    setErrors((prev) => ({ ...prev, vehicle: '' }));
+    setErrors((e) => ({ ...e, vehicle: '' }));
   };
 
   const handleVehicleChange = (vehicleId: string) => {
     setFormData((prev) => ({ ...prev, vehicleId }));
-    setErrors((prev) => ({ ...prev, vehicle: '' }));
+    setErrors((e) => ({ ...e, vehicle: '' }));
   };
 
-  const handleOverrideRegistrationChange = (registration: string) => {
-    setFormData((prev) => ({ ...prev, overrideVehicleRegistration: registration }));
-    setErrors((prev) => ({ ...prev, vehicle: '' }));
+  const handleOverrideRegistrationChange = (val: string) => {
+    setFormData((prev) => ({ ...prev, overrideVehicleRegistration: val }));
+    setErrors((e) => ({ ...e, vehicle: '' }));
   };
 
   const handleOdometerChange = (reading: string) => {
     setFormData((prev) => ({ ...prev, odometerReading: reading }));
-    setErrors((prev) => ({ ...prev, odometer: '' }));
+    setErrors((e) => ({ ...e, odometer: '' }));
   };
 
   const updateCurrentInspectionItem = (field: keyof InspectionItem, value: any) => {
@@ -195,73 +197,91 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     }
   };
 
-  const validateVehicleStep = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  // --- validation -----------------------------------------------------------
+
+  const validateVehicleStep = () => {
+    const errs: Record<string, string> = {};
     if (formData.useAssignedVehicle) {
-      if (!formData.vehicleId) newErrors.vehicle = 'Please select a vehicle';
-    } else {
-      if (!formData.vehicleId && !formData.overrideVehicleRegistration.trim()) {
-        newErrors.vehicle = 'Please select a vehicle or enter registration';
-      }
+      if (!formData.vehicleId) errs.vehicle = 'Please select a vehicle';
+    } else if (!formData.vehicleId && !formData.overrideVehicleRegistration.trim()) {
+      errs.vehicle = 'Please select a vehicle or enter registration';
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
-  const validateOdometerStep = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  const validateOdometerStep = () => {
+    const errs: Record<string, string> = {};
     if (!formData.odometerReading.trim()) {
-      newErrors.odometer = 'Odometer reading is required';
+      errs.odometer = 'Odometer reading is required';
     } else if (isNaN(parseFloat(formData.odometerReading))) {
-      newErrors.odometer = 'Please enter a valid number';
+      errs.odometer = 'Please enter a valid number';
     }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
   const handleNextQuestion = () => {
-    const currentItem = formData.inspectionItems[currentQuestionIndex];
-    if (!currentItem.status) {
+    const item = formData.inspectionItems[currentQuestionIndex];
+
+    if (!item.status) {
       setErrors({ question: 'Please select OK or Defect before continuing' });
       return;
     }
-    if (currentItem.status === 'defect' && !currentItem.notes.trim()) {
+
+    // Require notes ONLY for *new* defects (continuing defects are allowed with optional notes)
+    const isContinuingDefect =
+      item.hasPreviousDefect === true && item.wasDefectFixed === false && item.status === 'defect';
+
+    if (item.status === 'defect' && !isContinuingDefect && !item.notes.trim()) {
       setErrors({ question: 'Please add comments for defects before continuing' });
       return;
     }
+
     setErrors({});
     if (currentQuestionIndex < formData.inspectionItems.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setCurrentQuestionIndex((i) => i + 1);
     } else {
       setCurrentStep('additional');
     }
   };
 
   const handlePreviousQuestion = () => {
-    if (currentQuestionIndex > 0) setCurrentQuestionIndex(currentQuestionIndex - 1);
+    if (currentQuestionIndex > 0) setCurrentQuestionIndex((i) => i - 1);
     else setCurrentStep('odometer');
   };
 
+  // --- final submit ---------------------------------------------------------
+
   const handleSubmit = async () => {
+    // Validate additional items: defects must include notes
+    for (const ai of formData.additionalItems) {
+      if (ai.name.trim() && ai.status === 'defect' && !ai.notes.trim()) {
+        setErrors({ additional: 'Please add comments for all additional items marked as defect.' });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
+      const hasAnyDefect =
+        [...formData.inspectionItems, ...formData.additionalItems].some((i) => i.status === 'defect');
+
+      // Build inspection header row
       const inspectionData: any = {
         employee_id: selectedEmployee.id,
         odometer_reading: parseFloat(formData.odometerReading),
-        has_defects: [...formData.inspectionItems, ...formData.additionalItems].some(
-          (i) => i.status === 'defect'
-        ),
+        has_defects: hasAnyDefect,
       };
 
       if (formData.useAssignedVehicle) {
+        inspectionData.vehicle_id = formData.vehicleId || null;
+      } else if (formData.vehicleId) {
         inspectionData.vehicle_id = formData.vehicleId;
       } else {
-        if (formData.vehicleId) {
-          inspectionData.vehicle_id = formData.vehicleId;
-        } else {
-          inspectionData.vehicle_id = vehicles[0]?.id || null;
-          inspectionData.override_vehicle_registration = formData.overrideVehicleRegistration.trim();
-        }
+        // typed/temporary kit: no vehicle_id, only manual registration
+        inspectionData.vehicle_id = null;
+        inspectionData.override_vehicle_registration = formData.overrideVehicleRegistration.trim();
       }
 
       const { data: inspection, error: inspectionError } = await supabase
@@ -271,63 +291,65 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         .single();
       if (inspectionError) throw inspectionError;
 
+      // Build rows for inspection_items
+      const rows: any[] = [];
       const allItems = [...formData.inspectionItems, ...formData.additionalItems];
-      const itemsToInsert: any[] = [];
 
-      for (const item of allItems) {
-        if (item.name.trim() && item.status) {
-          let photoUrl = null;
-          if (item.photo) {
-            photoUrl = await uploadInspectionPhoto(item.photo, inspection.id, item.name);
+      for (const it of allItems) {
+        if (!it.name.trim() || !it.status) continue;
+
+        let photoUrl: string | null = null;
+        if (it.photo) {
+          try {
+            photoUrl = await uploadInspectionPhoto(it.photo, inspection.id, it.name);
+          } catch (e) {
+            console.warn('Photo upload failed, continuing without photo:', e);
           }
-
-          const itemData: any = {
-            inspection_id: inspection.id,
-            item_name: item.name.trim(),
-            status: item.status === 'ok' ? 'no_defect' : 'defect',
-            notes: item.notes.trim() || null,
-            photo_url: photoUrl,
-            defect_severity: item.status === 'defect' ? 'medium' : null,
-            action_required: item.status === 'defect',
-          };
-
-          if (item.hasPreviousDefect && item.wasDefectFixed) {
-            itemData.defect_fixed = true;
-            itemData.previous_defect_id = item.previousDefectId;
-            itemData.defect_status = 'fixed';
-            if (item.previousDefectId) {
-              await supabase
-                .from('inspection_items')
-                .update({ defect_status: 'fixed' })
-                .eq('id', item.previousDefectId);
-            }
-          } else if (item.status === 'defect') {
-            itemData.defect_status = 'active';
-          }
-
-          itemsToInsert.push(itemData);
         }
+
+        const row: any = {
+          inspection_id: inspection.id,
+          item_name: it.name.trim(),
+          status: it.status === 'ok' ? 'no_defect' : 'defect',
+          notes: it.notes.trim() || null,
+          photo_url: photoUrl,
+          defect_severity: it.status === 'defect' ? 'medium' : null,
+          action_required: it.status === 'defect',
+        };
+
+        // Link/close previous defects when resolved
+        if (it.hasPreviousDefect && it.wasDefectFixed) {
+          row.defect_fixed = true;
+          row.previous_defect_id = it.previousDefectId;
+          row.defect_status = 'fixed';
+          if (it.previousDefectId) {
+            await supabase.from('inspection_items').update({ defect_status: 'fixed' }).eq('id', it.previousDefectId);
+          }
+        } else if (it.status === 'defect') {
+          row.defect_status = 'active';
+        }
+
+        rows.push(row);
       }
 
-      if (itemsToInsert.length > 0) {
-        const { error: itemsError } = await supabase.from('inspection_items').insert(itemsToInsert);
-        if (itemsError) throw itemsError;
+      if (rows.length) {
+        const { error: itemsErr } = await supabase.from('inspection_items').insert(rows);
+        if (itemsErr) throw itemsErr;
       }
 
-      let vehicleDisplayName = '';
-      if (formData.useAssignedVehicle) {
-        const selected = vehicles.find((v) => v.id === formData.vehicleId) || assignedVehicle;
-        vehicleDisplayName = `${selected?.registration_number} (${(selected as any)?.make_model ?? ''})`;
+      // Build vehicle display label for the success toast/next UI step
+      let vehicleLabel = '';
+      if (formData.useAssignedVehicle || formData.vehicleId) {
+        const v =
+          vehicles.find((x) => x.id === formData.vehicleId) ||
+          assignedVehicle ||
+          null;
+        vehicleLabel = v ? `${v.registration_number} (${(v as any).make_model ?? ''})` : 'Vehicle';
       } else {
-        if (formData.vehicleId) {
-          const selected = vehicles.find((v) => v.id === formData.vehicleId);
-          vehicleDisplayName = `${selected?.registration_number} (${(selected as any)?.make_model ?? ''})`;
-        } else {
-          vehicleDisplayName = formData.overrideVehicleRegistration;
-        }
+        vehicleLabel = formData.overrideVehicleRegistration || 'Vehicle/Plant';
       }
 
-      onSubmissionSuccess(vehicleDisplayName, inspectionData.has_defects);
+      onSubmissionSuccess(vehicleLabel, hasAnyDefect);
     } catch (err) {
       console.error('Error submitting inspection:', err);
       alert('Failed to submit inspection. Please try again.');
@@ -336,28 +358,27 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     }
   };
 
-  const addAdditionalItem = () => {
+  // --- additional items helpers --------------------------------------------
+
+  const addAdditionalItem = () =>
     setFormData((prev) => ({
       ...prev,
       additionalItems: [...prev.additionalItems, { name: '', status: null, notes: '', photo: null }],
     }));
-  };
 
-  const removeAdditionalItem = (index: number) => {
+  const removeAdditionalItem = (index: number) =>
     setFormData((prev) => ({
       ...prev,
       additionalItems: prev.additionalItems.filter((_, i) => i !== index),
     }));
-  };
 
-  const updateAdditionalItem = (index: number, field: keyof InspectionItem, value: any) => {
+  const updateAdditionalItem = (index: number, field: keyof InspectionItem, value: any) =>
     setFormData((prev) => ({
       ...prev,
-      additionalItems: prev.additionalItems.map((item, i) =>
-        i === index ? { ...item, [field]: value } : item
-      ),
+      additionalItems: prev.additionalItems.map((it, i) => (i === index ? { ...it, [field]: value } : it)),
     }));
-  };
+
+  // --- progress -------------------------------------------------------------
 
   const getProgress = () => {
     switch (currentStep) {
@@ -373,6 +394,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         return 0;
     }
   };
+
+  // --- render ---------------------------------------------------------------
 
   return (
     <div className="space-y-6">
@@ -393,18 +416,15 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
               <p className="text-slate-600">{selectedEmployee.role}</p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm text-slate-500 mb-1">
-              {currentStep === 'vehicle' && 'Step 1: Vehicle Selection'}
-              {currentStep === 'odometer' && 'Step 2: Odometer Reading'}
-              {currentStep === 'inspection' &&
-                `Question ${currentQuestionIndex + 1} of ${formData.inspectionItems.length}`}
-              {currentStep === 'additional' && 'Additional Plant Items'}
-            </div>
+          <div className="text-right text-sm text-slate-500">
+            {currentStep === 'vehicle' && 'Step 1: Vehicle Selection'}
+            {currentStep === 'odometer' && 'Step 2: Odometer Reading'}
+            {currentStep === 'inspection' &&
+              `Question ${currentQuestionIndex + 1} of ${formData.inspectionItems.length}`}
+            {currentStep === 'additional' && 'Additional Plant Items'}
           </div>
         </div>
 
-        {/* Progress Bar */}
         <div className="w-full bg-slate-200 rounded-full h-2">
           <div
             className="bg-blue-600 h-2 rounded-full transition-all duration-300"
@@ -413,9 +433,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         </div>
       </div>
 
-      {/* Step Content */}
+      {/* Body */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        {/* Step 1: Vehicle Selection */}
+        {/* Step 1: Vehicle */}
         {currentStep === 'vehicle' && (
           <div className="space-y-6">
             <div className="flex items-center space-x-3 mb-6">
@@ -439,25 +459,21 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                     onChange={() => handleVehicleToggle(true)}
                     className="sr-only"
                   />
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          formData.useAssignedVehicle ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
-                        }`}
-                      >
-                        {formData.useAssignedVehicle && <div className="w-2 h-2 rounded-full bg-white" />}
+                  <div className="flex items-center space-x-4">
+                    <div
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                        formData.useAssignedVehicle ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                      }`}
+                    >
+                      {formData.useAssignedVehicle && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <div className="text-center">
+                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+                        <Car className="h-8 w-8 text-blue-600" />
                       </div>
-                      <div className="text-center">
-                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
-                          <Car className="h-8 w-8 text-blue-600" />
-                        </div>
-                        <div className="text-2xl font-bold text-slate-900">
-                          {assignedVehicle.registration_number}
-                        </div>
-                        <div className="text-slate-600">{(assignedVehicle as any)?.make_model}</div>
-                        <div className="text-sm text-slate-500 mt-2">Your assigned vehicle</div>
-                      </div>
+                      <div className="text-2xl font-bold text-slate-900">{assignedVehicle.registration_number}</div>
+                      <div className="text-slate-600">{(assignedVehicle as any)?.make_model}</div>
+                      <div className="text-sm text-slate-500 mt-2">Your assigned vehicle</div>
                     </div>
                   </div>
                 </label>
@@ -512,9 +528,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                     <option value="">Choose a vehicle...</option>
                     {vehicles
                       .filter((v) => v.id !== assignedVehicle?.id)
-                      .map((vehicle) => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.registration_number} {(vehicle as any)?.make_model ? `- ${(vehicle as any).make_model}` : ''}
+                      .map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.registration_number} {(v as any)?.make_model ? `- ${(v as any).make_model}` : ''}
                         </option>
                       ))}
                   </select>
@@ -541,7 +557,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             {errors.vehicle && <p className="text-sm text-red-600">{errors.vehicle}</p>}
 
             <button
-              onClick={goToOdometer}
+              onClick={() => validateVehicleStep() && setCurrentStep('odometer')}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
             >
               <span>Continue to Odometer Reading</span>
@@ -550,7 +566,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
           </div>
         )}
 
-        {/* Step 2: Odometer Reading */}
+        {/* Step 2: Odometer */}
         {currentStep === 'odometer' && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold text-slate-900">Odometer Reading</h2>
@@ -581,7 +597,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                 <span>Back</span>
               </button>
               <button
-                onClick={startDailyCheck}
+                onClick={() => validateOdometerStep() && setCurrentStep('inspection')}
                 className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
               >
                 <span>Start Daily Check</span>
@@ -591,10 +607,10 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
           </div>
         )}
 
-        {/* Step 3: Single Question Format */}
+        {/* Step 3: Questions */}
         {currentStep === 'inspection' && (
           <div className="space-y-6">
-            {/* Previous Defect Warning */}
+            {/* Previous defect notice */}
             {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
                 <div className="flex items-center space-x-3 mb-4">
@@ -661,7 +677,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
               </div>
             )}
 
-            {/* Big action buttons */}
+            {/* Action buttons */}
             {(!formData.inspectionItems[currentQuestionIndex].hasPreviousDefect ||
               formData.inspectionItems[currentQuestionIndex].wasDefectFixed !== undefined) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -737,7 +753,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
               </div>
             )}
 
-            {/* Defect Details */}
+            {/* Defect details */}
             {formData.inspectionItems[currentQuestionIndex].status === 'defect' &&
               !(
                 formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
@@ -816,7 +832,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
           </div>
         )}
 
-        {/* Step 4: Additional Plant Requirements */}
+        {/* Step 4: Additional items */}
         {currentStep === 'additional' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -832,6 +848,12 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             <p className="text-slate-600">
               Add any additional plant or equipment that requires checking beyond the standard 10 vehicle items.
             </p>
+
+            {errors.additional && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+                {errors.additional}
+              </div>
+            )}
 
             {formData.additionalItems.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
@@ -914,9 +936,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                                   <input
                                     type="file"
                                     accept="image/*"
-                                    onChange={(e) =>
-                                      updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)
-                                    }
+                                    onChange={(e) => updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)}
                                     className="sr-only"
                                   />
                                 </label>
