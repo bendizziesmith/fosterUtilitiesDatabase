@@ -20,7 +20,7 @@ const EQUIPMENT_ITEMS: EquipmentItem[] = [
   { name: 'Vibro - Tamper', category: 'CIVILS' },
   { name: 'Floor Saw', category: 'CIVILS' },
   { name: 'Trench Rammer', category: 'CIVILS' },
-  { name: 'Electric Breaker', category: 'CIVILS' },
+  { name: 'Electric / Petrol Breaker', category: 'CIVILS' },
 ];
 
 interface TimesheetData {
