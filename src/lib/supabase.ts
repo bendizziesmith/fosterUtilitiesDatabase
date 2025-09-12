@@ -199,7 +199,7 @@ export interface HavsTimesheetEntry {
   id: string;
   timesheet_id: string;
   equipment_name: string;
-  equipment_category: 'CIVILS' | 'JOINTING' | 'OVERHEADS' | 'EARTH PIN DRIVER';
+  equipment_category: 'CIVILS';
   monday_hours: number;
   tuesday_hours: number;
   wednesday_hours: number;

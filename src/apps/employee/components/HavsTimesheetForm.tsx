@@ -18,25 +18,9 @@ const EQUIPMENT_ITEMS: EquipmentItem[] = [
   { name: 'NRSWA Vibrating Plate', category: 'CIVILS' },
   { name: 'Hydraulic Breaker', category: 'CIVILS' },
   { name: 'Vibro - Tamper', category: 'CIVILS' },
-  
-  // JOINTING
-  { name: 'Impact Wrench', category: 'JOINTING' },
-  { name: 'Combo Hammer Drill', category: 'JOINTING' },
-  { name: 'Recip Saw', category: 'JOINTING' },
-  { name: 'Angle Grinder', category: 'JOINTING' },
-  { name: 'Hammer Drill', category: 'JOINTING' },
-  { name: 'Impact Driver', category: 'JOINTING' },
-  
-  // OVERHEADS
-  { name: 'Chainsaw', category: 'OVERHEADS' },
-  { name: 'Petrol Auger', category: 'OVERHEADS' },
-  { name: 'Battery Recip Saw', category: 'OVERHEADS' },
-  { name: 'Battery Impact Gun', category: 'OVERHEADS' },
-  { name: 'Battery Angle Grinder', category: 'OVERHEADS' },
-  { name: 'Hydraulic Duckbill Driver', category: 'OVERHEADS' },
-  
-  // EARTH PIN DRIVER
-  { name: 'K900 Chipping Hammer', category: 'EARTH PIN DRIVER' },
+  { name: 'Floor Saw', category: 'CIVILS' },
+  { name: 'Trench Rammer', category: 'CIVILS' },
+  { name: 'Electric Breaker', category: 'CIVILS' },
 ];
 
 interface TimesheetData {
