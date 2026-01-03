@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, Clock, HardHat, CheckCircle, X, Calendar, AlertTriangle, User } from 'lucide-react';
+import { ClipboardList, HardHat, CheckCircle, X, Calendar, AlertTriangle, User } from 'lucide-react';
 import { supabase, Employee } from '../../../lib/supabase';
 
 interface EmployeeLandingProps {
-  onTaskSelect: (task: 'inspection' | 'timesheet' | 'havs') => void;
+  onTaskSelect: (task: 'inspection' | 'havs') => void;
   selectedEmployee: Employee;
 }
 
 interface ComplianceStatus {
   todayVehicleCheck: boolean;
-  currentWeekTimesheet: boolean;
   currentWeekHavs: boolean;
   loading: boolean;
 }
@@ -20,7 +19,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
 }) => {
   const [compliance, setCompliance] = useState<ComplianceStatus>({
     todayVehicleCheck: false,
-    currentWeekTimesheet: false,
     currentWeekHavs: false,
     loading: true,
   });
@@ -111,19 +109,8 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       const employeeId = selectedEmployee.id;
       const weekEndingStr = getCurrentWeekEnding();
 
-      // Daily vehicle inspection (any record today counts as complete)
       const todayDone = await didSubmitVehicleCheckToday(employeeId);
 
-      // Weekly timesheet — existence check for submitted sheet
-      const { data: ts } = await supabase
-        .from('new_timesheets')
-        .select('id')
-        .eq('employee_id', employeeId)
-        .eq('week_ending', weekEndingStr)
-        .eq('status', 'submitted')
-        .limit(1);
-
-      // Weekly HAVs — existence check for submitted sheet
       const { data: havs } = await supabase
         .from('havs_timesheets')
         .select('id')
@@ -133,8 +120,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         .limit(1);
 
       setCompliance({
-        todayVehicleCheck: Array.isArray(ts) ? todayDone : todayDone,
-        currentWeekTimesheet: Array.isArray(ts) && ts.length > 0,
+        todayVehicleCheck: todayDone,
         currentWeekHavs: Array.isArray(havs) && havs.length > 0,
         loading: false,
       });
@@ -158,20 +144,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       frequency: 'Daily',
       isCompleted: compliance.todayVehicleCheck,
       urgency: 'high'
-    },
-    {
-      id: 'timesheet' as const,
-      title: 'Weekly Timesheet',
-      description: 'Record your working hours, price work and day rates',
-      icon: Clock,
-      color: 'bg-green-600',
-      lightColor: 'bg-green-50',
-      iconColor: 'text-green-600',
-      borderColor: 'border-green-200',
-      hoverColor: 'hover:border-green-400',
-      frequency: 'Weekly',
-      isCompleted: compliance.currentWeekTimesheet,
-      urgency: 'medium'
     },
     {
       id: 'havs' as const,
@@ -245,7 +217,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {tasks.map((task) => {
             const Icon = task.icon;
             const statusIcon = getStatusIcon(task.isCompleted, task.urgency);
@@ -288,15 +260,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 <span>Complete Daily Check</span>
               </button>
             )}
-            {!compliance.loading && !compliance.currentWeekTimesheet && (
-              <button
-                onClick={() => onTaskSelect('timesheet')}
-                className="flex items-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-              >
-                <Clock className="h-4 w-4" />
-                <span>Submit Timesheet</span>
-              </button>
-            )}
             {!compliance.loading && !compliance.currentWeekHavs && (
               <button
                 onClick={() => onTaskSelect('havs')}
@@ -306,9 +269,8 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 <span>Submit HAVs</span>
               </button>
             )}
-            
-            {/* Completed message */}
-            {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekTimesheet && compliance.currentWeekHavs && (
+
+            {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekHavs && (
               <div className="w-full text-center py-4">
                 <div className="inline-flex items-center space-x-2 bg-green-100 text-green-800 px-4 py-2 rounded-lg">
                   <CheckCircle className="h-5 w-5" />
@@ -321,7 +283,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       </div>
 
       {/* Main Task Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {tasks.map((task) => {
           const Icon = task.icon;
           return (
@@ -372,7 +334,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
           <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-3" />
           <h3 className="text-lg font-semibold text-slate-900 mb-2">Weekly Reminder</h3>
           <p className="text-slate-600 text-sm">
-            Submit your timesheet and HAVs records by Monday 10:00 AM following the week ending.
+            Submit your HAVs records by Monday 10:00 AM following the week ending.
             Daily vehicle checks must be completed each working day.
           </p>
         </div>

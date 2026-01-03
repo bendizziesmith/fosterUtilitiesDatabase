@@ -1,16 +1,9 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  ClipboardList, 
-  FileText, 
+import {
+  ClipboardList,
   Users,
   ArrowRight,
-  TrendingUp,
-  CheckCircle,
-  AlertTriangle,
-  Calendar,
-  Clock,
-  BarChart3,
   Shield,
   Target
 } from 'lucide-react';
@@ -73,20 +66,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onClick: () => navigate('/inspections')
     },
     {
-      title: 'Professional Timesheets',
-      description: 'Review submitted gang timesheets and payroll data',
-      icon: FileText,
-      color: 'from-green-500 to-green-600',
-      lightColor: 'bg-green-50',
-      iconColor: 'text-green-600',
-      stats: {
-        primary: 'Active',
-        secondary: 'Weekly submissions',
-        status: 'positive'
-      },
-      onClick: () => navigate('/timesheets')
-    },
-    {
       title: 'HAVs Timesheets',
       description: 'Monitor Hand Arm Vibration Syndrome exposure records',
       icon: Shield,
@@ -102,11 +81,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     },
     {
       title: 'Management Hub',
-      description: 'Manage staff, vehicles, and work rates',
+      description: 'Manage staff and vehicles',
       icon: Users,
-      color: 'from-purple-500 to-purple-600',
-      lightColor: 'bg-purple-50',
-      iconColor: 'text-purple-600',
+      color: 'from-slate-500 to-slate-600',
+      lightColor: 'bg-slate-50',
+      iconColor: 'text-slate-600',
       stats: {
         primary: 'System',
         secondary: 'Management tools',
@@ -134,7 +113,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Primary Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {primaryActions.map((action, index) => {
           const Icon = action.icon;
           
@@ -192,7 +171,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             Access comprehensive management tools for complete operational oversight
           </p>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <button
             onClick={() => navigate('/management')}
@@ -202,7 +181,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="text-lg font-semibold mb-2">Staff Management</div>
             <div className="text-sm text-slate-300">Employees, vehicles & assignments</div>
           </button>
-          
+
           <button
             onClick={() => navigate('/inspections')}
             className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
@@ -211,14 +190,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="text-lg font-semibold mb-2">Safety Monitoring</div>
             <div className="text-sm text-slate-300">Daily checks & compliance</div>
           </button>
-          
+
           <button
-            onClick={() => navigate('/timesheets')}
+            onClick={() => navigate('/havs-timesheets')}
             className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
           >
-            <FileText className="h-8 w-8 text-purple-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Payroll Data</div>
-            <div className="text-sm text-slate-300">Professional timesheets</div>
+            <Shield className="h-8 w-8 text-orange-400 mb-3 group-hover:scale-110 transition-transform" />
+            <div className="text-lg font-semibold mb-2">HAVs Records</div>
+            <div className="text-sm text-slate-300">Vibration exposure tracking</div>
           </button>
         </div>
       </div>

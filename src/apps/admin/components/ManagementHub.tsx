@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Car, UserPlus, Wrench, BarChart3, ArrowRight, DollarSign, FileText } from 'lucide-react';
+import { Users, Car, UserPlus, BarChart3, ArrowRight } from 'lucide-react';
 
 export const ManagementHub: React.FC = () => {
   const navigate = useNavigate();
@@ -39,40 +39,6 @@ export const ManagementHub: React.FC = () => {
         'Fleet overview'
       ],
       onClick: () => navigate('/vehicles')
-    },
-    {
-      id: 'ipsom-rates',
-      title: 'Ipsom Rates Management',
-      description: 'Manage Ipsom work rates, service sheets, and main LV & HV pricing',
-      icon: FileText,
-      color: 'bg-purple-500',
-      lightColor: 'bg-purple-50',
-      iconColor: 'text-purple-600',
-      features: [
-        'Service sheet rates',
-        'Main LV & HV rates',
-        'Work item management',
-        'Price work rates',
-        'Timesheet integration'
-      ],
-      onClick: () => navigate('/ipsom-rates')
-    },
-    {
-      id: 'mollsworth-rates',
-      title: 'Mollsworth Work Rates Management',
-      description: 'Manage Mollsworth 11KV & 33KV work rates and pricing structure',
-      icon: FileText,
-      color: 'bg-indigo-500',
-      lightColor: 'bg-indigo-50',
-      iconColor: 'text-indigo-600',
-      features: [
-        '11KV & 33KV rates',
-        'Work item management',
-        'Voltage classifications',
-        'Excavation parameters',
-        'Site type configurations'
-      ],
-      onClick: () => navigate('/mollsworth-work-rates')
     }
   ];
 
@@ -157,7 +123,7 @@ export const ManagementHub: React.FC = () => {
         <h3 className="text-lg font-semibold text-slate-900 mb-6 text-center">
           Management Overview
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="text-center">
             <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mx-auto mb-3">
               <Users className="h-6 w-6 text-blue-600" />
@@ -180,25 +146,11 @@ export const ManagementHub: React.FC = () => {
             <div className="text-sm text-slate-600">Vehicle Assignments</div>
           </div>
           <div className="text-center">
-            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <BarChart3 className="h-6 w-6 text-purple-600" />
+            <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+              <BarChart3 className="h-6 w-6 text-teal-600" />
             </div>
             <div className="text-2xl font-bold text-slate-900 mb-1">Track</div>
             <div className="text-sm text-slate-600">Performance & Compliance</div>
-          </div>
-          <div className="text-center">
-            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <FileText className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">Rates</div>
-            <div className="text-sm text-slate-600">Ipsom Rates</div>
-          </div>
-          <div className="text-center">
-            <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mx-auto mb-3">
-              <FileText className="h-6 w-6 text-indigo-600" />
-            </div>
-            <div className="text-2xl font-bold text-slate-900 mb-1">Mollsworth</div>
-            <div className="text-sm text-slate-600">11KV & 33KV Rates</div>
           </div>
         </div>
       </div>

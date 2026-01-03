@@ -4,21 +4,13 @@ import { Layout } from '../../components/Layout';
 import { AdminDashboard } from './components/AdminDashboard';
 import { InspectionTable } from './components/InspectionTable';
 import { InspectionDetails } from './components/InspectionDetails';
-import { NewTimesheetsTable } from './components/NewTimesheetsTable';
-import { FilterPanel } from './components/FilterPanel';
 import { DailyComplianceChart } from './components/DailyComplianceChart';
-import { TimesheetComplianceChart } from './components/TimesheetComplianceChart';
-import { EmployeeSearchFilter } from './components/EmployeeSearchFilter';
 import { ManagementHub } from './components/ManagementHub';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import VehicleManagement from './components/VehicleManagement';
-import { WorkRateManagement } from './components/WorkRateManagement';
-import { IpsomRatesManagement } from './components/IpsomRatesManagement';
-import { MollsworthRatesManagement } from './components/MollsworthRatesManagement';
-import { MollsworthWorkRatesManagement } from './components/MollsworthWorkRatesManagement';
 import { HavsTimesheetsTable } from './components/HavsTimesheetsTable';
 import { HavsComplianceTable } from './components/HavsComplianceTable';
-import { supabase, VehicleInspection, PlantRecord, Employee, Timesheet } from '../../lib/supabase';
+import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
 interface AdminAppProps {
@@ -38,7 +30,6 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
   const location = useLocation();
   
   const [inspections, setInspections] = useState<VehicleInspection[]>([]);
-  const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredInspections, setFilteredInspections] = useState<VehicleInspection[]>([]);
   const [selectedInspection, setSelectedInspection] = useState<VehicleInspection | null>(null);
@@ -90,18 +81,6 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
 
       setEmployees(employeesData || []);
       setInspections(inspectionsData || []);
-
-      // Load timesheets for compliance tracking
-      const { data: timesheetsData, error: timesheetsError } = await supabase
-        .from('new_timesheets')
-        .select(`
-          *,
-          employee:employees!employee_id(*)
-        `)
-        .order('submitted_at', { ascending: false });
-
-      if (timesheetsError) throw timesheetsError;
-      setTimesheets(timesheetsData || []);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -170,8 +149,6 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     switch (path) {
       case '/inspections':
         return 'Daily Vehicle Checks';
-      case '/timesheets':
-        return 'Professional Timesheets';
       case '/management':
         return 'Management Hub';
       case '/employees':
@@ -188,7 +165,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
   const getPageSubtitle = () => {
     const path = location.pathname;
     if (path === '/inspection-details' && selectedInspection) {
-      const vehicleInfo = selectedInspection.override_vehicle_registration 
+      const vehicleInfo = selectedInspection.override_vehicle_registration
         ? selectedInspection.override_vehicle_registration
         : `${selectedInspection.vehicle?.registration_number}`;
       return `${vehicleInfo} - ${new Date(selectedInspection.submitted_at).toLocaleDateString()}`;
@@ -196,20 +173,12 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     switch (path) {
       case '/inspections':
         return 'Vehicle Inspection Management';
-      case '/timesheets':
-        return 'Professional Gang Timesheets';
       case '/management':
         return 'Staff & Fleet Overview';
       case '/employees':
         return 'Add, Edit & Remove Employees';
       case '/vehicles':
         return 'Fleet Vehicle Management';
-      case '/ipsom-rates':
-        return 'Ipsom Work Rates & Pricing';
-      case '/mollsworth-rates':
-        return 'Mollsworth Work Rates & Pricing';
-      case '/mollsworth-rates':
-        return 'Mollsworth Work Rates & Pricing';
       case '/havs-timesheets':
         return 'Hand Arm Vibration Syndrome Records';
       default:
@@ -249,93 +218,71 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
       onBack={handleBackNavigation}
     >
       <Routes>
-        <Route 
-          path="/" 
+        <Route
+          path="/"
           element={
             <div className="space-y-6">
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-               <DailyComplianceChart 
-                 inspections={inspections}
-                 employees={employees}
-               />
-               <TimesheetComplianceChart 
-                 timesheets={timesheets}
-                 employees={employees}
-               />
-             </div>
-              <AdminDashboard 
+              <DailyComplianceChart
+                inspections={inspections}
+                employees={employees}
+              />
+              <AdminDashboard
                 inspections={inspections}
                 plantRecords={[]}
               />
             </div>
-          } 
+          }
         />
-        <Route 
-          path="/inspections" 
+        <Route
+          path="/inspections"
           element={
             <div className="space-y-6">
-              <InspectionTable 
+              <InspectionTable
                 inspections={filteredInspections}
                 onViewInspection={handleViewInspection}
                 employees={employees}
                 allInspections={inspections}
-               onInspectionsUpdate={loadData}
+                onInspectionsUpdate={loadData}
               />
             </div>
-          } 
+          }
         />
-        <Route 
-          path="/inspection-details" 
+        <Route
+          path="/inspection-details"
           element={
             selectedInspection ? (
               <InspectionDetails inspection={selectedInspection} />
             ) : (
               <div>Inspection not found</div>
             )
-          } 
+          }
         />
-        <Route 
-          path="/timesheets" 
-          element={<NewTimesheetsTable employees={employees} />} 
+        <Route
+          path="/management"
+          element={<ManagementHub />}
         />
-        <Route 
-          path="/management" 
-          element={<ManagementHub />} 
-        />
-        <Route 
-          path="/employees" 
+        <Route
+          path="/employees"
           element={
-            <EmployeeManagement 
+            <EmployeeManagement
               employees={employees}
               vehicles={[]}
               onEmployeesUpdate={loadData}
             />
-          } 
+          }
         />
-        <Route 
-          path="/vehicles" 
-          element={<VehicleManagement />} 
+        <Route
+          path="/vehicles"
+          element={<VehicleManagement />}
         />
-        <Route 
-          path="/work-rates" 
-          element={<WorkRateManagement />} 
-        />
-        <Route 
-          path="/ipsom-rates" 
-          element={<IpsomRatesManagement />} 
-        />
-        <Route 
-          path="/mollsworth-work-rates" 
-          element={<MollsworthWorkRatesManagement />} 
-        />
-        <Route 
-          path="/havs-timesheets" 
+        <Route
+          path="/havs-timesheets"
           element={
             <div className="space-y-6">
               <HavsComplianceTable employees={employees} />
               <HavsTimesheetsTable employees={employees} />
             </div>
-          } 
+          }
         />
       </Routes>
     </Layout>

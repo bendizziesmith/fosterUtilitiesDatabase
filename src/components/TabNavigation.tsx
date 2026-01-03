@@ -1,7 +1,7 @@
 import React from 'react';
-import { ClipboardList, Wrench, FileText, HardHat } from 'lucide-react';
+import { ClipboardList, HardHat } from 'lucide-react';
 
-export type TabType = 'inspection' | 'plant' | 'timesheet' | 'havs';
+export type TabType = 'inspection' | 'havs';
 
 interface TabNavigationProps {
   activeTab: TabType;
@@ -11,7 +11,6 @@ interface TabNavigationProps {
 export const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange }) => {
   const tabs = [
     { id: 'inspection' as TabType, label: 'Vehicle Check', icon: ClipboardList },
-    { id: 'timesheet' as TabType, label: 'Timesheets', icon: FileText },
     { id: 'havs' as TabType, label: 'HAVs', icon: HardHat },
   ];
 

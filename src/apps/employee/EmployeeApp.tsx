@@ -3,9 +3,6 @@ import { Layout } from '../../components/Layout';
 import { TabNavigation, TabType } from '../../components/TabNavigation';
 import { InspectionForm } from './components/InspectionForm';
 import { SuccessMessage } from './components/SuccessMessage';
-import { NewTimesheetForm } from '../../pages/employee/NewTimesheetForm';
-import { TimesheetList } from './components/TimesheetList';
-import { TimesheetSuccessMessage } from './components/TimesheetSuccessMessage';
 import { HavsTimesheetForm } from './components/HavsTimesheetForm';
 import { supabase, Vehicle, ChecklistTemplate, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
@@ -16,7 +13,7 @@ interface EmployeeAppProps {
   currentEmployee: Employee | null;
 }
 
-type CurrentView = 'landing' | 'inspection' | 'timesheet' | 'timesheet-form' | 'havs';
+type CurrentView = 'landing' | 'inspection' | 'havs';
 
 export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmployee }) => {
   const [currentView, setCurrentView] = useState<CurrentView>('landing');
@@ -27,13 +24,8 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Inspection state
   const [inspectionSuccess, setInspectionSuccess] = useState(false);
   const [lastInspection, setLastInspection] = useState<{ vehicle: string; hasDefects: boolean } | null>(null);
-  
-  // Timesheet state
-  const [timesheetSuccess, setTimesheetSuccess] = useState(false);
-  const [lastTimesheet, setLastTimesheet] = useState<{ jobNumber: string; totalValue: number } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -102,27 +94,19 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
     }
   };
 
-  const handleTaskSelect = (task: 'inspection' | 'plant' | 'timesheet') => {
-    // Reset success states when selecting a new task
+  const handleTaskSelect = (task: 'inspection' | 'havs') => {
     setInspectionSuccess(false);
-    setTimesheetSuccess(false);
-    
-    // Navigate to the appropriate view
     setCurrentView(task);
   };
 
   const handleTabChange = (tab: TabType) => {
-    if (tab === 'timesheet') {
-      // For timesheet tab, show the list by default
-      setCurrentView('timesheet');
-    } else if (tab === 'havs') {
+    if (tab === 'havs') {
       setCurrentView('havs');
-    } else {
-      handleTaskSelect(tab);
+    } else if (tab === 'inspection') {
+      handleTaskSelect('inspection');
     }
   };
 
-  // Inspection handlers
   const handleInspectionSuccess = (vehicle: string, hasDefects: boolean) => {
     setLastInspection({ vehicle, hasDefects });
     setInspectionSuccess(true);
@@ -133,29 +117,6 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
     setLastInspection(null);
   };
 
-  // Timesheet handlers
-  const handleStartNewTimesheet = () => {
-    setCurrentView('timesheet-form');
-    setTimesheetSuccess(false);
-  };
-
-  const handleTimesheetSuccess = (jobNumber: string, totalValue: number) => {
-    setLastTimesheet({ jobNumber, totalValue });
-    setTimesheetSuccess(true);
-  };
-
-  const handleNewTimesheet = () => {
-    setTimesheetSuccess(false);
-    setLastTimesheet(null);
-    setCurrentView('timesheet');
-  };
-
-  const handleJobAdded = (jobNumber: string, totalValue: number) => {
-    setLastTimesheet({ jobNumber, totalValue });
-    setCurrentView('timesheet'); // Go to timesheet list
-    setTimesheetSuccess(false);
-  };
-
   const getPageTitle = () => {
     if (selectedEmployee) {
       switch (currentView) {
@@ -163,10 +124,6 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return `Home`;
         case 'inspection':
           return 'Daily Vehicle Check';
-        case 'timesheet':
-          return 'Your Timesheets';
-        case 'timesheet-form':
-          return 'New Timesheet';
         case 'havs':
           return 'HAVs Timesheet';
         default:
@@ -183,10 +140,6 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return selectedEmployee.role + (selectedEmployee.assigned_vehicle ? ` • Assigned: ${selectedEmployee.assigned_vehicle.registration_number}` : '');
         case 'inspection':
           return 'Daily Vehicle Check Form';
-        case 'timesheet':
-          return 'Price Work & Day Rate Timesheets';
-        case 'timesheet-form':
-          return 'NSF Utilities Timesheet';
         case 'havs':
           return 'Hand Arm Vibration Syndrome Exposure Record';
         default:
@@ -198,15 +151,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
 
   const handleBackNavigation = () => {
     if (currentView === 'landing') {
-      onBack(); // Always sign out when going back from landing
-    } else if (currentView === 'timesheet-form') {
-      // Go back to timesheet list
-      setCurrentView('timesheet');
+      onBack();
     } else {
       setCurrentView('landing');
-      // Reset success states when going back to landing
       setInspectionSuccess(false);
-      setTimesheetSuccess(false);
     }
   };
 
@@ -253,17 +201,17 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
       case 'landing':
         return (
           <div className="max-w-4xl mx-auto">
-            <EmployeeLanding 
+            <EmployeeLanding
               onTaskSelect={handleTaskSelect}
               selectedEmployee={selectedEmployee}
             />
           </div>
         );
-      
+
       case 'inspection':
         if (inspectionSuccess && lastInspection) {
           return (
-            <SuccessMessage 
+            <SuccessMessage
               vehicle={lastInspection.vehicle}
               hasDefects={lastInspection.hasDefects}
               onBackToHome={handleBackNavigation}
@@ -280,23 +228,6 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
             />
           </div>
         );
-      
-      case 'timesheet':
-        if (timesheetSuccess && lastTimesheet) {
-          return (
-            <TimesheetSuccessMessage
-              jobNumber={lastTimesheet.jobNumber}
-              totalValue={lastTimesheet.totalValue}
-              onNewTimesheet={handleNewTimesheet}
-            />
-          );
-        }
-        return (
-          <TimesheetList
-            selectedEmployee={selectedEmployee}
-            onStartNewTimesheet={handleStartNewTimesheet}
-          />
-        );
 
       case 'havs':
         return (
@@ -306,19 +237,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           />
         );
 
-      case 'timesheet-form':
-        return (
-          <NewTimesheetForm
-            selectedEmployee={selectedEmployee}
-            onJobAdded={handleJobAdded}
-            onBack={() => setCurrentView('timesheet')}
-          />
-        );
-      
       default:
         return (
           <div className="max-w-4xl mx-auto">
-            <EmployeeLanding 
+            <EmployeeLanding
               onTaskSelect={handleTaskSelect}
               selectedEmployee={selectedEmployee}
             />
@@ -338,10 +260,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
         {renderCurrentView()}
       </Layout>
       
-      {currentView !== 'landing' && currentView !== 'timesheet-form' && currentView !== 'havs' && selectedEmployee && (
-        <TabNavigation 
-          activeTab={currentView === 'timesheet' ? 'timesheet' : currentView === 'havs' ? 'havs' : currentView as TabType} 
-          onTabChange={handleTabChange} 
+      {currentView !== 'landing' && currentView !== 'havs' && selectedEmployee && (
+        <TabNavigation
+          activeTab={currentView as TabType}
+          onTabChange={handleTabChange}
         />
       )}
     </div>
