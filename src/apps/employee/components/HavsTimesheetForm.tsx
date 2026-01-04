@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
-import { supabase, Employee, HavsTimesheetEntry, getWeekEndDate } from '../../../lib/supabase';
+import { supabase, Employee, HavsTimesheetEntry } from '../../../lib/supabase';
 
 interface HavsTimesheetFormProps {
   selectedEmployee: Employee;
@@ -21,6 +21,22 @@ const EQUIPMENT_ITEMS: EquipmentItem[] = [
   { name: 'Trench Rammer', category: 'CIVILS' },
   { name: 'Electric / Petrol Breaker', category: 'CIVILS' },
 ];
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getCurrentWeekSunday(): string {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() + daysUntilSunday);
+  return formatLocalDate(sunday);
+}
 
 interface TimesheetData {
   id?: string;
@@ -92,7 +108,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showWeekSelector, setShowWeekSelector] = useState(false);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState(getWeekEndDate().toISOString().split('T')[0]);
+  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekSunday());
   const [timesheetData, setTimesheetData] = useState<TimesheetData>({
     employee_name: selectedEmployee.full_name,
     week_ending: selectedWeek,
@@ -120,13 +136,15 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   }, [selectedEmployee.id, selectedWeek]);
 
   const generateAvailableWeeks = () => {
-    const weeks = [];
+    const weeks: string[] = [];
     const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+
     for (let i = 0; i < 8; i++) {
       const sunday = new Date(today);
-      const daysUntilSunday = (7 - today.getDay()) % 7;
       sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
-      weeks.push(sunday.toISOString().split('T')[0]);
+      weeks.push(formatLocalDate(sunday));
     }
     setAvailableWeeks(weeks);
   };
@@ -136,7 +154,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setSaveError(null);
 
     try {
-      const { data: existingTimesheet, error } = await supabase
+      const { data: timesheets, error } = await supabase
         .from('havs_timesheets')
         .select(`
           *,
@@ -144,9 +162,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         `)
         .eq('employee_id', selectedEmployee.id)
         .eq('week_ending', weekEnding)
-        .maybeSingle();
+        .order('updated_at', { ascending: false });
 
       if (error) throw error;
+
+      const draftTimesheet = timesheets?.find(t => t.status === 'draft');
+      const submittedTimesheet = timesheets?.find(t => t.status === 'submitted');
+      const existingTimesheet = draftTimesheet || submittedTimesheet;
 
       if (existingTimesheet) {
         const entriesMap = createEmptyEntries();
@@ -178,7 +200,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           status: existingTimesheet.status,
           total_hours: calculateWeeklyTotal(entriesMap),
         });
-        setLastSaved(new Date(existingTimesheet.updated_at));
+        setLastSaved(existingTimesheet.updated_at ? new Date(existingTimesheet.updated_at) : null);
       } else {
         setTimesheetData({
           employee_name: selectedEmployee.full_name,
@@ -249,18 +271,18 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
     try {
       let timesheetId = timesheetData.id;
+      const now = new Date().toISOString();
 
       if (timesheetId) {
         const { error } = await supabase
           .from('havs_timesheets')
           .update({
             employee_name: timesheetData.employee_name,
-            week_ending: timesheetData.week_ending,
             comments: timesheetData.comments,
             actions: timesheetData.actions,
             supervisor_name: timesheetData.supervisor_name,
             total_hours: timesheetData.total_hours,
-            updated_at: new Date().toISOString(),
+            updated_at: now,
           })
           .eq('id', timesheetId);
 
@@ -276,73 +298,63 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             actions: timesheetData.actions,
             supervisor_name: timesheetData.supervisor_name,
             total_hours: timesheetData.total_hours,
+            status: 'draft',
           })
           .select()
           .single();
 
         if (error) throw error;
         timesheetId = newTimesheet.id;
-
-        setTimesheetData(prev => ({
-          ...prev,
-          id: timesheetId,
-          entries: Object.fromEntries(
-            Object.entries(prev.entries).map(([key, entry]) => [
-              key,
-              { ...entry, timesheet_id: timesheetId }
-            ])
-          ),
-        }));
       }
 
+      const updatedEntries = { ...timesheetData.entries };
+
       for (const entry of Object.values(timesheetData.entries)) {
+        const entryData = {
+          monday_hours: entry.monday_hours,
+          tuesday_hours: entry.tuesday_hours,
+          wednesday_hours: entry.wednesday_hours,
+          thursday_hours: entry.thursday_hours,
+          friday_hours: entry.friday_hours,
+          saturday_hours: entry.saturday_hours,
+          sunday_hours: entry.sunday_hours,
+          total_hours: entry.total_hours,
+          updated_at: now,
+        };
+
         if (entry.id) {
           const { error } = await supabase
             .from('havs_timesheet_entries')
-            .update({
-              monday_hours: entry.monday_hours,
-              tuesday_hours: entry.tuesday_hours,
-              wednesday_hours: entry.wednesday_hours,
-              thursday_hours: entry.thursday_hours,
-              friday_hours: entry.friday_hours,
-              saturday_hours: entry.saturday_hours,
-              sunday_hours: entry.sunday_hours,
-              total_hours: entry.total_hours,
-              updated_at: new Date().toISOString(),
-            })
+            .update(entryData)
             .eq('id', entry.id);
 
           if (error) throw error;
-        } else if (entry.total_hours > 0) {
+        } else {
           const { data: newEntry, error } = await supabase
             .from('havs_timesheet_entries')
             .insert({
               timesheet_id: timesheetId,
               equipment_name: entry.equipment_name,
               equipment_category: entry.equipment_category,
-              monday_hours: entry.monday_hours,
-              tuesday_hours: entry.tuesday_hours,
-              wednesday_hours: entry.wednesday_hours,
-              thursday_hours: entry.thursday_hours,
-              friday_hours: entry.friday_hours,
-              saturday_hours: entry.saturday_hours,
-              sunday_hours: entry.sunday_hours,
-              total_hours: entry.total_hours,
+              ...entryData,
             })
             .select()
             .single();
 
           if (error) throw error;
-
-          setTimesheetData(prev => ({
-            ...prev,
-            entries: {
-              ...prev.entries,
-              [entry.equipment_name]: { ...prev.entries[entry.equipment_name], id: newEntry.id }
-            }
-          }));
+          updatedEntries[entry.equipment_name] = {
+            ...updatedEntries[entry.equipment_name],
+            id: newEntry.id,
+            timesheet_id: timesheetId,
+          };
         }
       }
+
+      setTimesheetData(prev => ({
+        ...prev,
+        id: timesheetId,
+        entries: updatedEntries,
+      }));
 
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
