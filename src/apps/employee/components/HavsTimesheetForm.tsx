@@ -590,14 +590,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                         {days.map((day) => (
                           <td key={day.key} className="px-1 py-1 border-b border-slate-200">
                             <input
-                              type="number"
-                              min="0"
-                              max="1440"
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
                               value={entry && entry[`${day.key}_hours` as keyof HavsTimesheetEntry] !== undefined
                                 ? (entry[`${day.key}_hours` as keyof HavsTimesheetEntry] as number || 0).toString()
                                 : '0'}
-                              onChange={(e) => updateHours(item.name, day.key, parseMinutes(e.target.value))}
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                updateHours(item.name, day.key, parseMinutes(val));
+                              }}
                               onFocus={(e) => e.target.select()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  (e.target as HTMLInputElement).blur();
+                                }
+                              }}
                               className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                                 isReadOnly ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
                               }`}

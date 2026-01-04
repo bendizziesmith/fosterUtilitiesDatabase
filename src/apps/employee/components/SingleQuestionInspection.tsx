@@ -826,17 +826,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         {/* Additional Plant Items */}
         {currentStep === 'additional' && (
           <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Additional Plant</h2>
-                <p className="text-slate-500 text-sm">Add any extra equipment checks</p>
-              </div>
-              <button
-                onClick={addAdditionalItem}
-                className="flex items-center space-x-1 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg transition-colors text-sm font-medium"
-              >
-                <span>+ Add Item</span>
-              </button>
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Additional Plant</h2>
+              <p className="text-slate-500 text-sm mt-1">Optional - Add any extra equipment checks for this job</p>
             </div>
 
             {errors.additional && (
@@ -846,85 +838,117 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             )}
 
             {formData.additionalItems.length === 0 ? (
-              <div className="text-center py-12 text-slate-500">
-                <Truck className="h-12 w-12 mx-auto mb-4 text-slate-300" />
-                <p className="font-medium">No additional items</p>
-                <p className="text-sm">Add plant equipment if needed, or submit</p>
+              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8">
+                <div className="text-center text-slate-500">
+                  <Truck className="h-10 w-10 mx-auto mb-3 text-slate-300" />
+                  <p className="font-medium text-slate-600">No additional plant added</p>
+                  <p className="text-sm mt-1 mb-4">This is optional - only add if needed for today's job</p>
+                  <button
+                    onClick={addAdditionalItem}
+                    className="inline-flex items-center space-x-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <span>+ Add Plant Item</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
                 {formData.additionalItems.map((item, index) => (
-                  <div key={index} className="border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center space-x-3 mb-3">
-                      <input
-                        type="text"
-                        value={item.name}
-                        onChange={(e) => updateAdditionalItem(index, 'name', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Equipment name..."
-                      />
-                      <button
-                        onClick={() => removeAdditionalItem(index)}
-                        className="text-red-600 hover:text-red-800 text-sm font-medium"
-                      >
-                        Remove
-                      </button>
+                  <div key={index} className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                          Plant Item {index + 1}
+                        </span>
+                        <button
+                          onClick={() => removeAdditionalItem(index)}
+                          className="text-red-600 hover:text-red-800 text-xs font-medium px-2 py-1 hover:bg-red-50 rounded transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
+                    <div className="p-4">
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Name</label>
+                        <input
+                          type="text"
+                          value={item.name}
+                          onChange={(e) => updateAdditionalItem(index, 'name', e.target.value)}
+                          className="w-full px-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="e.g., Wacker Plate, Generator, Pump..."
+                        />
+                      </div>
 
-                    {item.name.trim() && (
-                      <>
-                        <div className="flex space-x-2 mb-3">
-                          <button
-                            type="button"
-                            onClick={() => updateAdditionalItem(index, 'status', 'ok')}
-                            className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                              item.status === 'ok'
-                                ? 'bg-green-100 text-green-700 border-2 border-green-400'
-                                : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent'
-                            }`}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="font-medium">OK</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => updateAdditionalItem(index, 'status', 'defect')}
-                            className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
-                              item.status === 'defect'
-                                ? 'bg-red-100 text-red-700 border-2 border-red-400'
-                                : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent'
-                            }`}
-                          >
-                            <XCircle className="h-4 w-4" />
-                            <span className="font-medium">Defect</span>
-                          </button>
-                        </div>
-
-                        {item.status === 'defect' && (
-                          <div className="space-y-3 p-3 bg-red-50 rounded-lg">
-                            <textarea
-                              value={item.notes}
-                              onChange={(e) => updateAdditionalItem(index, 'notes', e.target.value)}
-                              className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500"
-                              rows={2}
-                              placeholder="Describe the defect..."
-                            />
-                            <label className="flex items-center px-3 py-2 border border-red-300 rounded-lg hover:bg-red-50 cursor-pointer">
-                              <Camera className="h-4 w-4 mr-2 text-red-500" />
-                              <span className="text-sm text-red-700">{item.photo ? item.photo.name : 'Add Photo'}</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)}
-                                className="sr-only"
-                              />
-                            </label>
+                      {item.name.trim() && (
+                        <>
+                          <div className="mb-3">
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                            <div className="flex space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => updateAdditionalItem(index, 'status', 'ok')}
+                                className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                                  item.status === 'ok'
+                                    ? 'bg-green-100 text-green-700 border-2 border-green-400'
+                                    : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent'
+                                }`}
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                                <span className="font-medium">OK</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateAdditionalItem(index, 'status', 'defect')}
+                                className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
+                                  item.status === 'defect'
+                                    ? 'bg-red-100 text-red-700 border-2 border-red-400'
+                                    : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent'
+                                }`}
+                              >
+                                <XCircle className="h-4 w-4" />
+                                <span className="font-medium">Defect</span>
+                              </button>
+                            </div>
                           </div>
-                        )}
-                      </>
-                    )}
+
+                          {item.status === 'defect' && (
+                            <div className="space-y-3 p-3 bg-red-50 rounded-lg">
+                              <div>
+                                <label className="block text-sm font-medium text-red-700 mb-1">Defect Description</label>
+                                <textarea
+                                  value={item.notes}
+                                  onChange={(e) => updateAdditionalItem(index, 'notes', e.target.value)}
+                                  className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                                  rows={2}
+                                  placeholder="Describe the defect..."
+                                />
+                              </div>
+                              <label className="flex items-center px-3 py-2 border border-red-300 rounded-lg hover:bg-red-100 cursor-pointer transition-colors">
+                                <Camera className="h-4 w-4 mr-2 text-red-500" />
+                                <span className="text-sm text-red-700">{item.photo ? item.photo.name : 'Add Photo (optional)'}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  capture="environment"
+                                  onChange={(e) => updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)}
+                                  className="sr-only"
+                                />
+                              </label>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
+
+                <button
+                  onClick={addAdditionalItem}
+                  className="w-full flex items-center justify-center space-x-2 border-2 border-dashed border-slate-300 hover:border-orange-400 text-slate-600 hover:text-orange-600 px-4 py-3 rounded-xl transition-colors text-sm font-medium"
+                >
+                  <span>+ Add Another Plant Item</span>
+                </button>
               </div>
             )}
 
