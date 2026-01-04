@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Eye, AlertTriangle, CheckCircle, Download, User, Calendar, Filter, X, Clock, Car, Trash2, RefreshCw, ChevronDown, ChevronRight, Triangle as ExclamationTriangle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Eye, AlertTriangle, CheckCircle, Download, User, Calendar,
+  X, Car, Trash2, RefreshCw, Search, Filter, ChevronDown,
+  FileText, Clock, Shield, TrendingUp, AlertCircle
+} from 'lucide-react';
 import { VehicleInspection, Employee, supabase } from '../../../lib/supabase';
 
 interface InspectionTableProps {
@@ -28,11 +32,13 @@ interface DailyCheckStatus {
   inspection?: VehicleInspection;
 }
 
-interface DefectSummary {
-  employee: Employee;
-  inspection: VehicleInspection;
-  defectCount: number;
-  date: string;
+interface SearchFilters {
+  searchTerm: string;
+  vehicle: string;
+  employee: string;
+  dateFrom: string;
+  dateTo: string;
+  status: 'all' | 'defects' | 'clear';
 }
 
 export const InspectionTable: React.FC<InspectionTableProps> = ({
@@ -45,33 +51,24 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
   const [weekData, setWeekData] = useState<WeekData[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'defects'>('overview');
+  const [activeView, setActiveView] = useState<'compliance' | 'defects' | 'history'>('compliance');
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<SearchFilters>({
+    searchTerm: '',
+    vehicle: '',
+    employee: '',
+    dateFrom: '',
+    dateTo: '',
+    status: 'all',
+  });
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
     show: boolean;
     inspection: VehicleInspection | null;
   }>({ show: false, inspection: null });
   const [deleting, setDeleting] = useState(false);
-  
-  // Get current date for calendar display
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
-  
-  const currentDateStr = today.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  });
-  
-  const todayInspections = allInspections.filter(inspection => {
-    const inspectionDateStr = new Date(inspection.submitted_at).toISOString().split('T')[0];
-    console.log('Comparing inspection date:', inspectionDateStr, 'with today:', todayStr);
-    return inspectionDateStr === todayStr;
-  });
-  
-  console.log('DailyComplianceChart - Today is:', today.toDateString(), 'Day of week:', today.getDay(), 'Date string:', todayStr);
-  console.log('Found', todayInspections.length, 'inspections for today');
 
   useEffect(() => {
     generateWeekData();
@@ -79,59 +76,38 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
 
   const generateWeekData = () => {
     const weeks: WeekData[] = [];
-    
-    // Start from today and work backwards
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    console.log('=== REBUILDING WEEK DATA ===');
-    console.log('Today is:', today.toDateString(), 'Day of week:', today.getDay());
-    
-    // Generate 8 weeks of data
-    for (let weekOffset = 0; weekOffset < 8; weekOffset++) {
-      // Calculate the Sunday (week ending) for this week
-      // Start from today and find the next Sunday (or current Sunday if today is Sunday)
-      const currentWeekSunday = new Date(today);
-      const daysUntilSunday = (7 - today.getDay()) % 7; // Days until next Sunday (0 if today is Sunday)
-      currentWeekSunday.setDate(today.getDate() + daysUntilSunday - (7 * weekOffset));
+    const currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
+    for (let weekOffset = 0; weekOffset < 12; weekOffset++) {
+      const currentWeekSunday = new Date(currentDate);
+      const daysUntilSunday = (7 - currentDate.getDay()) % 7;
+      currentWeekSunday.setDate(currentDate.getDate() + daysUntilSunday - (7 * weekOffset));
       currentWeekSunday.setHours(23, 59, 59, 999);
-      
+
       const weekEnding = currentWeekSunday.toISOString().split('T')[0];
-      
-      // Calculate Monday of this week (6 days before Sunday)
       const monday = new Date(currentWeekSunday);
       monday.setDate(currentWeekSunday.getDate() - 6);
       monday.setHours(0, 0, 0, 0);
-      
-      console.log(`\nWeek ${weekOffset}:`);
-      console.log('  Sunday (week ending):', currentWeekSunday.toDateString());
-      console.log('  Monday (week start):', monday.toDateString());
-      
+
       const employeeWeekData: EmployeeWeekData[] = employees.map(employee => {
         const dailyChecks: DailyCheckStatus[] = [];
-        
-        // Generate 7 days starting from Monday
+
         for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
           const checkDate = new Date(monday);
           checkDate.setDate(monday.getDate() + dayOffset);
           checkDate.setHours(0, 0, 0, 0);
-          
+
           const dateStr = checkDate.toISOString().split('T')[0];
           const dayName = checkDate.toLocaleDateString('en-US', { weekday: 'short' });
-          
-          // Find inspection for this employee on this exact date
+
           const inspection = allInspections.find(insp => {
             if (insp.employee_id !== employee.id) return false;
-            
             const inspectionDate = new Date(insp.submitted_at);
             inspectionDate.setHours(0, 0, 0, 0);
-            const inspectionDateStr = inspectionDate.toISOString().split('T')[0];
-            
-            return inspectionDateStr === dateStr;
+            return inspectionDate.toISOString().split('T')[0] === dateStr;
           });
-          
-          console.log(`    ${dayName} ${checkDate.getDate()}/${checkDate.getMonth() + 1}: ${dateStr} - ${inspection ? 'HAS CHECK' : 'NO CHECK'}`);
-          
+
           dailyChecks.push({
             date: dateStr,
             dayName,
@@ -140,21 +116,13 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
             inspection
           });
         }
-        
-        return {
-          employee,
-          dailyChecks
-        };
+
+        return { employee, dailyChecks };
       });
-      
-      weeks.push({
-        weekEnding,
-        employees: employeeWeekData
-      });
+
+      weeks.push({ weekEnding, employees: employeeWeekData });
     }
-    
-    console.log('=== WEEK DATA COMPLETE ===\n');
-    
+
     setWeekData(weeks);
     if (!selectedWeek && weeks.length > 0) {
       setSelectedWeek(weeks[0].weekEnding);
@@ -176,7 +144,6 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
 
     setDeleting(true);
     try {
-      // First delete all inspection items
       const { error: itemsError } = await supabase
         .from('inspection_items')
         .delete()
@@ -184,7 +151,6 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
 
       if (itemsError) throw itemsError;
 
-      // Then delete the inspection
       const { error } = await supabase
         .from('vehicle_inspections')
         .delete()
@@ -206,20 +172,127 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
     setDeleteConfirmation({ show: false, inspection: null });
   };
 
-  const exportWeekToCSV = () => {
-    const selectedWeekData = weekData.find(w => w.weekEnding === selectedWeek);
+  const selectedWeekData = weekData.find(w => w.weekEnding === selectedWeek);
+
+  const weekStats = useMemo(() => {
+    if (!selectedWeekData) {
+      return { totalEmployees: 0, totalPossibleChecks: 0, completedChecks: 0, defectsFound: 0, totalAllChecks: 0, complianceRate: 0 };
+    }
+
+    const totalEmployees = selectedWeekData.employees.length;
+    const totalPossibleChecks = totalEmployees * 5;
+    const completedChecks = selectedWeekData.employees.reduce((sum, emp) =>
+      sum + emp.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length, 0
+    );
+    const defectsFound = selectedWeekData.employees.reduce((sum, emp) => {
+      return sum + emp.dailyChecks.filter(check => {
+        if (!check.inspection?.inspection_items) return false;
+        return check.inspection.inspection_items.some(item =>
+          item.status === 'defect' && (!item.defect_status || item.defect_status === 'active')
+        );
+      }).length;
+    }, 0);
+    const totalAllChecks = selectedWeekData.employees.reduce((sum, emp) =>
+      sum + emp.dailyChecks.filter(check => check.hasCheck).length, 0
+    );
+    const complianceRate = totalPossibleChecks > 0
+      ? Math.round((completedChecks / totalPossibleChecks) * 100)
+      : 0;
+
+    return { totalEmployees, totalPossibleChecks, completedChecks, defectsFound, totalAllChecks, complianceRate };
+  }, [selectedWeekData]);
+
+  const activeDefects = useMemo(() => {
+    if (!selectedWeekData) return [];
+
+    const defects: Array<{
+      employee: Employee;
+      inspection: VehicleInspection;
+      defectItems: any[];
+      date: string;
+    }> = [];
+
+    selectedWeekData.employees.forEach(empData => {
+      empData.dailyChecks.forEach(dayCheck => {
+        if (dayCheck.inspection?.inspection_items) {
+          const activeDefectItems = dayCheck.inspection.inspection_items.filter(item =>
+            item.status === 'defect' && (!item.defect_status || item.defect_status === 'active')
+          );
+
+          if (activeDefectItems.length > 0) {
+            defects.push({
+              employee: empData.employee,
+              inspection: dayCheck.inspection,
+              defectItems: activeDefectItems,
+              date: dayCheck.date
+            });
+          }
+        }
+      });
+    });
+
+    return defects.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [selectedWeekData]);
+
+  const filteredHistory = useMemo(() => {
+    let filtered = [...allInspections];
+
+    if (filters.searchTerm) {
+      const term = filters.searchTerm.toLowerCase();
+      filtered = filtered.filter(insp =>
+        insp.employee?.full_name.toLowerCase().includes(term) ||
+        insp.vehicle?.registration_number.toLowerCase().includes(term) ||
+        insp.override_vehicle_registration?.toLowerCase().includes(term)
+      );
+    }
+
+    if (filters.vehicle) {
+      filtered = filtered.filter(insp =>
+        insp.vehicle?.registration_number.toLowerCase().includes(filters.vehicle.toLowerCase()) ||
+        insp.override_vehicle_registration?.toLowerCase().includes(filters.vehicle.toLowerCase())
+      );
+    }
+
+    if (filters.employee) {
+      filtered = filtered.filter(insp =>
+        insp.employee?.full_name.toLowerCase().includes(filters.employee.toLowerCase())
+      );
+    }
+
+    if (filters.dateFrom) {
+      filtered = filtered.filter(insp =>
+        new Date(insp.submitted_at) >= new Date(filters.dateFrom)
+      );
+    }
+
+    if (filters.dateTo) {
+      filtered = filtered.filter(insp =>
+        new Date(insp.submitted_at) <= new Date(filters.dateTo + 'T23:59:59')
+      );
+    }
+
+    if (filters.status === 'defects') {
+      filtered = filtered.filter(insp => insp.has_defects);
+    } else if (filters.status === 'clear') {
+      filtered = filtered.filter(insp => !insp.has_defects);
+    }
+
+    return filtered;
+  }, [allInspections, filters]);
+
+  const exportWeekSummary = () => {
     if (!selectedWeekData) return;
 
-    const headers = ['Employee', 'Role', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekday Compliance', 'Total Checks', 'Defects Found'];
+    const headers = ['Employee', 'Role', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun', 'Weekday Compliance', 'Total Checks', 'Defects'];
     const rows = selectedWeekData.employees.map(empData => {
       const weekdayChecks = empData.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length;
       const totalChecks = empData.dailyChecks.filter(check => check.hasCheck).length;
       const defectDays = empData.dailyChecks.filter(check => check.hasDefects).length;
-      
+
       return [
         empData.employee.full_name,
         empData.employee.role,
-        ...empData.dailyChecks.map(check => 
+        ...empData.dailyChecks.map(check =>
           check.hasCheck ? (check.hasDefects ? 'DEFECT' : 'OK') : '-'
         ),
         `${weekdayChecks}/5 (${Math.round((weekdayChecks / 5) * 100)}%)`,
@@ -232,46 +305,36 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
       .map(row => row.map(cell => `"${cell}"`).join(','))
       .join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `vehicle-checks-week-${selectedWeek}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    downloadCSV(csvContent, `compliance-summary-week-${selectedWeek}.csv`);
   };
 
-  const exportEntireWeekToCSV = () => {
-    const selectedWeekData = weekData.find(w => w.weekEnding === selectedWeek);
+  const exportDetailedInspections = () => {
     if (!selectedWeekData) return;
 
-    // Create detailed CSV with all inspection data
     const headers = [
-      'Date', 'Day', 'Employee', 'Role', 'Vehicle', 'Status', 'Defects Found', 
-      'Inspection Time', 'Defect Items', 'Comments'
+      'Date', 'Time', 'Employee', 'Role', 'Vehicle Registration', 'Vehicle Make/Model',
+      'Overall Status', 'Defect Count', 'Defect Items', 'Defect Comments'
     ];
-    
+
     const rows: string[][] = [];
-    
+
     selectedWeekData.employees.forEach(empData => {
       empData.dailyChecks.forEach(dayCheck => {
         if (dayCheck.hasCheck && dayCheck.inspection) {
           const inspection = dayCheck.inspection;
           const defectItems = inspection.inspection_items?.filter(item => item.status === 'defect') || [];
-          const defectItemNames = defectItems.map(item => item.item_name).join('; ');
-          const defectComments = defectItems.map(item => item.comments || '').filter(Boolean).join('; ');
-          
+
           rows.push([
             new Date(dayCheck.date).toLocaleDateString('en-GB'),
-            dayCheck.dayName,
+            new Date(inspection.submitted_at).toLocaleTimeString('en-GB'),
             empData.employee.full_name,
             empData.employee.role,
             inspection.override_vehicle_registration || inspection.vehicle?.registration_number || 'Unknown',
+            inspection.vehicle?.make_model || 'Manual Entry',
             inspection.has_defects ? 'DEFECTS FOUND' : 'ALL CLEAR',
             defectItems.length.toString(),
-            new Date(inspection.submitted_at).toLocaleTimeString('en-GB'),
-            defectItemNames || 'None',
-            defectComments || 'None'
+            defectItems.map(item => item.item_name).join('; ') || 'None',
+            defectItems.map(item => item.notes || '').filter(Boolean).join('; ') || 'None'
           ]);
         }
       });
@@ -281,538 +344,644 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
       .map(row => row.map(cell => `"${cell}"`).join(','))
       .join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    downloadCSV(csvContent, `detailed-inspections-week-${selectedWeek}.csv`);
+  };
+
+  const exportHistoricalData = () => {
+    const headers = [
+      'Date', 'Time', 'Employee', 'Role', 'Vehicle Registration', 'Vehicle Make/Model',
+      'Overall Status', 'Defect Count', 'Defect Items', 'Defect Comments', 'Photo Evidence'
+    ];
+
+    const rows = filteredHistory.map(inspection => {
+      const defectItems = inspection.inspection_items?.filter(item => item.status === 'defect') || [];
+      const hasPhotos = defectItems.some(item => item.photo_url);
+
+      return [
+        new Date(inspection.submitted_at).toLocaleDateString('en-GB'),
+        new Date(inspection.submitted_at).toLocaleTimeString('en-GB'),
+        inspection.employee?.full_name || 'Unknown',
+        inspection.employee?.role || '',
+        inspection.override_vehicle_registration || inspection.vehicle?.registration_number || 'Unknown',
+        inspection.vehicle?.make_model || 'Manual Entry',
+        inspection.has_defects ? 'DEFECTS FOUND' : 'ALL CLEAR',
+        defectItems.length.toString(),
+        defectItems.map(item => item.item_name).join('; ') || 'None',
+        defectItems.map(item => item.notes || '').filter(Boolean).join('; ') || 'None',
+        hasPhotos ? 'Yes' : 'No'
+      ];
+    });
+
+    const csvContent = [headers, ...rows]
+      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .join('\n');
+
+    downloadCSV(csvContent, `vehicle-inspections-export-${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const downloadCSV = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `detailed-vehicle-checks-week-${selectedWeek}.csv`;
+    a.download = filename;
     a.click();
     window.URL.revokeObjectURL(url);
   };
 
-  const selectedWeekData = weekData.find(w => w.weekEnding === selectedWeek);
-
-  // Calculate stats for selected week
-  const weekStats = selectedWeekData ? {
-    totalEmployees: selectedWeekData.employees.length,
-    // Only count Monday-Friday for compliance (5 days)
-    totalPossibleChecks: selectedWeekData.employees.length * 5,
-    completedChecks: selectedWeekData.employees.reduce((sum, emp) => 
-      // Only count Monday-Friday checks (first 5 days)
-      sum + emp.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length, 0
-    ),
-    defectsFound: selectedWeekData.employees.reduce((sum, emp) => {
-      // Only count days with active defects (not fixed ones)
-      const activeDaysWithDefects = emp.dailyChecks.filter(check => {
-        if (!check.inspection || !check.inspection.inspection_items) return false;
-        return check.inspection.inspection_items.some(item => 
-          item.status === 'defect' && 
-          (!item.defect_status || item.defect_status === 'active')
-        );
-      }).length;
-      return sum + activeDaysWithDefects;
-    }, 0),
-    totalAllChecks: selectedWeekData.employees.reduce((sum, emp) => 
-      sum + emp.dailyChecks.filter(check => check.hasCheck).length, 0
-    )
-  } : { totalEmployees: 0, totalPossibleChecks: 0, completedChecks: 0, defectsFound: 0, totalAllChecks: 0 };
-
-  const complianceRate = weekStats.totalPossibleChecks > 0 
-    ? Math.round((weekStats.completedChecks / weekStats.totalPossibleChecks) * 100)
-    : 0;
-
-  // Get defects summary for selected week
-  const getDefectsSummary = (): DefectSummary[] => {
-    if (!selectedWeekData) return [];
-    
-    const defects: DefectSummary[] = [];
-    
-    selectedWeekData.employees.forEach(empData => {
-      empData.dailyChecks.forEach(dayCheck => {
-        if (dayCheck.inspection) {
-          // Only count active defects (not fixed ones)
-          const activeDefects = dayCheck.inspection.inspection_items?.filter(item => 
-            item.status === 'defect' && 
-            (!item.defect_status || item.defect_status === 'active')
-          ) || [];
-          
-          const defectCount = activeDefects.length;
-          
-          // Only add to defects summary if there are active defects
-          if (defectCount > 0) {
-          defects.push({
-            employee: empData.employee,
-            inspection: dayCheck.inspection,
-            defectCount,
-            date: dayCheck.date
-          });
-          }
-        }
-      });
-    });
-    
-    return defects.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const getComplianceColor = (rate: number) => {
+    if (rate >= 90) return 'text-emerald-600';
+    if (rate >= 70) return 'text-amber-600';
+    return 'text-red-600';
   };
 
-  const defectsSummary = getDefectsSummary();
+  const getComplianceBg = (rate: number) => {
+    if (rate >= 90) return 'bg-emerald-50 border-emerald-200';
+    if (rate >= 70) return 'bg-amber-50 border-amber-200';
+    return 'bg-red-50 border-red-200';
+  };
 
   return (
     <div className="space-y-6">
-      {/* Calendar Background Header */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="p-3 bg-blue-100 rounded-xl">
-              <Calendar className="h-8 w-8 text-blue-600" />
-            </div>
+      <div className="bg-white border border-slate-200 rounded-lg">
+        <div className="px-6 py-5 border-b border-slate-200">
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Daily Vehicle Checks</h1>
-              <p className="text-blue-700 font-medium">Today: {currentDateStr}</p>
+              <h1 className="text-xl font-semibold text-slate-900">Daily Vehicle Checks</h1>
+              <p className="text-sm text-slate-500 mt-1">
+                {today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <select
+                value={selectedWeek}
+                onChange={(e) => setSelectedWeek(e.target.value)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                {weekData.map((week) => (
+                  <option key={week.weekEnding} value={week.weekEnding}>
+                    Week ending {new Date(week.weekEnding).toLocaleDateString('en-GB', {
+                      day: 'numeric', month: 'short', year: 'numeric'
+                    })}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
+                title="Refresh data"
+              >
+                <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-blue-600">
-              {today.getDate()}
+        </div>
+
+        <div className="grid grid-cols-4 divide-x divide-slate-200">
+          <div className="px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{weekStats.complianceRate}%</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Weekday Compliance</p>
+              </div>
             </div>
-            <div className="text-sm text-blue-600">
-              {today.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}
+          </div>
+          <div className="px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-emerald-50 rounded-lg">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{weekStats.completedChecks}<span className="text-base text-slate-400">/{weekStats.totalPossibleChecks}</span></p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Checks Complete</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${weekStats.defectsFound > 0 ? 'bg-red-50' : 'bg-slate-50'}`}>
+                <AlertTriangle className={`h-5 w-5 ${weekStats.defectsFound > 0 ? 'text-red-600' : 'text-slate-400'}`} />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{weekStats.defectsFound}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Active Defects</p>
+              </div>
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-slate-50 rounded-lg">
+                <User className="h-5 w-5 text-slate-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-semibold text-slate-900">{weekStats.totalEmployees}</p>
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Employees</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Header with Stats and Controls */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Weekly Compliance Overview</h2>
-            <p className="text-slate-600">Monitor employee daily vehicle check compliance</p>
-          </div>
-          <div className="flex items-center space-x-3">
+      <div className="bg-white border border-slate-200 rounded-lg">
+        <div className="border-b border-slate-200">
+          <nav className="flex">
             <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-              <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Week Selection Dropdown */}
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-slate-700 mb-2">Select Week Ending</label>
-          <select
-            value={selectedWeek}
-            onChange={(e) => setSelectedWeek(e.target.value)}
-            className="w-full md:w-auto px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            {weekData.map((week) => (
-              <option key={week.weekEnding} value={week.weekEnding}>
-                Week Ending: {new Date(week.weekEnding).toLocaleDateString('en-GB', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
-                })}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Tab Navigation */}
-        <div className="border-b border-slate-200 mb-6">
-          <nav className="flex space-x-8">
-            <button
-              onClick={() => setActiveTab('overview')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'overview'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              onClick={() => setActiveView('compliance')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeView === 'compliance'
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
-              Weekly Overview
+              <div className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Weekly Compliance
+              </div>
             </button>
             <button
-              onClick={() => setActiveTab('defects')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'defects'
-                  ? 'border-red-500 text-red-600'
-                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+              onClick={() => setActiveView('defects')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeView === 'defects'
+                  ? 'border-red-600 text-red-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
               }`}
             >
-              Defects Found ({defectsSummary.length})
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                Defects
+                {activeDefects.length > 0 && (
+                  <span className="px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">
+                    {activeDefects.length}
+                  </span>
+                )}
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveView('history')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeView === 'history'
+                  ? 'border-slate-600 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Historical Records
+              </div>
             </button>
           </nav>
         </div>
 
-        {/* Week Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <div className="text-2xl font-bold text-blue-700">{weekStats.completedChecks}</div>
-            <div className="text-sm text-blue-600">Weekday Checks (Mon-Fri)</div>
-          </div>
-          <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-            <div className="text-2xl font-bold text-green-700">{complianceRate}%</div>
-            <div className="text-sm text-green-600">Weekday Compliance</div>
-          </div>
-          <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
-            <div className="text-2xl font-bold text-amber-700">{weekStats.defectsFound}</div>
-            <div className="text-sm text-amber-600">Defects Found</div>
-          </div>
-          <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-            <div className="text-2xl font-bold text-purple-700">{weekStats.totalAllChecks}</div>
-            <div className="text-sm text-purple-600">Total Checks (Inc. Weekends)</div>
-          </div>
-        </div>
+        {activeView === 'compliance' && selectedWeekData && (
+          <div>
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <p className="text-sm text-slate-600">
+                Showing compliance for week ending{' '}
+                <span className="font-medium text-slate-900">
+                  {new Date(selectedWeek).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={exportWeekSummary}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Summary CSV
+                </button>
+                <button
+                  onClick={exportDetailedInspections}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                >
+                  <Download className="h-4 w-4" />
+                  Detailed CSV
+                </button>
+              </div>
+            </div>
 
-        {/* Download Buttons */}
-        <div className="flex space-x-3 mb-6">
-          <button
-            onClick={exportWeekToCSV}
-            disabled={!selectedWeek}
-            className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors"
-          >
-            <Download className="h-4 w-4" />
-            <span>Export Week Summary</span>
-          </button>
-          <button
-            onClick={exportEntireWeekToCSV}
-            disabled={!selectedWeek}
-            className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded-lg transition-colors"
-          >
-            <Download className="h-4 w-4" />
-            <span>Export Detailed Week Data</span>
-          </button>
-        </div>
-      </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Employee</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-12">Mon</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-12">Tue</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-12">Wed</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-12">Thu</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider w-12">Fri</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider w-12">Sat</th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-slate-400 uppercase tracking-wider w-12">Sun</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Compliance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedWeekData.employees.map((empData) => {
+                    const weekdayChecks = empData.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length;
+                    const employeeCompliance = Math.round((weekdayChecks / 5) * 100);
 
-      {/* Tab Content */}
-      {activeTab === 'overview' && selectedWeekData && (
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900">
-              Week Ending: {new Date(selectedWeek).toLocaleDateString('en-GB', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-              })}
-            </h3>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider sticky left-0 bg-slate-50">
-                    Employee
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Mon</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Tue</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Wed</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Thu</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Fri</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Sat</th>
-                  <th className="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Sun</th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Summary</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
-                {selectedWeekData.employees.map((empData) => {
-                  const weekdayChecks = empData.dailyChecks.slice(0, 5).filter(check => check.hasCheck).length;
-                  const weekendChecks = empData.dailyChecks.slice(5).filter(check => check.hasCheck).length;
-                  // Only count days with active defects (not fixed ones)
-                  const defectDays = empData.dailyChecks.filter(check => {
-                    if (!check.inspection || !check.inspection.inspection_items) return false;
-                    return check.inspection.inspection_items.some(item => 
-                      item.status === 'defect' && 
-                      (!item.defect_status || item.defect_status === 'active')
-                    );
-                  }).length;
-                  
-                  return (
-                    <tr key={empData.employee.id} className="hover:bg-slate-50">
-                      <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white">
-                        <div className="flex items-center space-x-3">
-                          <div className="p-2 bg-blue-100 rounded-lg">
-                            <User className="h-4 w-4 text-blue-600" />
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-slate-900">
-                              {empData.employee.full_name}
+                    return (
+                      <tr key={empData.employee.id} className="hover:bg-slate-50">
+                        <td className="px-6 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                              <span className="text-xs font-medium text-slate-600">
+                                {empData.employee.full_name.split(' ').map(n => n[0]).join('')}
+                              </span>
                             </div>
-                            <div className="text-xs text-slate-500">
-                              {empData.employee.role}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      
-                      {/* Daily Check Status */}
-                      {empData.dailyChecks.map((dayCheck) => (
-                        <td key={dayCheck.date} className="px-4 py-4 text-center">
-                          <div className="flex flex-col items-center space-y-1">
-                            {dayCheck.hasCheck ? (
-                              <>
-                                {(() => {
-                                  // Check if this inspection has any active defects
-                                  const hasActiveDefects = dayCheck.inspection?.inspection_items?.some(item => 
-                                    item.status === 'defect' && 
-                                    (!item.defect_status || item.defect_status === 'active')
-                                  ) || false;
-                                  
-                                  return (
-                                <div
-                                  className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                                    hasActiveDefects
-                                      ? 'bg-red-100 hover:bg-red-200'
-                                      : 'bg-green-100 hover:bg-green-200'
-                                  }`}
-                                  onClick={() => dayCheck.inspection && onViewInspection(dayCheck.inspection)}
-                                  title={`Click to view details - ${hasActiveDefects ? 'Has active defects' : 'All clear'}`}
-                                >
-                                  {hasActiveDefects ? (
-                                    <AlertTriangle className="h-4 w-4 text-red-600" />
-                                  ) : (
-                                    <CheckCircle className="h-4 w-4 text-green-600" />
-                                  )}
-                                </div>
-                                  );
-                                })()}
-                                <div className="flex space-x-1">
-                                  <button
-                                    onClick={() => dayCheck.inspection && onViewInspection(dayCheck.inspection)}
-                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                    title="View details"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={() => dayCheck.inspection && handleDeleteInspection(dayCheck.inspection)}
-                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Delete inspection"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                <X className="h-4 w-4 text-slate-400" />
-                              </div>
-                            )}
-                            <div className="text-xs text-slate-500">
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">{empData.employee.full_name}</p>
+                              <p className="text-xs text-slate-500">{empData.employee.role}</p>
                             </div>
                           </div>
                         </td>
-                      ))}
-                      
-                      {/* Summary */}
-                      <td className="px-6 py-4 text-center">
-                        <div className="space-y-1">
-                          <div className="text-sm font-medium text-slate-900">
-                            {weekdayChecks}/5 weekdays
-                          </div>
-                          {weekendChecks > 0 && (
-                            <div className="text-xs text-blue-600">
-                              +{weekendChecks} weekend
+
+                        {empData.dailyChecks.map((dayCheck, idx) => (
+                          <td key={dayCheck.date} className={`px-3 py-3 text-center ${idx >= 5 ? 'bg-slate-50/50' : ''}`}>
+                            {dayCheck.hasCheck ? (
+                              <button
+                                onClick={() => dayCheck.inspection && onViewInspection(dayCheck.inspection)}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                                  dayCheck.hasDefects
+                                    ? 'bg-red-100 hover:bg-red-200 text-red-600'
+                                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-600'
+                                }`}
+                                title={dayCheck.hasDefects ? 'Defects found - Click to view' : 'All clear - Click to view'}
+                              >
+                                {dayCheck.hasDefects ? (
+                                  <AlertTriangle className="h-4 w-4" />
+                                ) : (
+                                  <CheckCircle className="h-4 w-4" />
+                                )}
+                              </button>
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
+                                <X className="h-4 w-4 text-slate-300" />
+                              </div>
+                            )}
+                          </td>
+                        ))}
+
+                        <td className="px-6 py-3 text-right">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getComplianceBg(employeeCompliance)} ${getComplianceColor(employeeCompliance)}`}>
+                            {weekdayChecks}/5 ({employeeCompliance}%)
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200">
+              <div className="flex items-center gap-6 text-xs text-slate-500">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <CheckCircle className="h-3 w-3 text-emerald-600" />
+                  </div>
+                  <span>Check complete - All clear</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-red-100 flex items-center justify-center">
+                    <AlertTriangle className="h-3 w-3 text-red-600" />
+                  </div>
+                  <span>Check complete - Defects found</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center">
+                    <X className="h-3 w-3 text-slate-300" />
+                  </div>
+                  <span>No check submitted</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeView === 'defects' && (
+          <div className="p-6">
+            {activeDefects.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="h-6 w-6 text-emerald-600" />
+                </div>
+                <h3 className="text-sm font-medium text-slate-900 mb-1">No Active Defects</h3>
+                <p className="text-sm text-slate-500">All vehicle checks for this week are clear.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {activeDefects.map((defect, idx) => (
+                  <div key={idx} className="border border-red-200 rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                          <AlertTriangle className="h-5 w-5 text-red-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{defect.employee.full_name}</p>
+                          <p className="text-xs text-slate-500">
+                            {new Date(defect.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-slate-500">
+                          {defect.inspection.override_vehicle_registration || defect.inspection.vehicle?.registration_number}
+                        </span>
+                        <button
+                          onClick={() => onViewInspection(defect.inspection)}
+                          className="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        >
+                          View Details
+                        </button>
+                      </div>
+                    </div>
+                    <div className="px-4 py-3">
+                      <div className="grid gap-2">
+                        {defect.defectItems.map((item, itemIdx) => (
+                          <div key={itemIdx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-md">
+                            <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <span className="text-xs font-medium text-red-600">{itemIdx + 1}</span>
                             </div>
-                          )}
-                          {defectDays > 0 && (
-                            <div className="text-xs text-red-600">
-                              {defectDays} defect{defectDays !== 1 ? 's' : ''}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-slate-900">{item.item_name}</p>
+                              {item.notes && (
+                                <p className="text-xs text-slate-600 mt-1">{item.notes}</p>
+                              )}
                             </div>
-                          )}
-                          <div className={`text-xs font-medium ${
-                            weekdayChecks === 5 ? 'text-green-600' :
-                            weekdayChecks >= 3 ? 'text-amber-600' : 'text-red-600'
-                          }`}>
-                            {Math.round((weekdayChecks / 5) * 100)}%
+                            {item.photo_url && (
+                              <span className="text-xs text-slate-400 flex items-center gap-1">
+                                <FileText className="h-3 w-3" />
+                                Photo
+                              </span>
+                            )}
                           </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeView === 'history' && (
+          <div>
+            <div className="px-6 py-4 border-b border-slate-200">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex-1 max-w-md">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search by employee or vehicle..."
+                      value={filters.searchTerm}
+                      onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                      className="w-full pl-10 pr-4 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+                      showFilters ? 'bg-slate-200 text-slate-900' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Filter className="h-4 w-4" />
+                    Filters
+                    <ChevronDown className={`h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    onClick={exportHistoricalData}
+                    className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-slate-800 hover:bg-slate-700 rounded-md transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export Results
+                  </button>
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="grid grid-cols-5 gap-4 pt-4 border-t border-slate-200">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Vehicle</label>
+                    <input
+                      type="text"
+                      placeholder="Registration..."
+                      value={filters.vehicle}
+                      onChange={(e) => setFilters(prev => ({ ...prev, vehicle: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Employee</label>
+                    <input
+                      type="text"
+                      placeholder="Name..."
+                      value={filters.employee}
+                      onChange={(e) => setFilters(prev => ({ ...prev, employee: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Date From</label>
+                    <input
+                      type="date"
+                      value={filters.dateFrom}
+                      onChange={(e) => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Date To</label>
+                    <input
+                      type="date"
+                      value={filters.dateTo}
+                      onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value as any }))}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="all">All</option>
+                      <option value="defects">With Defects</option>
+                      <option value="clear">All Clear</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Employee</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Vehicle</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredHistory.slice(0, 50).map((inspection) => (
+                    <tr key={inspection.id} className="hover:bg-slate-50">
+                      <td className="px-6 py-4">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">
+                            {new Date(inspection.submitted_at).toLocaleDateString('en-GB')}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {new Date(inspection.submitted_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm text-slate-900">{inspection.employee?.full_name || 'Unknown'}</p>
+                        <p className="text-xs text-slate-500">{inspection.employee?.role || ''}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="text-sm text-slate-900">
+                          {inspection.override_vehicle_registration || inspection.vehicle?.registration_number}
+                        </p>
+                        <p className="text-xs text-slate-500">{inspection.vehicle?.make_model || 'Manual Entry'}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        {inspection.has_defects ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-red-50 text-red-700 rounded-full">
+                            <AlertTriangle className="h-3 w-3" />
+                            Defects
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-full">
+                            <CheckCircle className="h-3 w-3" />
+                            Clear
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => onViewInspection(inspection)}
+                            className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            title="View details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInspection(inspection)}
+                            className="p-1.5 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Defects Tab */}
-      {activeTab === 'defects' && (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">
-            Defects Found - Week Ending {new Date(selectedWeek).toLocaleDateString('en-GB')}
-          </h3>
-          
-          {defectsSummary.length === 0 ? (
-            <div className="text-center py-8">
-              <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-              <p className="text-slate-600">No defects found for this week!</p>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {defectsSummary.map((defect) => (
-                <div key={defect.inspection.id} className="border border-red-200 rounded-lg p-4 bg-red-50">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-red-100 rounded-lg">
-                        <AlertTriangle className="h-5 w-5 text-red-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-slate-900">{defect.employee.full_name}</h4>
-                        <p className="text-sm text-slate-600">{defect.employee.role}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-medium text-slate-900">
-                        {new Date(defect.date).toLocaleDateString('en-GB')}
-                      </div>
-                      <div className="text-xs text-red-600">
-                        {defect.defectCount} defect{defect.defectCount !== 1 ? 's' : ''}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mb-3">
-                    <p className="text-sm text-slate-700">
-                      <strong>Vehicle:</strong> {defect.inspection.override_vehicle_registration || defect.inspection.vehicle?.registration_number}
-                    </p>
-                  </div>
 
-                  {/* Defect Items */}
-                  {defect.inspection.inspection_items && (
-                    <div className="mb-3">
-                      <p className="text-sm font-medium text-slate-700 mb-2">Defect Items:</p>
-                      <div className="space-y-1">
-                        {defect.inspection.inspection_items
-                          .filter(item => item.status === 'defect')
-                          .map((item, index) => (
-                            <div key={index} className="text-sm text-red-700 bg-white rounded p-2">
-                              • {item.item_name}
-                              {item.notes && (
-                                <div className="text-xs text-slate-600 mt-1">
-                                  Comment: {item.notes}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
+            {filteredHistory.length > 50 && (
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 text-center">
+                <p className="text-sm text-slate-500">
+                  Showing 50 of {filteredHistory.length} records. Use filters to narrow results or export all data.
+                </p>
+              </div>
+            )}
 
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => onViewInspection(defect.inspection)}
-                      className="flex items-center space-x-1 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
-                    >
-                      <Eye className="h-3 w-3" />
-                      <span>View Full Details</span>
-                    </button>
-                    <button
-                      onClick={() => handleDeleteInspection(defect.inspection)}
-                      className="flex items-center space-x-1 px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition-colors"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      <span>Delete</span>
-                    </button>
-                  </div>
+            {filteredHistory.length === 0 && (
+              <div className="text-center py-12">
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                  <FileText className="h-6 w-6 text-slate-400" />
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-slate-900 mb-4">Legend</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            </div>
-            <span className="text-sm text-slate-700">Check completed - All clear</span>
+                <h3 className="text-sm font-medium text-slate-900 mb-1">No Records Found</h3>
+                <p className="text-sm text-slate-500">Try adjusting your search or filter criteria.</p>
+              </div>
+            )}
           </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 rounded-full bg-red-100 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-            </div>
-            <span className="text-sm text-slate-700">Check completed - Defects found</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center">
-              <X className="h-4 w-4 text-slate-400" />
-            </div>
-            <span className="text-sm text-slate-700">No check completed</span>
-          </div>
-          <div className="flex items-center space-x-2">
-            <div className="flex space-x-1">
-              <Eye className="h-4 w-4 text-blue-600" />
-              <Trash2 className="h-4 w-4 text-red-600" />
-            </div>
-            <span className="text-sm text-slate-700">View / Delete actions</span>
-          </div>
-        </div>
-        <div className="mt-4 text-center text-xs text-slate-500">
-          Compliance based on Monday-Friday. Weekend checks are optional but tracked.
-        </div>
+        )}
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteConfirmation.show && deleteConfirmation.inspection && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             <div className="p-6">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-red-600" />
-                </div>
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="h-6 w-6 text-red-600" />
               </div>
-              
-              <h3 className="text-xl font-bold text-slate-900 text-center mb-4">
-                Delete Vehicle Inspection
+
+              <h3 className="text-lg font-semibold text-slate-900 text-center mb-2">
+                Delete Vehicle Check
               </h3>
-              
-              <p className="text-slate-600 text-center mb-6">
-                Are you sure you want to delete this vehicle inspection? This action cannot be undone.
+
+              <p className="text-sm text-slate-600 text-center mb-6">
+                This action cannot be undone. The inspection record and all associated data will be permanently removed.
               </p>
-              
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
-                <div className="text-sm space-y-1">
-                  <div><strong>Vehicle:</strong> {deleteConfirmation.inspection.override_vehicle_registration || deleteConfirmation.inspection.vehicle?.registration_number}</div>
-                  <div><strong>Employee:</strong> {deleteConfirmation.inspection.employee?.full_name}</div>
-                  <div><strong>Date:</strong> {new Date(deleteConfirmation.inspection.submitted_at).toLocaleDateString()}</div>
-                  <div><strong>Status:</strong> {deleteConfirmation.inspection.has_defects ? 'Has Defects' : 'All Clear'}</div>
+
+              <div className="bg-slate-50 rounded-md p-4 mb-6">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-slate-500">Vehicle</p>
+                    <p className="font-medium text-slate-900">
+                      {deleteConfirmation.inspection.override_vehicle_registration || deleteConfirmation.inspection.vehicle?.registration_number}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Employee</p>
+                    <p className="font-medium text-slate-900">
+                      {deleteConfirmation.inspection.employee?.full_name}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Date</p>
+                    <p className="font-medium text-slate-900">
+                      {new Date(deleteConfirmation.inspection.submitted_at).toLocaleDateString('en-GB')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Status</p>
+                    <p className={`font-medium ${deleteConfirmation.inspection.has_defects ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {deleteConfirmation.inspection.has_defects ? 'Has Defects' : 'All Clear'}
+                    </p>
+                  </div>
                 </div>
               </div>
-              
-              <div className="flex space-x-3">
+
+              <div className="flex gap-3">
                 <button
                   onClick={cancelDelete}
                   disabled={deleting}
-                  className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:bg-slate-100 text-slate-700 rounded-lg transition-colors"
+                  className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmDelete}
                   disabled={deleting}
-                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors flex items-center justify-center space-x-2"
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors flex items-center justify-center gap-2"
                 >
                   {deleting ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      <span>Deleting...</span>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Deleting...
                     </>
                   ) : (
                     <>
                       <Trash2 className="h-4 w-4" />
-                      <span>Delete Inspection</span>
+                      Delete
                     </>
                   )}
                 </button>
@@ -823,21 +992,4 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
       )}
     </div>
   );
-};
-
-// Legacy component for backward compatibility
-export const InspectionTableLegacy: React.FC<{
-  inspections: VehicleInspection[];
-  onViewInspection: (inspection: VehicleInspection) => void;
-}> = ({ inspections, onViewInspection }) => {
-  if (inspections.length === 0) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm p-8 text-center">
-        <p className="text-slate-600">No daily vehicle checks found matching your criteria.</p>
-      </div>
-    );
-  }
-
-  // This is now handled by the main InspectionTable component
-  return null;
 };

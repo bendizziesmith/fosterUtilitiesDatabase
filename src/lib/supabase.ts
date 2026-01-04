@@ -70,6 +70,8 @@ export interface InspectionItem {
   defect_severity?: string;
   action_required?: boolean;
   completion_date?: string;
+  defect_status?: 'active' | 'fixed';
+  defect_fixed?: boolean;
 }
 
 export interface PlantRecord {
