@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
 import { supabase, Employee, HavsTimesheetEntry, getWeekEndDate } from '../../../lib/supabase';
 
@@ -34,6 +34,57 @@ interface TimesheetData {
   total_hours: number;
 }
 
+const DAYS = [
+  { key: 'monday', label: 'Mon', full: 'Monday' },
+  { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
+  { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
+  { key: 'thursday', label: 'Thu', full: 'Thursday' },
+  { key: 'friday', label: 'Fri', full: 'Friday' },
+  { key: 'saturday', label: 'Sat', full: 'Saturday' },
+  { key: 'sunday', label: 'Sun', full: 'Sunday' },
+] as const;
+
+type DayKey = typeof DAYS[number]['key'];
+
+function createEmptyEntries(): { [key: string]: HavsTimesheetEntry } {
+  const entries: { [key: string]: HavsTimesheetEntry } = {};
+  EQUIPMENT_ITEMS.forEach(item => {
+    entries[item.name] = {
+      id: '',
+      timesheet_id: '',
+      equipment_name: item.name,
+      equipment_category: item.category,
+      monday_hours: 0,
+      tuesday_hours: 0,
+      wednesday_hours: 0,
+      thursday_hours: 0,
+      friday_hours: 0,
+      saturday_hours: 0,
+      sunday_hours: 0,
+      total_hours: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  });
+  return entries;
+}
+
+function calculateEntryTotal(entry: HavsTimesheetEntry): number {
+  return (
+    entry.monday_hours +
+    entry.tuesday_hours +
+    entry.wednesday_hours +
+    entry.thursday_hours +
+    entry.friday_hours +
+    entry.saturday_hours +
+    entry.sunday_hours
+  );
+}
+
+function calculateWeeklyTotal(entries: { [key: string]: HavsTimesheetEntry }): number {
+  return Object.values(entries).reduce((sum, entry) => sum + entry.total_hours, 0);
+}
+
 export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   selectedEmployee,
   onBack,
@@ -41,13 +92,14 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showWeekSelector, setShowWeekSelector] = useState(false);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
+  const [selectedWeek, setSelectedWeek] = useState(getWeekEndDate().toISOString().split('T')[0]);
   const [timesheetData, setTimesheetData] = useState<TimesheetData>({
     employee_name: selectedEmployee.full_name,
-    week_ending: getWeekEndDate().toISOString().split('T')[0],
+    week_ending: selectedWeek,
     comments: '',
     actions: '',
     supervisor_name: '',
-    entries: {},
+    entries: createEmptyEntries(),
     status: 'draft',
     total_hours: 0,
   });
@@ -56,76 +108,33 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [submitting, setSubmitting] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  const timesheetDataRef = useRef(timesheetData);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitialLoadRef = useRef(true);
-  const loadedWeekRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    timesheetDataRef.current = timesheetData;
-  }, [timesheetData]);
-
-  const isCurrentWeekSubmitted = timesheetData.status === 'submitted';
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     generateAvailableWeeks();
   }, []);
 
   useEffect(() => {
-    const weekEnding = timesheetData.week_ending;
-    if (loadedWeekRef.current !== weekEnding || isInitialLoadRef.current) {
-      loadedWeekRef.current = weekEnding;
-      isInitialLoadRef.current = false;
-      loadExistingTimesheet();
-    }
-  }, [selectedEmployee.id, timesheetData.week_ending]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (timesheetDataRef.current.status === 'draft') {
-        autoSave();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, []);
+    loadTimesheet(selectedWeek);
+  }, [selectedEmployee.id, selectedWeek]);
 
   const generateAvailableWeeks = () => {
     const weeks = [];
     const today = new Date();
-
     for (let i = 0; i < 8; i++) {
       const sunday = new Date(today);
       const daysUntilSunday = (7 - today.getDay()) % 7;
       sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
       weeks.push(sunday.toISOString().split('T')[0]);
     }
-
     setAvailableWeeks(weeks);
   };
 
-  const handleStartNewWeek = () => {
-    setShowWeekSelector(true);
-  };
-
-  const handleWeekSelect = (weekEnding: string) => {
-    setTimesheetData(prev => ({
-      employee_name: selectedEmployee.full_name,
-      week_ending: weekEnding,
-      comments: '',
-      actions: '',
-      supervisor_name: '',
-      entries: {},
-      status: 'draft',
-      total_hours: 0,
-    }));
-    setShowWeekSelector(false);
-    setLastSaved(null);
+  const loadTimesheet = async (weekEnding: string) => {
+    setIsLoading(true);
     setSaveError(null);
-  };
 
-  const loadExistingTimesheet = async () => {
     try {
       const { data: existingTimesheet, error } = await supabase
         .from('havs_timesheets')
@@ -134,39 +143,27 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           havs_entries:havs_timesheet_entries(*)
         `)
         .eq('employee_id', selectedEmployee.id)
-        .eq('week_ending', timesheetData.week_ending)
+        .eq('week_ending', weekEnding)
         .maybeSingle();
 
       if (error) throw error;
 
       if (existingTimesheet) {
-        const entriesMap: { [key: string]: HavsTimesheetEntry } = {};
-
-        EQUIPMENT_ITEMS.forEach(item => {
-          entriesMap[item.name] = {
-            id: '',
-            timesheet_id: existingTimesheet.id,
-            equipment_name: item.name,
-            equipment_category: item.category,
-            monday_hours: 0,
-            tuesday_hours: 0,
-            wednesday_hours: 0,
-            thursday_hours: 0,
-            friday_hours: 0,
-            saturday_hours: 0,
-            sunday_hours: 0,
-            total_hours: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        });
+        const entriesMap = createEmptyEntries();
 
         existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
           if (entriesMap[entry.equipment_name]) {
             entriesMap[entry.equipment_name] = {
               ...entriesMap[entry.equipment_name],
-              ...entry
+              ...entry,
+              total_hours: calculateEntryTotal(entry),
             };
+          }
+        });
+
+        Object.keys(entriesMap).forEach(key => {
+          if (!entriesMap[key].id) {
+            entriesMap[key].timesheet_id = existingTimesheet.id;
           }
         });
 
@@ -179,51 +176,45 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           supervisor_name: existingTimesheet.supervisor_name || '',
           entries: entriesMap,
           status: existingTimesheet.status,
-          total_hours: existingTimesheet.total_hours || 0,
+          total_hours: calculateWeeklyTotal(entriesMap),
         });
+        setLastSaved(new Date(existingTimesheet.updated_at));
       } else {
-        const entriesMap: { [key: string]: HavsTimesheetEntry } = {};
-        EQUIPMENT_ITEMS.forEach(item => {
-          entriesMap[item.name] = {
-            id: '',
-            timesheet_id: '',
-            equipment_name: item.name,
-            equipment_category: item.category,
-            monday_hours: 0,
-            tuesday_hours: 0,
-            wednesday_hours: 0,
-            thursday_hours: 0,
-            friday_hours: 0,
-            saturday_hours: 0,
-            sunday_hours: 0,
-            total_hours: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
+        setTimesheetData({
+          employee_name: selectedEmployee.full_name,
+          week_ending: weekEnding,
+          comments: '',
+          actions: '',
+          supervisor_name: '',
+          entries: createEmptyEntries(),
+          status: 'draft',
+          total_hours: 0,
         });
-
-        setTimesheetData(prev => ({
-          ...prev,
-          entries: entriesMap,
-        }));
+        setLastSaved(null);
       }
+
+      setHasUnsavedChanges(false);
     } catch (error) {
-      console.error('Error loading existing timesheet:', error);
+      console.error('Error loading timesheet:', error);
+      setSaveError('Failed to load timesheet');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const debouncedAutoSave = useCallback(() => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-    debounceTimerRef.current = setTimeout(() => {
-      if (timesheetDataRef.current.status === 'draft') {
-        autoSave();
+  const handleWeekSelect = (weekEnding: string) => {
+    if (hasUnsavedChanges) {
+      if (!confirm('You have unsaved changes. Discard and switch weeks?')) {
+        return;
       }
-    }, 1500);
-  }, []);
+    }
+    setSelectedWeek(weekEnding);
+    setShowWeekSelector(false);
+  };
 
-  const updateHours = useCallback((equipmentName: string, day: string, hours: number) => {
+  const updateHours = (equipmentName: string, day: DayKey, value: number) => {
+    const safeValue = Math.max(0, Math.round(value));
+
     setTimesheetData(prev => {
       const updatedEntries = { ...prev.entries };
       const entry = updatedEntries[equipmentName];
@@ -231,156 +222,133 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (entry) {
         const updatedEntry = {
           ...entry,
-          [`${day}_hours`]: Math.max(0, Math.round(hours))
+          [`${day}_hours`]: safeValue,
         };
-
-        updatedEntry.total_hours =
-          updatedEntry.monday_hours +
-          updatedEntry.tuesday_hours +
-          updatedEntry.wednesday_hours +
-          updatedEntry.thursday_hours +
-          updatedEntry.friday_hours +
-          updatedEntry.saturday_hours +
-          updatedEntry.sunday_hours;
-
-        updatedEntries[equipmentName] = updatedEntry;
+        updatedEntry.total_hours = calculateEntryTotal(updatedEntry as HavsTimesheetEntry);
+        updatedEntries[equipmentName] = updatedEntry as HavsTimesheetEntry;
       }
-
-      const totalHours = Object.values(updatedEntries).reduce((sum, e) => sum + e.total_hours, 0);
 
       return {
         ...prev,
         entries: updatedEntries,
-        total_hours: totalHours,
+        total_hours: calculateWeeklyTotal(updatedEntries),
       };
     });
 
-    debouncedAutoSave();
-  }, [debouncedAutoSave]);
+    setHasUnsavedChanges(true);
+  };
 
-  const updateField = useCallback((field: keyof TimesheetData, value: string) => {
+  const updateField = (field: 'comments' | 'actions' | 'supervisor_name', value: string) => {
     setTimesheetData(prev => ({ ...prev, [field]: value }));
-    debouncedAutoSave();
-  }, [debouncedAutoSave]);
+    setHasUnsavedChanges(true);
+  };
 
-  const autoSave = async () => {
-    if (saving || submitting) return;
-
+  const handleSave = async () => {
     setSaving(true);
     setSaveError(null);
 
     try {
-      await saveTimesheet();
-      setLastSaved(new Date());
-    } catch (error) {
-      console.error('Auto-save error:', error);
-      setSaveError('Auto-save failed');
-    } finally {
-      setSaving(false);
-    }
-  };
+      let timesheetId = timesheetData.id;
 
-  const saveTimesheet = async () => {
-    const currentData = timesheetDataRef.current;
-    let timesheetId = currentData.id;
-
-    if (timesheetId) {
-      const { error } = await supabase
-        .from('havs_timesheets')
-        .update({
-          employee_name: currentData.employee_name,
-          week_ending: currentData.week_ending,
-          comments: currentData.comments,
-          actions: currentData.actions,
-          supervisor_name: currentData.supervisor_name,
-          total_hours: currentData.total_hours,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', timesheetId);
-
-      if (error) throw error;
-    } else {
-      const { data: newTimesheet, error } = await supabase
-        .from('havs_timesheets')
-        .insert({
-          employee_id: selectedEmployee.id,
-          employee_name: currentData.employee_name,
-          week_ending: currentData.week_ending,
-          comments: currentData.comments,
-          actions: currentData.actions,
-          supervisor_name: currentData.supervisor_name,
-          total_hours: currentData.total_hours,
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      timesheetId = newTimesheet.id;
-      setTimesheetData(prev => ({ ...prev, id: timesheetId }));
-    }
-
-    const entriesToSave = Object.values(currentData.entries);
-    for (const entry of entriesToSave) {
-      if (entry.id) {
+      if (timesheetId) {
         const { error } = await supabase
-          .from('havs_timesheet_entries')
+          .from('havs_timesheets')
           .update({
-            monday_hours: entry.monday_hours,
-            tuesday_hours: entry.tuesday_hours,
-            wednesday_hours: entry.wednesday_hours,
-            thursday_hours: entry.thursday_hours,
-            friday_hours: entry.friday_hours,
-            saturday_hours: entry.saturday_hours,
-            sunday_hours: entry.sunday_hours,
-            total_hours: entry.total_hours,
+            employee_name: timesheetData.employee_name,
+            week_ending: timesheetData.week_ending,
+            comments: timesheetData.comments,
+            actions: timesheetData.actions,
+            supervisor_name: timesheetData.supervisor_name,
+            total_hours: timesheetData.total_hours,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', entry.id);
+          .eq('id', timesheetId);
 
         if (error) throw error;
-      } else if (entry.total_hours > 0) {
-        const { data: newEntry, error } = await supabase
-          .from('havs_timesheet_entries')
+      } else {
+        const { data: newTimesheet, error } = await supabase
+          .from('havs_timesheets')
           .insert({
-            timesheet_id: timesheetId,
-            equipment_name: entry.equipment_name,
-            equipment_category: entry.equipment_category,
-            monday_hours: entry.monday_hours,
-            tuesday_hours: entry.tuesday_hours,
-            wednesday_hours: entry.wednesday_hours,
-            thursday_hours: entry.thursday_hours,
-            friday_hours: entry.friday_hours,
-            saturday_hours: entry.saturday_hours,
-            sunday_hours: entry.sunday_hours,
-            total_hours: entry.total_hours,
+            employee_id: selectedEmployee.id,
+            employee_name: timesheetData.employee_name,
+            week_ending: timesheetData.week_ending,
+            comments: timesheetData.comments,
+            actions: timesheetData.actions,
+            supervisor_name: timesheetData.supervisor_name,
+            total_hours: timesheetData.total_hours,
           })
           .select()
           .single();
 
         if (error) throw error;
+        timesheetId = newTimesheet.id;
 
         setTimesheetData(prev => ({
           ...prev,
-          entries: {
-            ...prev.entries,
-            [entry.equipment_name]: { ...prev.entries[entry.equipment_name], id: newEntry.id }
-          }
+          id: timesheetId,
+          entries: Object.fromEntries(
+            Object.entries(prev.entries).map(([key, entry]) => [
+              key,
+              { ...entry, timesheet_id: timesheetId }
+            ])
+          ),
         }));
       }
-    }
-  };
 
-  const handleManualSave = async () => {
-    setSaving(true);
-    setSaveError(null);
+      for (const entry of Object.values(timesheetData.entries)) {
+        if (entry.id) {
+          const { error } = await supabase
+            .from('havs_timesheet_entries')
+            .update({
+              monday_hours: entry.monday_hours,
+              tuesday_hours: entry.tuesday_hours,
+              wednesday_hours: entry.wednesday_hours,
+              thursday_hours: entry.thursday_hours,
+              friday_hours: entry.friday_hours,
+              saturday_hours: entry.saturday_hours,
+              sunday_hours: entry.sunday_hours,
+              total_hours: entry.total_hours,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', entry.id);
 
-    try {
-      await saveTimesheet();
+          if (error) throw error;
+        } else if (entry.total_hours > 0) {
+          const { data: newEntry, error } = await supabase
+            .from('havs_timesheet_entries')
+            .insert({
+              timesheet_id: timesheetId,
+              equipment_name: entry.equipment_name,
+              equipment_category: entry.equipment_category,
+              monday_hours: entry.monday_hours,
+              tuesday_hours: entry.tuesday_hours,
+              wednesday_hours: entry.wednesday_hours,
+              thursday_hours: entry.thursday_hours,
+              friday_hours: entry.friday_hours,
+              saturday_hours: entry.saturday_hours,
+              sunday_hours: entry.sunday_hours,
+              total_hours: entry.total_hours,
+            })
+            .select()
+            .single();
+
+          if (error) throw error;
+
+          setTimesheetData(prev => ({
+            ...prev,
+            entries: {
+              ...prev.entries,
+              [entry.equipment_name]: { ...prev.entries[entry.equipment_name], id: newEntry.id }
+            }
+          }));
+        }
+      }
+
       setLastSaved(new Date());
+      setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Save error:', error);
-      setSaveError('Failed to save');
+      setSaveError('Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -388,7 +356,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   const handleSubmitClick = () => {
     if (timesheetData.total_hours === 0) {
-      alert('Please add exposure time before submitting');
+      alert('Please add exposure time before submitting.');
+      return;
+    }
+    if (hasUnsavedChanges) {
+      alert('Please save your changes before submitting.');
       return;
     }
     setShowSubmitConfirmation(true);
@@ -399,7 +371,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setShowSubmitConfirmation(false);
 
     try {
-      await saveTimesheet();
+      if (hasUnsavedChanges) {
+        await handleSave();
+      }
 
       const { error } = await supabase
         .from('havs_timesheets')
@@ -412,22 +386,16 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (error) throw error;
 
       setTimesheetData(prev => ({ ...prev, status: 'submitted' }));
+      setHasUnsavedChanges(false);
     } catch (error) {
-      console.error('Error submitting timesheet:', error);
-      alert('Failed to submit timesheet. Please try again.');
+      console.error('Error submitting:', error);
+      alert('Failed to submit. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const formatMinutes = (minutes: number): string => {
-    return minutes.toString();
-  };
-
-  const parseMinutes = (value: string): number => {
-    const parsed = parseFloat(value);
-    return isNaN(parsed) ? 0 : Math.round(parsed);
-  };
+  const isReadOnly = timesheetData.status === 'submitted';
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
     if (!acc[item.category]) {
@@ -437,17 +405,16 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     return acc;
   }, {} as Record<string, EquipmentItem[]>);
 
-  const isReadOnly = timesheetData.status === 'submitted';
-
-  const days = [
-    { key: 'monday', label: 'Mon', full: 'Monday' },
-    { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
-    { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
-    { key: 'thursday', label: 'Thu', full: 'Thursday' },
-    { key: 'friday', label: 'Fri', full: 'Friday' },
-    { key: 'saturday', label: 'Sat', full: 'Saturday' },
-    { key: 'sunday', label: 'Sun', full: 'Sunday' },
-  ];
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+          <p className="text-sm text-slate-500">Loading timesheet...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -473,24 +440,25 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             </div>
 
             <div className="flex items-center gap-4">
-              {saving ? (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                  <span>Saving...</span>
+              {hasUnsavedChanges && (
+                <div className="flex items-center gap-2 text-sm text-amber-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>Unsaved changes</span>
                 </div>
-              ) : lastSaved ? (
+              )}
+              {!hasUnsavedChanges && lastSaved && (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <CheckCircle className="h-4 w-4 text-emerald-500" />
                   <span>Saved {lastSaved.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-              ) : saveError ? (
+              )}
+              {saveError && (
                 <div className="flex items-center gap-2 text-sm text-red-600">
                   <AlertTriangle className="h-4 w-4" />
                   <span>{saveError}</span>
                 </div>
-              ) : null}
-
-              {timesheetData.status === 'submitted' && (
+              )}
+              {isReadOnly && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-md">
                   <Shield className="h-4 w-4 text-emerald-600" />
                   <span className="text-sm font-medium text-emerald-700">Submitted</span>
@@ -524,7 +492,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           <div className="px-6 py-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Total Exposure</p>
             <p className="text-sm font-semibold text-amber-600">
-              {formatMinutes(timesheetData.total_hours)} minutes
+              {timesheetData.total_hours} minutes
               {timesheetData.total_hours > 0 && (
                 <span className="font-normal text-slate-500 ml-1">
                   ({(timesheetData.total_hours / 60).toFixed(1)}h)
@@ -535,10 +503,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         </div>
       </div>
 
-      {timesheetData.status === 'submitted' && (
+      {isReadOnly && (
         <div className="flex justify-end">
           <button
-            onClick={handleStartNewWeek}
+            onClick={() => setShowWeekSelector(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
           >
             <HardHat className="h-4 w-4" />
@@ -567,7 +535,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide border-b-2 border-slate-300 w-64">
                   Equipment
                 </th>
-                {days.map((day) => (
+                {DAYS.map((day) => (
                   <th
                     key={day.key}
                     className="px-2 py-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wide border-b-2 border-slate-300 w-20"
@@ -605,34 +573,45 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                         <td className="px-4 py-2 text-sm text-slate-900 font-medium border-b border-slate-200">
                           {item.name}
                         </td>
-                        {days.map((day) => (
-                          <td key={day.key} className="px-1 py-1 border-b border-slate-200">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={entry && entry[`${day.key}_hours` as keyof HavsTimesheetEntry] !== undefined
-                                ? (entry[`${day.key}_hours` as keyof HavsTimesheetEntry] as number || 0).toString()
-                                : '0'}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                updateHours(item.name, day.key, parseMinutes(val));
-                              }}
-                              onFocus={(e) => e.target.select()}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  (e.target as HTMLInputElement).blur();
-                                }
-                              }}
-                              className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                                isReadOnly ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
-                              }`}
-                              placeholder="0"
-                              readOnly={isReadOnly}
-                            />
-                          </td>
-                        ))}
+                        {DAYS.map((day) => {
+                          const fieldKey = `${day.key}_hours` as keyof HavsTimesheetEntry;
+                          const currentValue = entry ? (entry[fieldKey] as number) || 0 : 0;
+
+                          return (
+                            <td key={day.key} className="px-1 py-1 border-b border-slate-200">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={currentValue === 0 ? '' : currentValue.toString()}
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/[^0-9]/g, '');
+                                  const num = raw === '' ? 0 : parseInt(raw, 10);
+                                  updateHours(item.name, day.key, num);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    updateHours(item.name, day.key, currentValue + 1);
+                                  } else if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    updateHours(item.name, day.key, Math.max(0, currentValue - 1));
+                                  } else if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                onFocus={(e) => e.target.select()}
+                                placeholder="0"
+                                disabled={isReadOnly}
+                                className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                  isReadOnly
+                                    ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
+                                    : 'bg-white hover:border-slate-300'
+                                }`}
+                              />
+                            </td>
+                          );
+                        })}
                         <td className={`px-4 py-2 text-center text-sm font-semibold border-b border-slate-200 ${
                           rowTotal > 0 ? 'text-amber-700 bg-amber-50' : 'text-slate-400 bg-slate-50'
                         }`}>
@@ -649,9 +628,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <td className="px-4 py-3 text-sm font-bold text-white uppercase tracking-wide">
                   Weekly Total
                 </td>
-                {days.map((day) => {
+                {DAYS.map((day) => {
+                  const fieldKey = `${day.key}_hours` as keyof HavsTimesheetEntry;
                   const dayTotal = Object.values(timesheetData.entries).reduce((sum, entry) => {
-                    return sum + (entry[`${day.key}_hours` as keyof HavsTimesheetEntry] as number || 0);
+                    return sum + ((entry[fieldKey] as number) || 0);
                   }, 0);
                   return (
                     <td key={day.key} className="px-2 py-3 text-center text-sm font-semibold text-slate-300">
@@ -660,7 +640,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   );
                 })}
                 <td className="px-4 py-3 text-center text-base font-bold text-amber-400 bg-slate-900">
-                  {formatMinutes(timesheetData.total_hours)}
+                  {timesheetData.total_hours}
                 </td>
               </tr>
             </tfoot>
@@ -680,7 +660,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={4}
               placeholder="Equipment usage notes, conditions, etc."
-              readOnly={isReadOnly}
+              disabled={isReadOnly}
             />
           </div>
         </div>
@@ -696,94 +676,84 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
               rows={4}
               placeholder="Record any actions taken or required..."
-              readOnly={isReadOnly}
+              disabled={isReadOnly}
             />
           </div>
         </div>
       </div>
 
       {!isReadOnly && (
-        <div className="bg-white border border-slate-200 rounded-lg">
-          <div className="p-6">
-            <div className="flex items-start justify-between gap-8">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-blue-50 rounded-lg">
-                    <Save className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Save Progress</h3>
-                    <p className="text-xs text-slate-500">Save your work without submitting</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleManualSave}
-                  disabled={saving}
-                  className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {saving ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-slate-400 border-t-slate-600 rounded-full animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-4 w-4" />
-                      Save Draft
-                    </>
-                  )}
-                </button>
-                <p className="text-xs text-slate-500 mt-2 text-center">
-                  Auto-saves every 30 seconds
-                </p>
+        <div className="space-y-4">
+          <div className="bg-white border border-slate-200 rounded-lg p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <Save className="h-5 w-5 text-blue-600" />
               </div>
-
-              <div className="w-px bg-slate-200 self-stretch" />
-
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="p-2 bg-red-50 rounded-lg">
-                    <Send className="h-5 w-5 text-red-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-900">Submit to Employer</h3>
-                    <p className="text-xs text-red-600 font-medium">Final submission - cannot be edited</p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleSubmitClick}
-                  disabled={submitting || timesheetData.total_hours === 0}
-                  className="w-full px-4 py-3 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {submitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4" />
-                      Submit for Compliance
-                    </>
-                  )}
-                </button>
-                {timesheetData.total_hours === 0 && (
-                  <p className="text-xs text-slate-500 mt-2 text-center">
-                    Add exposure time to enable submission
-                  </p>
-                )}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Save Progress</h3>
+                <p className="text-xs text-slate-500">Save your work without submitting</p>
               </div>
             </div>
+            <button
+              onClick={handleSave}
+              disabled={saving || !hasUnsavedChanges}
+              className="w-full px-4 py-3 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  {hasUnsavedChanges ? 'Save Changes' : 'All Changes Saved'}
+                </>
+              )}
+            </button>
+            <div className="mt-3 flex items-center justify-center gap-2 text-xs text-slate-500">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Total Exposure: <strong className="text-amber-600">{timesheetData.total_hours} minutes</strong></span>
+            </div>
+          </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-200">
-              <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
-                <Clock className="h-4 w-4" />
-                <span>Weekly Exposure: <strong className="text-amber-600">{formatMinutes(timesheetData.total_hours)} minutes</strong></span>
-                {timesheetData.total_hours > 0 && (
-                  <span className="text-slate-400">({(timesheetData.total_hours / 60).toFixed(1)} hours)</span>
-                )}
+          <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <Send className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">Submit to Employer</h3>
+                <p className="text-xs text-red-600 font-medium">FINAL - Cannot be edited after submission</p>
               </div>
             </div>
+            <button
+              onClick={handleSubmitClick}
+              disabled={submitting || timesheetData.total_hours === 0 || hasUnsavedChanges}
+              className="w-full px-4 py-3 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {submitting ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4" />
+                  Submit for Compliance Review
+                </>
+              )}
+            </button>
+            {hasUnsavedChanges && (
+              <p className="text-xs text-red-600 mt-2 text-center font-medium">
+                Save changes before submitting
+              </p>
+            )}
+            {!hasUnsavedChanges && timesheetData.total_hours === 0 && (
+              <p className="text-xs text-slate-500 mt-2 text-center">
+                Add exposure time to enable submission
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -838,7 +808,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <div className="p-2 bg-red-100 rounded-full">
                   <AlertTriangle className="h-6 w-6 text-red-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900">Confirm Submission</h3>
+                <h3 className="text-lg font-semibold text-slate-900">Confirm Final Submission</h3>
               </div>
             </div>
 
@@ -848,17 +818,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   You are about to submit your HAVs exposure record for compliance review.
                 </p>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-md p-4 space-y-2">
+                <div className="bg-red-50 border-2 border-red-300 rounded-md p-4 space-y-3">
                   <div className="flex items-start gap-2">
-                    <Shield className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-amber-800">
-                      <strong>This submission is final.</strong> Once submitted, this record cannot be edited.
+                    <Shield className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-800 font-medium">
+                      THIS ACTION CANNOT BE UNDONE
                     </p>
                   </div>
                   <div className="flex items-start gap-2">
-                    <FileText className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-amber-800">
-                      This record will be used for <strong>HSE compliance and audits</strong>.
+                    <FileText className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-800">
+                      Once submitted, this record becomes <strong>read-only</strong> and will be used for <strong>HSE compliance audits</strong>.
                     </p>
                   </div>
                 </div>
@@ -876,7 +846,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   <div>
                     <p className="text-slate-500">Total Exposure</p>
                     <p className="font-medium text-amber-600">
-                      {formatMinutes(timesheetData.total_hours)} minutes
+                      {timesheetData.total_hours} minutes
                     </p>
                   </div>
                   <div>
@@ -910,7 +880,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   ) : (
                     <>
                       <Send className="h-4 w-4" />
-                      Confirm Submission
+                      Yes, Submit Final Record
                     </>
                   )}
                 </button>
