@@ -59,11 +59,18 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
         is_manual: operative.is_manual,
       };
 
+      console.log('Inserting gang membership:', membershipData);
+
       const { error } = await supabase
         .from('gang_membership')
         .insert(membershipData);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Gang membership saved successfully');
     } catch (error) {
       console.error('Error saving gang membership:', error);
       throw error;
@@ -84,8 +91,16 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
         query = query.eq('operative_id', operative.employee_id);
       }
 
+      console.log('Deleting gang membership for:', operative);
+
       const { error } = await query;
-      if (error) throw error;
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Gang membership deleted successfully');
     } catch (error) {
       console.error('Error deleting gang membership:', error);
       throw error;
@@ -116,8 +131,10 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
       onMembersChange([...selectedMembers, operative]);
       setShowSelector(false);
       setSearchTerm('');
-    } catch (error) {
-      alert('Failed to add operative. Please try again.');
+    } catch (error: any) {
+      console.error('Failed to add employee operative:', error);
+      const errorMsg = error?.message || 'Failed to add operative. Please try again.';
+      alert(`Failed to add operative: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -152,8 +169,10 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
       onMembersChange([...selectedMembers, operative]);
       setShowManualEntry(false);
       setManualName('');
-    } catch (error) {
-      alert('Failed to add operative. Please try again.');
+    } catch (error: any) {
+      console.error('Failed to add manual operative:', error);
+      const errorMsg = error?.message || 'Failed to add operative. Please try again.';
+      alert(`Failed to add operative: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -163,8 +182,10 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
     try {
       await deleteGangMembership(operative);
       onMembersChange(selectedMembers.filter(m => m.id !== operative.id));
-    } catch (error) {
-      alert('Failed to remove operative. Please try again.');
+    } catch (error: any) {
+      console.error('Failed to remove operative:', error);
+      const errorMsg = error?.message || 'Failed to remove operative. Please try again.';
+      alert(`Failed to remove operative: ${errorMsg}`);
     }
   };
 
