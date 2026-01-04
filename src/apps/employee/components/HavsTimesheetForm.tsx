@@ -375,6 +375,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         }
       }
 
+      if (havsWeek) {
+        await supabase
+          .from('havs_weeks')
+          .update({
+            last_saved_at: new Date().toISOString(),
+          })
+          .eq('id', havsWeek.id);
+
+        setHavsWeek(prev => prev ? { ...prev, last_saved_at: new Date().toISOString() } : null);
+      }
+
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -408,6 +419,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       }
 
       if (havsWeek) {
+        const isFirstSubmit = havsWeek.status === 'draft';
+
         await supabase
           .from('havs_weeks')
           .update({
@@ -416,7 +429,20 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           })
           .eq('id', havsWeek.id);
 
-        setHavsWeek(prev => prev ? { ...prev, status: 'submitted' } : null);
+        await supabase.rpc('create_havs_revision', { week_id: havsWeek.id });
+
+        setHavsWeek(prev => prev ? {
+          ...prev,
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          revision_number: (prev.revision_number || 0) + 1
+        } : null);
+
+        if (isFirstSubmit) {
+          alert('Submitted successfully! This record is now available for employer review. You can still edit it later if needed, and changes will create a new revision for audit.');
+        } else {
+          alert('Revision created successfully! Your changes have been saved and a new revision has been created for audit.');
+        }
       }
 
       setHasUnsavedChanges(false);
@@ -536,29 +562,33 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
               <button
                 type="button"
-                onClick={() => !isSubmitted && setShowWeekSelector(true)}
-                disabled={isSubmitted}
-                className={`text-sm font-medium ${isSubmitted ? 'text-slate-500' : 'text-blue-600 hover:text-blue-700'}`}
+                onClick={() => setShowWeekSelector(true)}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
                 {new Date(selectedWeek).toLocaleDateString('en-GB', {
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric'
                 })}
-                {!isSubmitted && <span className="ml-1 text-xs">(change)</span>}
+                <span className="ml-1 text-xs">(change)</span>
               </button>
+              {havsWeek && havsWeek.revision_number && havsWeek.revision_number > 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Revision #{havsWeek.revision_number} {havsWeek.status === 'submitted' && '(audited)'}
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {havsWeek && !isSubmitted && (
+      {havsWeek && (
         <GangMemberSelector
           havsWeekId={havsWeek.id}
           gangerId={selectedEmployee.id}
           selectedMembers={allMembers}
           onMembersChange={handleMembersChange}
-          isSubmitted={isSubmitted}
+          isSubmitted={false}
         />
       )}
 
@@ -716,12 +746,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                                     }}
                                     onFocus={(e) => e.target.select()}
                                     placeholder="0"
-                                    disabled={isSubmitted}
-                                    className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                                      isSubmitted
-                                        ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
-                                        : 'bg-white hover:border-slate-300'
-                                    }`}
+                                    className="w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none bg-white hover:border-slate-300"
                                   />
                                 </td>
                               );
@@ -769,7 +794,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={3}
                   placeholder="Equipment usage notes, conditions, etc."
-                  disabled={isSubmitted}
                 />
               </div>
 
@@ -781,7 +805,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={3}
                   placeholder="Record any actions taken or required..."
-                  disabled={isSubmitted}
                 />
               </div>
             </div>
@@ -789,7 +812,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         );
       })}
 
-      {!isSubmitted && peopleState.length > 0 && (
+      {peopleState.length > 0 && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -916,17 +939,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   You are about to submit HAVs exposure records for {peopleState.length} {peopleState.length === 1 ? 'person' : 'people'} for compliance review.
                 </p>
 
-                <div className="bg-red-50 border-2 border-red-300 rounded-md p-4 space-y-3">
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-md p-4 space-y-3">
                   <div className="flex items-start gap-2">
-                    <Shield className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-red-800 font-medium">
-                      THIS ACTION CANNOT BE UNDONE
+                    <Shield className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-blue-800 font-medium">
+                      Submission creates an audited revision
                     </p>
                   </div>
                   <div className="flex items-start gap-2">
-                    <FileText className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-red-800">
-                      Once submitted, these records become <strong>read-only</strong> and will be used for <strong>HSE compliance audits</strong>.
+                    <FileText className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-blue-800">
+                      This creates a snapshot for <strong>HSE compliance audits</strong>. You can still edit later if needed; changes will create a new revision.
                     </p>
                   </div>
                 </div>

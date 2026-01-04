@@ -106,77 +106,80 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
 
   const loadGangHavsStatus = async (weekEndingStr: string) => {
     try {
-      const { data: memberships } = await supabase
-        .from('gang_membership')
-        .select('*')
+      const { data: havsWeek } = await supabase
+        .from('havs_weeks')
+        .select('id, status, last_saved_at')
         .eq('week_ending', weekEndingStr)
-        .eq('ganger_id', selectedEmployee.id);
+        .eq('ganger_id', selectedEmployee.id)
+        .maybeSingle();
 
-      const operatives: GangOperative[] = [];
+      if (!havsWeek) {
+        setGangHavsStatus([]);
+        return false;
+      }
 
-      const gangerAsOperative: GangOperative = {
-        id: selectedEmployee.id,
-        full_name: selectedEmployee.full_name,
-        role: selectedEmployee.role,
-        is_manual: false,
-        employee_id: selectedEmployee.id,
-      };
+      const { data: members } = await supabase
+        .from('havs_week_members')
+        .select(`
+          id,
+          person_type,
+          employee_id,
+          manual_name,
+          role,
+          employee:employees(id, full_name, role)
+        `)
+        .eq('havs_week_id', havsWeek.id)
+        .order('person_type', { ascending: false })
+        .order('created_at', { ascending: true });
 
-      operatives.push(gangerAsOperative);
-
-      if (memberships) {
-        for (const membership of memberships) {
-          if (membership.is_manual) {
-            operatives.push({
-              id: `manual-${membership.id}`,
-              full_name: membership.operative_name,
-              role: membership.operative_role,
-              is_manual: true,
-            });
-          } else if (membership.operative_id) {
-            const { data: employeeData } = await supabase
-              .from('employees')
-              .select('*')
-              .eq('id', membership.operative_id)
-              .maybeSingle();
-
-            if (employeeData) {
-              operatives.push({
-                id: employeeData.id,
-                full_name: employeeData.full_name,
-                role: employeeData.role,
-                is_manual: false,
-                employee_id: employeeData.id,
-              });
-            }
-          }
-        }
+      if (!members || members.length === 0) {
+        setGangHavsStatus([]);
+        return false;
       }
 
       const statusList: GangMemberHavsStatus[] = [];
 
-      for (let i = 0; i < operatives.length; i++) {
-        const operative = operatives[i];
-        const personId = operative.is_manual ? operative.id : operative.employee_id!;
+      for (const member of members) {
+        const { data: entries } = await supabase
+          .from('havs_exposure_entries')
+          .select('minutes')
+          .eq('havs_week_member_id', member.id);
 
-        const { data: havs } = await supabase
-          .from('havs_timesheets')
-          .select('id, total_hours, status, updated_at')
-          .eq('employee_id', personId)
-          .eq('week_ending', weekEndingStr)
-          .maybeSingle();
+        const totalMinutes = entries?.reduce((sum, e) => sum + e.minutes, 0) || 0;
+
+        let displayName = 'Unknown';
+        let isManual = false;
+
+        if (member.manual_name) {
+          displayName = member.manual_name;
+          isManual = true;
+        } else if (member.employee && Array.isArray(member.employee) && member.employee[0]) {
+          displayName = member.employee[0].full_name;
+        } else if (member.employee && !Array.isArray(member.employee)) {
+          displayName = member.employee.full_name;
+        } else if (member.person_type === 'ganger') {
+          displayName = selectedEmployee.full_name;
+        }
+
+        const operative: GangOperative = {
+          id: member.id,
+          full_name: displayName,
+          role: member.role,
+          is_manual: isManual,
+          employee_id: member.employee_id,
+        };
 
         statusList.push({
           operative,
-          role: i === 0 ? 'Ganger' : 'Operative',
-          totalMinutes: havs?.total_hours || 0,
-          status: havs?.status || 'none',
-          updatedAt: havs?.updated_at || null,
+          role: member.person_type === 'ganger' ? 'Ganger' : 'Operative',
+          totalMinutes,
+          status: havsWeek.status === 'submitted' ? 'submitted' : totalMinutes > 0 ? 'draft' : 'none',
+          updatedAt: havsWeek.last_saved_at || null,
         });
       }
 
       setGangHavsStatus(statusList);
-      return statusList.every(s => s.status === 'submitted');
+      return havsWeek.status === 'submitted';
     } catch (error) {
       console.error('Error loading gang HAVS status:', error);
       setGangHavsStatus([]);

@@ -151,9 +151,22 @@ export interface HavsWeek {
   week_ending: string;
   status: 'draft' | 'submitted';
   submitted_at?: string;
+  last_saved_at?: string;
+  revision_number?: number;
   created_at: string;
   updated_at: string;
   members?: HavsWeekMember[];
+  ganger?: Employee;
+}
+
+export interface HavsRevision {
+  id: string;
+  havs_week_id: string;
+  revision_number: number;
+  snapshot_data: any;
+  created_at: string;
+  created_by?: string;
+  notes?: string;
 }
 
 export interface HavsWeekMember {
