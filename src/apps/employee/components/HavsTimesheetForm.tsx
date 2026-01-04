@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
-import { supabase, Employee, HavsTimesheet, HavsTimesheetEntry, getWeekEndDate } from '../../../lib/supabase';
+import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
+import { supabase, Employee, HavsTimesheetEntry, getWeekEndDate } from '../../../lib/supabase';
 
 interface HavsTimesheetFormProps {
   selectedEmployee: Employee;
@@ -13,7 +13,6 @@ interface EquipmentItem {
 }
 
 const EQUIPMENT_ITEMS: EquipmentItem[] = [
-  // CIVILS
   { name: 'Petrol Cut - Off Saw', category: 'CIVILS' },
   { name: 'NRSWA Vibrating Plate', category: 'CIVILS' },
   { name: 'Hydraulic Breaker', category: 'CIVILS' },
@@ -40,6 +39,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   onBack,
 }) => {
   const [showWeekSelector, setShowWeekSelector] = useState(false);
+  const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [timesheetData, setTimesheetData] = useState<TimesheetData>({
     employee_name: selectedEmployee.full_name,
@@ -57,7 +57,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Check if current week is submitted to prevent overlap
   const isCurrentWeekSubmitted = timesheetData.status === 'submitted';
 
   useEffect(() => {
@@ -69,7 +68,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   }, [selectedEmployee.id, timesheetData.week_ending]);
 
   useEffect(() => {
-    // Auto-save every 30 seconds
     const interval = setInterval(() => {
       if (timesheetData.status === 'draft') {
         autoSave();
@@ -82,15 +80,14 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const generateAvailableWeeks = () => {
     const weeks = [];
     const today = new Date();
-    
-    // Generate next 8 Sundays (week endings)
+
     for (let i = 0; i < 8; i++) {
       const sunday = new Date(today);
       const daysUntilSunday = (7 - today.getDay()) % 7;
       sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
       weeks.push(sunday.toISOString().split('T')[0]);
     }
-    
+
     setAvailableWeeks(weeks);
   };
 
@@ -130,8 +127,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
       if (existingTimesheet) {
         const entriesMap: { [key: string]: HavsTimesheetEntry } = {};
-        
-        // Initialize all equipment items first
+
         EQUIPMENT_ITEMS.forEach(item => {
           entriesMap[item.name] = {
             id: '',
@@ -150,8 +146,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             updated_at: new Date().toISOString(),
           };
         });
-        
-        // Then override with existing data
+
         existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
           if (entriesMap[entry.equipment_name]) {
             entriesMap[entry.equipment_name] = {
@@ -173,7 +168,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           total_hours: existingTimesheet.total_hours || 0,
         });
       } else {
-        // Initialize empty entries for all equipment
         const entriesMap: { [key: string]: HavsTimesheetEntry } = {};
         EQUIPMENT_ITEMS.forEach(item => {
           entriesMap[item.name] = {
@@ -205,20 +199,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const updateHours = (equipmentName: string, day: string, hours: number) => {
-    console.log('Updating hours for:', equipmentName, day, hours);
-    
     setTimesheetData(prev => {
       const updatedEntries = { ...prev.entries };
       const entry = updatedEntries[equipmentName];
-      
+
       if (entry) {
-        const updatedEntry = { 
-          ...entry, 
-          [`${day}_hours`]: Math.max(0, Math.round(hours)) // Ensure non-negative
+        const updatedEntry = {
+          ...entry,
+          [`${day}_hours`]: Math.max(0, Math.round(hours))
         };
-        
-        // Calculate total minutes for this equipment
-        updatedEntry.total_hours = 
+
+        updatedEntry.total_hours =
           updatedEntry.monday_hours +
           updatedEntry.tuesday_hours +
           updatedEntry.wednesday_hours +
@@ -226,13 +217,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           updatedEntry.friday_hours +
           updatedEntry.saturday_hours +
           updatedEntry.sunday_hours;
-        
+
         updatedEntries[equipmentName] = updatedEntry;
-      } else {
-        console.warn('Entry not found for equipment:', equipmentName);
       }
 
-      // Calculate total minutes for entire timesheet
       const totalHours = Object.values(updatedEntries).reduce((sum, entry) => sum + entry.total_hours, 0);
 
       return {
@@ -242,7 +230,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       };
     });
 
-    // Auto-save after a short delay
     setTimeout(() => {
       if (timesheetData.status === 'draft') {
         autoSave();
@@ -252,8 +239,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   const updateField = (field: keyof TimesheetData, value: string) => {
     setTimesheetData(prev => ({ ...prev, [field]: value }));
-    
-    // Auto-save after a short delay
+
     setTimeout(() => {
       if (timesheetData.status === 'draft') {
         autoSave();
@@ -263,10 +249,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   const autoSave = async () => {
     if (saving || submitting) return;
-    
+
     setSaving(true);
     setSaveError(null);
-    
+
     try {
       await saveTimesheet();
       setLastSaved(new Date());
@@ -281,7 +267,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const saveTimesheet = async () => {
     let timesheetId = timesheetData.id;
 
-    // Create or update timesheet
     if (timesheetId) {
       const { error } = await supabase
         .from('havs_timesheets')
@@ -313,15 +298,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         .single();
 
       if (error) throw error;
-      
+
       timesheetId = newTimesheet.id;
       setTimesheetData(prev => ({ ...prev, id: timesheetId }));
     }
 
-    // Save entries
     for (const entry of Object.values(timesheetData.entries)) {
       if (entry.id) {
-        // Update existing entry
         const { error } = await supabase
           .from('havs_timesheet_entries')
           .update({
@@ -339,7 +322,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
         if (error) throw error;
       } else if (entry.total_hours > 0) {
-        // Create new entry only if there are hours
         const { data: newEntry, error } = await supabase
           .from('havs_timesheet_entries')
           .insert({
@@ -359,8 +341,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           .single();
 
         if (error) throw error;
-        
-        // Update local state with new entry ID
+
         setTimesheetData(prev => ({
           ...prev,
           entries: {
@@ -372,18 +353,36 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const handleSubmit = async () => {
-    if (timesheetData.total_hours === 0) {
-      alert('Please add some hours before submitting');
-      return;
-    }
+  const handleManualSave = async () => {
+    setSaving(true);
+    setSaveError(null);
 
-    setSubmitting(true);
-    
     try {
       await saveTimesheet();
-      
-      // Update status to submitted
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error('Save error:', error);
+      setSaveError('Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSubmitClick = () => {
+    if (timesheetData.total_hours === 0) {
+      alert('Please add exposure time before submitting');
+      return;
+    }
+    setShowSubmitConfirmation(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    setSubmitting(true);
+    setShowSubmitConfirmation(false);
+
+    try {
+      await saveTimesheet();
+
       const { error } = await supabase
         .from('havs_timesheets')
         .update({
@@ -395,7 +394,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (error) throw error;
 
       setTimesheetData(prev => ({ ...prev, status: 'submitted' }));
-      alert('HAVs timesheet submitted successfully!');
     } catch (error) {
       console.error('Error submitting timesheet:', error);
       alert('Failed to submit timesheet. Please try again.');
@@ -410,7 +408,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   const parseMinutes = (value: string): number => {
     const parsed = parseFloat(value);
-    return isNaN(parsed) ? 0 : Math.round(parsed); // Round to whole minutes
+    return isNaN(parsed) ? 0 : Math.round(parsed);
   };
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
@@ -423,185 +421,195 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   const isReadOnly = timesheetData.status === 'submitted';
 
+  const days = [
+    { key: 'monday', label: 'Mon', full: 'Monday' },
+    { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
+    { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
+    { key: 'thursday', label: 'Thu', full: 'Thursday' },
+    { key: 'friday', label: 'Fri', full: 'Friday' },
+    { key: 'saturday', label: 'Sat', full: 'Saturday' },
+    { key: 'sunday', label: 'Sun', full: 'Sunday' },
+  ];
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={onBack}
-              className="p-2 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <ArrowLeft className="h-5 w-5 text-slate-600" />
-            </button>
-            <div className="flex items-center space-x-3">
-              <div className="p-3 bg-orange-100 rounded-lg">
-                <HardHat className="h-6 w-6 text-orange-600" />
+      <div className="bg-white border border-slate-200 rounded-lg">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onBack}
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
+                  <HardHat className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-900">HAVs Exposure Record</h1>
+                  <p className="text-sm text-slate-500">Hand Arm Vibration Syndrome Timesheet</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">HAVs Timesheet</h1>
-                <p className="text-slate-600">Hand Arm Vibration Syndrome Exposure Record</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-3">
-            {/* Auto-save status */}
-            <div className="flex items-center space-x-2 text-sm">
-              {saving ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
-                  <span className="text-blue-600">Saving...</span>
-                </>
-              ) : lastSaved ? (
-                <>
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-green-600">
-                    Saved {lastSaved.toLocaleTimeString()}
-                  </span>
-                </>
-              ) : saveError ? (
-                <>
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
-                  <span className="text-red-600">Save failed</span>
-                </>
-              ) : null}
             </div>
 
-            {timesheetData.status === 'submitted' && (
-              <div className="flex items-center space-x-2 bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
-                <CheckCircle className="h-4 w-4" />
-                <span>Submitted</span>
-              </div>
-            )}
-          </div>
-          
-          {/* Start New Week Button for Submitted Timesheets */}
-          {timesheetData.status === 'submitted' && (
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleStartNewWeek}
-                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors font-medium"
-              >
-                <HardHat className="h-5 w-5" />
-                <span>Start New Week HAVs</span>
-              </button>
+            <div className="flex items-center gap-4">
+              {saving ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                  <span>Saving...</span>
+                </div>
+              ) : lastSaved ? (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <span>Saved {lastSaved.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              ) : saveError ? (
+                <div className="flex items-center gap-2 text-sm text-red-600">
+                  <AlertTriangle className="h-4 w-4" />
+                  <span>{saveError}</span>
+                </div>
+              ) : null}
+
+              {timesheetData.status === 'submitted' && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-md">
+                  <Shield className="h-4 w-4 text-emerald-600" />
+                  <span className="text-sm font-medium text-emerald-700">Submitted</span>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Week Selection - Moved to top */}
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Week Selection</h3>
-          <button
-            type="button"
-            onClick={() => !isReadOnly && setShowWeekSelector(true)}
-            disabled={isReadOnly}
-            className={`w-full px-4 py-3 border-2 border-slate-300 rounded-lg text-left transition-colors ${
-              isReadOnly 
-                ? 'bg-slate-50 text-slate-500 cursor-not-allowed' 
-                : 'hover:border-orange-400 hover:bg-orange-50 cursor-pointer'
-            }`}
-          >
-            <div className="text-lg font-medium text-slate-900">
+        <div className="grid grid-cols-3 divide-x divide-slate-200">
+          <div className="px-6 py-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Employee</p>
+            <p className="text-sm font-medium text-slate-900">{timesheetData.employee_name}</p>
+          </div>
+          <div className="px-6 py-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
+            <button
+              type="button"
+              onClick={() => !isReadOnly && setShowWeekSelector(true)}
+              disabled={isReadOnly}
+              className={`text-sm font-medium ${isReadOnly ? 'text-slate-500' : 'text-blue-600 hover:text-blue-700'}`}
+            >
               {new Date(timesheetData.week_ending).toLocaleDateString('en-GB', {
-                weekday: 'long',
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric'
               })}
-            </div>
-            <div className="text-sm text-slate-600 mt-1">
-              {isReadOnly 
-                ? `Week ending: ${new Date(timesheetData.week_ending).toLocaleDateString('en-GB')} (Submitted)`
-                : 'Click to select a different week ending (Sunday)'
-              }
-            </div>
-          </button>
-        </div>
-        {/* Basic Information */}
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Employee Name</label>
-            <input
-              type="text"
-              value={timesheetData.employee_name}
-              onChange={(e) => updateField('employee_name', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-              readOnly={isReadOnly}
-            />
+              {!isReadOnly && <span className="ml-1 text-xs">(change)</span>}
+            </button>
+          </div>
+          <div className="px-6 py-4">
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Total Exposure</p>
+            <p className="text-sm font-semibold text-amber-600">
+              {formatMinutes(timesheetData.total_hours)} minutes
+              {timesheetData.total_hours > 0 && (
+                <span className="font-normal text-slate-500 ml-1">
+                  ({(timesheetData.total_hours / 60).toFixed(1)}h)
+                </span>
+              )}
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Equipment Table */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="bg-slate-100 p-4">
-          <h2 className="text-lg font-semibold text-slate-900 text-center">
-            EXPOSURE TIME IN MINUTES AGAINST THE EQUIPMENT USED
-          </h2>
+      {timesheetData.status === 'submitted' && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleStartNewWeek}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+          >
+            <HardHat className="h-4 w-4" />
+            Start New Week
+          </button>
+        </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="px-6 py-3 bg-slate-800 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
+              Equipment Exposure Time (Minutes)
+            </h2>
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <Clock className="h-3.5 w-3.5" />
+              <span>Enter time in minutes per day</span>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="w-full">
             <thead>
-              <tr className="bg-slate-50">
-                <th className="border border-slate-300 px-4 py-3 text-left text-sm font-medium text-slate-700">
-                  Description of Equipment
+              <tr className="bg-slate-100">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wide border-b-2 border-slate-300 w-64">
+                  Equipment
                 </th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Monday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Tuesday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Wednesday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Thursday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Friday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Saturday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700">Sunday</th>
-                <th className="border border-slate-300 px-4 py-3 text-center text-sm font-medium text-slate-700 bg-blue-50">Total (min)</th>
+                {days.map((day) => (
+                  <th
+                    key={day.key}
+                    className="px-2 py-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wide border-b-2 border-slate-300 w-20"
+                  >
+                    <span className="hidden sm:inline">{day.full}</span>
+                    <span className="sm:hidden">{day.label}</span>
+                  </th>
+                ))}
+                <th className="px-4 py-3 text-center text-xs font-semibold text-slate-900 uppercase tracking-wide border-b-2 border-slate-300 bg-amber-50 w-24">
+                  Total
+                </th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(groupedEquipment).map(([category, items]) => (
                 <React.Fragment key={category}>
-                  {/* Category Header */}
                   <tr>
-                    <td 
-                      colSpan={9} 
-                      className="border border-slate-300 bg-slate-200 px-4 py-2 text-sm font-bold text-slate-900 text-center"
+                    <td
+                      colSpan={9}
+                      className="px-4 py-2 text-xs font-bold text-slate-700 uppercase tracking-wider bg-slate-200 border-y border-slate-300"
                     >
                       {category}
                     </td>
                   </tr>
-                  
-                  {/* Equipment Items */}
-                  {items.map((item) => {
+
+                  {items.map((item, idx) => {
                     const entry = timesheetData.entries[item.name];
-                    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-                    
+                    const rowTotal = entry?.total_hours || 0;
+
                     return (
-                      <tr key={item.name} className="hover:bg-slate-50">
-                        <td className="border border-slate-300 px-4 py-3 text-sm text-slate-900 font-medium">
+                      <tr
+                        key={item.name}
+                        className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50/50 transition-colors`}
+                      >
+                        <td className="px-4 py-2 text-sm text-slate-900 font-medium border-b border-slate-200">
                           {item.name}
                         </td>
                         {days.map((day) => (
-                          <td key={day} className="border border-slate-300 px-2 py-2">
+                          <td key={day.key} className="px-1 py-1 border-b border-slate-200">
                             <input
                               type="number"
                               min="0"
                               max="1440"
-                              value={entry && entry[`${day}_hours` as keyof HavsTimesheetEntry] !== undefined 
-                                ? (entry[`${day}_hours` as keyof HavsTimesheetEntry] as number || 0).toString()
+                              value={entry && entry[`${day.key}_hours` as keyof HavsTimesheetEntry] !== undefined
+                                ? (entry[`${day.key}_hours` as keyof HavsTimesheetEntry] as number || 0).toString()
                                 : '0'}
-                              onChange={(e) => updateHours(item.name, day, parseMinutes(e.target.value))}
+                              onChange={(e) => updateHours(item.name, day.key, parseMinutes(e.target.value))}
                               onFocus={(e) => e.target.select()}
-                              className="w-full px-2 py-1 text-center border-0 bg-transparent focus:bg-white focus:ring-2 focus:ring-orange-500 rounded transition-all duration-200 text-sm"
+                              className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                                isReadOnly ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'
+                              }`}
                               placeholder="0"
                               readOnly={isReadOnly}
                             />
                           </td>
                         ))}
-                        <td className="border border-slate-300 px-4 py-3 text-center text-sm font-bold text-blue-700 bg-blue-50">
-                          {entry && entry.total_hours !== undefined ? entry.total_hours.toString() : '0'}
+                        <td className={`px-4 py-2 text-center text-sm font-semibold border-b border-slate-200 ${
+                          rowTotal > 0 ? 'text-amber-700 bg-amber-50' : 'text-slate-400 bg-slate-50'
+                        }`}>
+                          {rowTotal}
                         </td>
                       </tr>
                     );
@@ -609,135 +617,184 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 </React.Fragment>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="bg-slate-800">
+                <td className="px-4 py-3 text-sm font-bold text-white uppercase tracking-wide">
+                  Weekly Total
+                </td>
+                {days.map((day) => {
+                  const dayTotal = Object.values(timesheetData.entries).reduce((sum, entry) => {
+                    return sum + (entry[`${day.key}_hours` as keyof HavsTimesheetEntry] as number || 0);
+                  }, 0);
+                  return (
+                    <td key={day.key} className="px-2 py-3 text-center text-sm font-semibold text-slate-300">
+                      {dayTotal > 0 ? dayTotal : '-'}
+                    </td>
+                  );
+                })}
+                <td className="px-4 py-3 text-center text-base font-bold text-amber-400 bg-slate-900">
+                  {formatMinutes(timesheetData.total_hours)}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
-
-        {/* Total Hours Summary */}
-        <div className="bg-blue-50 border-t border-slate-300 p-4">
-          <div className="text-center">
-            <div className="text-lg font-bold text-blue-700">
-              Total Weekly Exposure: {formatMinutes(timesheetData.total_hours)} minutes
-            </div>
-            {timesheetData.total_hours > 0 && (
-              <div className="text-sm text-blue-600">
-                ({(timesheetData.total_hours / 60).toFixed(1)} hours)
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Comments and Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Comments</h3>
-          <textarea
-            value={timesheetData.comments}
-            onChange={(e) => updateField('comments', e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            rows={6}
-            placeholder="Add any comments about equipment usage..."
-            readOnly={isReadOnly}
-          />
+        <div className="bg-white border border-slate-200 rounded-lg">
+          <div className="px-4 py-3 border-b border-slate-200">
+            <h3 className="text-sm font-semibold text-slate-900">Comments</h3>
+          </div>
+          <div className="p-4">
+            <textarea
+              value={timesheetData.comments}
+              onChange={(e) => updateField('comments', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              rows={4}
+              placeholder="Equipment usage notes, conditions, etc."
+              readOnly={isReadOnly}
+            />
+          </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Actions</h3>
-          <textarea
-            value={timesheetData.actions}
-            onChange={(e) => updateField('actions', e.target.value)}
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            rows={6}
-            placeholder="Record any actions taken or required..."
-            readOnly={isReadOnly}
-          />
+        <div className="bg-white border border-slate-200 rounded-lg">
+          <div className="px-4 py-3 border-b border-slate-200">
+            <h3 className="text-sm font-semibold text-slate-900">Actions Required</h3>
+          </div>
+          <div className="p-4">
+            <textarea
+              value={timesheetData.actions}
+              onChange={(e) => updateField('actions', e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              rows={4}
+              placeholder="Record any actions taken or required..."
+              readOnly={isReadOnly}
+            />
+          </div>
         </div>
       </div>
 
-
-      {/* Action Buttons */}
       {!isReadOnly && (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-600">
-              {lastSaved && (
-                <span>Last saved: {lastSaved.toLocaleTimeString()}</span>
-              )}
-              {saveError && (
-                <span className="text-red-600">{saveError}</span>
-              )}
+        <div className="bg-white border border-slate-200 rounded-lg">
+          <div className="p-6">
+            <div className="flex items-start justify-between gap-8">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-blue-50 rounded-lg">
+                    <Save className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Save Progress</h3>
+                    <p className="text-xs text-slate-500">Save your work without submitting</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleManualSave}
+                  disabled={saving}
+                  className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-md transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-slate-400 border-t-slate-600 rounded-full animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      Save Draft
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-slate-500 mt-2 text-center">
+                  Auto-saves every 30 seconds
+                </p>
+              </div>
+
+              <div className="w-px bg-slate-200 self-stretch" />
+
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2 bg-red-50 rounded-lg">
+                    <Send className="h-5 w-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Submit to Employer</h3>
+                    <p className="text-xs text-red-600 font-medium">Final submission - cannot be edited</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleSubmitClick}
+                  disabled={submitting || timesheetData.total_hours === 0}
+                  className="w-full px-4 py-3 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Submit for Compliance
+                    </>
+                  )}
+                </button>
+                {timesheetData.total_hours === 0 && (
+                  <p className="text-xs text-slate-500 mt-2 text-center">
+                    Add exposure time to enable submission
+                  </p>
+                )}
+              </div>
             </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={autoSave}
-                disabled={saving}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors"
-              >
-                <Save className="h-4 w-4" />
-                <span>{saving ? 'Saving...' : 'Save Now'}</span>
-              </button>
-              
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || timesheetData.total_hours === 0}
-                className="flex items-center space-x-2 px-6 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-400 text-white rounded-lg transition-colors"
-              >
-                <Send className="h-4 w-4" />
-                <span>{submitting ? 'Submitting...' : 'Submit to Employer'}</span>
-              </button>
+
+            <div className="mt-6 pt-4 border-t border-slate-200">
+              <div className="flex items-center justify-center gap-2 text-sm text-slate-600">
+                <Clock className="h-4 w-4" />
+                <span>Weekly Exposure: <strong className="text-amber-600">{formatMinutes(timesheetData.total_hours)} minutes</strong></span>
+                {timesheetData.total_hours > 0 && (
+                  <span className="text-slate-400">({(timesheetData.total_hours / 60).toFixed(1)} hours)</span>
+                )}
+              </div>
             </div>
-          </div>
-          
-          <div className="mt-4 text-center">
-            <div className="text-lg font-bold text-orange-600">
-              <Clock className="h-5 w-5 inline mr-2" />
-              Total Weekly Exposure: {formatMinutes(timesheetData.total_hours)} minutes
-            </div>
-            <p className="text-sm text-slate-600 mt-1">
-              Auto-saves every 30 seconds • Enter time in minutes
-            </p>
           </div>
         </div>
       )}
 
-      {/* Week Selector Modal */}
       {showWeekSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-slate-900">Select Week Ending</h3>
-                <button
-                  onClick={() => setShowWeekSelector(false)}
-                  className="text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <p className="text-slate-600 mb-6">
-                Choose the Sunday (week ending) for your new HAVs timesheet:
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-900">Select Week Ending</h3>
+              <button
+                onClick={() => setShowWeekSelector(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-slate-600 mb-4">
+                Select the Sunday (week ending) for your HAVs timesheet:
               </p>
-              
-              <div className="space-y-3 max-h-60 overflow-y-auto">
+              <div className="space-y-2 max-h-64 overflow-y-auto">
                 {availableWeeks.map((week) => (
                   <button
                     key={week}
                     onClick={() => handleWeekSelect(week)}
-                    className="w-full p-4 text-left border-2 border-slate-200 rounded-lg hover:border-orange-400 hover:bg-orange-50 transition-colors"
+                    className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors"
                   >
-                    <div className="font-medium text-slate-900">
+                    <p className="text-sm font-medium text-slate-900">
                       {new Date(week).toLocaleDateString('en-GB', {
                         weekday: 'long',
                         day: 'numeric',
                         month: 'long',
                         year: 'numeric'
                       })}
-                    </div>
-                    <div className="text-sm text-slate-600">
+                    </p>
+                    <p className="text-xs text-slate-500">
                       Week ending: {new Date(week).toLocaleDateString('en-GB')}
-                    </div>
+                    </p>
                   </button>
                 ))}
               </div>
@@ -746,6 +803,95 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         </div>
       )}
 
+      {showSubmitConfirmation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+            <div className="px-6 py-4 border-b border-slate-200 bg-red-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-full">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-slate-900">Confirm Submission</h3>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-6">
+                <p className="text-sm text-slate-700 mb-4">
+                  You are about to submit your HAVs exposure record for compliance review.
+                </p>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-md p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <Shield className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-amber-800">
+                      <strong>This submission is final.</strong> Once submitted, this record cannot be edited.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <FileText className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-amber-800">
+                      This record will be used for <strong>HSE compliance and audits</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 rounded-md p-4 mb-6">
+                <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Submission Summary</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-slate-500">Week Ending</p>
+                    <p className="font-medium text-slate-900">
+                      {new Date(timesheetData.week_ending).toLocaleDateString('en-GB')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Total Exposure</p>
+                    <p className="font-medium text-amber-600">
+                      {formatMinutes(timesheetData.total_hours)} minutes
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Employee</p>
+                    <p className="font-medium text-slate-900">{timesheetData.employee_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">Status</p>
+                    <p className="font-medium text-slate-900">Ready to Submit</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSubmitConfirmation(false)}
+                  className="flex-1 px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSubmit}
+                  disabled={submitting}
+                  className="flex-1 px-4 py-3 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4" />
+                      Confirm Submission
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, HardHat, CheckCircle, X, Calendar, AlertTriangle, User } from 'lucide-react';
+import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw } from 'lucide-react';
 import { supabase, Employee } from '../../../lib/supabase';
 
 interface EmployeeLandingProps {
@@ -13,9 +13,16 @@ interface ComplianceStatus {
   loading: boolean;
 }
 
-export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({ 
-  onTaskSelect, 
-  selectedEmployee 
+interface HavsSnapshot {
+  weekEnding: string;
+  totalMinutes: number;
+  status: 'draft' | 'submitted' | 'none';
+  updatedAt: string | null;
+}
+
+export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
+  onTaskSelect,
+  selectedEmployee
 }) => {
   const [compliance, setCompliance] = useState<ComplianceStatus>({
     todayVehicleCheck: false,
@@ -23,36 +30,39 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     loading: true,
   });
 
+  const [havsSnapshot, setHavsSnapshot] = useState<HavsSnapshot>({
+    weekEnding: '',
+    totalMinutes: 0,
+    status: 'none',
+    updatedAt: null,
+  });
+
+  const [refreshing, setRefreshing] = useState(false);
+
   useEffect(() => {
     if (!selectedEmployee?.id) return;
     checkComplianceStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEmployee?.id]);
 
-  // Local midnight → next local midnight, returned as ISO strings
   const getTodayRangeISO = () => {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // local 00:00
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const end = new Date(start);
-    end.setDate(start.getDate() + 1); // next local 00:00
+    end.setDate(start.getDate() + 1);
     return { startISO: start.toISOString(), endISO: end.toISOString() };
   };
 
-  // Return next Sunday (week ending) as YYYY-MM-DD
   const getCurrentWeekEnding = () => {
     const today = new Date();
     const d = new Date(today);
-    const daysUntilSunday = (7 - d.getDay()) % 7; // 0=Sun, 6=Sat
+    const daysUntilSunday = (7 - d.getDay()) % 7;
     d.setDate(d.getDate() + daysUntilSunday);
     return d.toISOString().split('T')[0];
   };
 
-  // Robust “did employee submit any vehicle checks today?” detector.
-  // Tries submitted_at, then created_at, then inspection_date (DATE), using .limit(1)
   const didSubmitVehicleCheckToday = async (employeeId: string): Promise<boolean> => {
     const { startISO, endISO } = getTodayRangeISO();
 
-    // 1) Try submitted_at
     let { data, error } = await supabase
       .from('vehicle_inspections')
       .select('id')
@@ -65,7 +75,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       return Array.isArray(data) && data.length > 0;
     }
 
-    // If the error is “column does not exist”, try created_at
     if (error?.code === '42703' || /column .*submitted_at.* does not exist/i.test(error.message || '')) {
       const createdResp = await supabase
         .from('vehicle_inspections')
@@ -79,25 +88,22 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         return Array.isArray(createdResp.data) && createdResp.data.length > 0;
       }
 
-      // If created_at also fails, try DATE column inspection_date = today (local)
       const todayStr = new Date().toISOString().split('T')[0];
       const dateResp = await supabase
         .from('vehicle_inspections')
         .select('id')
         .eq('employee_id', employeeId)
-        .eq('inspection_date', todayStr) // only works if you actually have a DATE column
+        .eq('inspection_date', todayStr)
         .limit(1);
 
       if (!dateResp.error) {
         return Array.isArray(dateResp.data) && dateResp.data.length > 0;
       }
 
-      // Fallthrough: all failed
       console.warn('Vehicle check date fallback failed:', createdResp.error || dateResp.error);
       return false;
     }
 
-    // Other errors (network, RLS, etc.)
     console.warn('Vehicle check query error:', error);
     return false;
   };
@@ -113,230 +119,331 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
 
       const { data: havs } = await supabase
         .from('havs_timesheets')
-        .select('id')
+        .select('id, total_hours, status, updated_at, week_ending')
         .eq('employee_id', employeeId)
         .eq('week_ending', weekEndingStr)
-        .eq('status', 'submitted')
-        .limit(1);
+        .maybeSingle();
+
+      const havsSubmitted = havs?.status === 'submitted';
 
       setCompliance({
         todayVehicleCheck: todayDone,
-        currentWeekHavs: Array.isArray(havs) && havs.length > 0,
+        currentWeekHavs: havsSubmitted,
         loading: false,
       });
+
+      if (havs) {
+        setHavsSnapshot({
+          weekEnding: havs.week_ending,
+          totalMinutes: havs.total_hours || 0,
+          status: havs.status,
+          updatedAt: havs.updated_at,
+        });
+      } else {
+        setHavsSnapshot({
+          weekEnding: weekEndingStr,
+          totalMinutes: 0,
+          status: 'none',
+          updatedAt: null,
+        });
+      }
     } catch (error) {
       console.error('Error checking compliance status:', error);
       setCompliance(prev => ({ ...prev, loading: false }));
     }
   };
 
-  const tasks = [
-    {
-      id: 'inspection' as const,
-      title: 'Daily Vehicle & Plant Check',
-      description: 'Complete daily safety checks for all vehicles and equipment',
-      icon: ClipboardList,
-      color: 'bg-blue-600',
-      lightColor: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-      borderColor: 'border-blue-200',
-      hoverColor: 'hover:border-blue-400',
-      frequency: 'Daily',
-      isCompleted: compliance.todayVehicleCheck,
-      urgency: 'high'
-    },
-    {
-      id: 'havs' as const,
-      title: 'HAVs Timesheet',
-      description: 'Record vibrating equipment exposure time in minutes',
-      icon: HardHat,
-      color: 'bg-orange-600',
-      lightColor: 'bg-orange-50',
-      iconColor: 'text-orange-600',
-      borderColor: 'border-orange-200',
-      hoverColor: 'hover:border-orange-400',
-      frequency: 'Weekly',
-      isCompleted: compliance.currentWeekHavs,
-      urgency: 'medium'
-    }
-  ];
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await checkComplianceStatus();
+    setRefreshing(false);
+  };
 
-  const getStatusIcon = (isCompleted: boolean, urgency: string) => {
+  const getStatusBadge = (isCompleted: boolean, urgency: string) => {
     if (compliance.loading) {
-      return <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-slate-400"></div>;
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 bg-slate-100 rounded">
+          <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin" />
+          Checking
+        </span>
+      );
     }
-    if (isCompleted) return <CheckCircle className="h-5 w-5 text-green-600" />;
-    if (urgency === 'high') return <AlertTriangle className="h-5 w-5 text-red-600" />;
-    return <X className="h-5 w-5 text-amber-600" />;
-  };
 
-  const getStatusText = (isCompleted: boolean, frequency: string) => {
-    if (compliance.loading) return 'Checking...';
-    return isCompleted ? `${frequency} - Complete` : `${frequency} - Pending`;
-  };
+    if (isCompleted) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded">
+          <CheckCircle className="h-3.5 w-3.5" />
+          Complete
+        </span>
+      );
+    }
 
-  const getStatusColor = (isCompleted: boolean, urgency: string) => {
-    if (compliance.loading) return 'text-slate-500';
-    if (isCompleted) return 'text-green-600';
-    return urgency === 'high' ? 'text-red-600' : 'text-amber-600';
+    if (urgency === 'high') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          Required
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded">
+        <Clock className="h-3.5 w-3.5" />
+        Pending
+      </span>
+    );
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      {/* Welcome Header */}
-      <div className="text-center">
-        <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-4">
-          <User className="h-8 w-8 text-blue-600" />
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="bg-white border border-slate-200 rounded-lg">
+        <div className="px-6 py-5 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
+                <User className="h-6 w-6 text-slate-600" />
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-slate-900">{selectedEmployee.full_name}</h1>
+                <p className="text-sm text-slate-500">{selectedEmployee.role}</p>
+              </div>
+            </div>
+            {selectedEmployee.assigned_vehicle && (
+              <div className="text-right">
+                <p className="text-xs text-slate-500 uppercase tracking-wide">Assigned Vehicle</p>
+                <p className="text-sm font-medium text-slate-900">{selectedEmployee.assigned_vehicle.registration_number}</p>
+              </div>
+            )}
+          </div>
         </div>
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">
-          Welcome, {selectedEmployee.full_name}
-        </h1>
-        <p className="text-lg text-slate-600 mb-1">{selectedEmployee.role}</p>
-        {selectedEmployee.assigned_vehicle && (
-          <p className="text-sm text-blue-600 font-medium">
-            Assigned Vehicle: {selectedEmployee.assigned_vehicle.registration_number}
-          </p>
-        )}
-      </div>
 
-      {/* Compliance Status Overview */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <Calendar className="h-6 w-6 text-slate-600" />
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Your Compliance Status</h2>
-              <p className="text-slate-600">Track your daily and weekly requirements</p>
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-slate-500" />
+              <h2 className="text-sm font-semibold text-slate-900">Compliance Status</h2>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing || compliance.loading}
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors disabled:opacity-50"
+              title="Refresh status"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className={`p-4 rounded-lg border ${
+              compliance.loading ? 'bg-slate-50 border-slate-200' :
+              compliance.todayVehicleCheck ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="p-1.5 bg-blue-100 rounded">
+                  <ClipboardList className="h-4 w-4 text-blue-600" />
+                </div>
+                {getStatusBadge(compliance.todayVehicleCheck, 'high')}
+              </div>
+              <p className="text-sm font-medium text-slate-900">Daily Vehicle Check</p>
+              <p className="text-xs text-slate-500 mt-0.5">Required each working day</p>
+            </div>
+
+            <div className={`p-4 rounded-lg border ${
+              compliance.loading ? 'bg-slate-50 border-slate-200' :
+              compliance.currentWeekHavs ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/50 border-amber-200'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="p-1.5 bg-amber-100 rounded">
+                  <HardHat className="h-4 w-4 text-amber-600" />
+                </div>
+                {getStatusBadge(compliance.currentWeekHavs, 'medium')}
+              </div>
+              <p className="text-sm font-medium text-slate-900">HAVs Timesheet</p>
+              <p className="text-xs text-slate-500 mt-0.5">Weekly exposure record</p>
             </div>
           </div>
-          <button
-            onClick={checkComplianceStatus}
-            className="text-sm text-blue-600 hover:text-blue-700 transition-colors"
-          >
-            Refresh Status
-          </button>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {tasks.map((task) => {
-            const Icon = task.icon;
-            const statusIcon = getStatusIcon(task.isCompleted, task.urgency);
-            const statusText = getStatusText(task.isCompleted, task.frequency);
-            const statusColor = getStatusColor(task.isCompleted, task.urgency);
-            
-            return (
-              <div
-                key={task.id}
-                className={`p-4 rounded-xl border-2 transition-all duration-200 ${
-                  task.isCompleted 
-                    ? 'border-green-200 bg-green-50' 
-                    : task.urgency === 'high'
-                    ? 'border-red-200 bg-red-50'
-                    : 'border-amber-200 bg-amber-50'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className={`p-2 rounded-lg ${task.lightColor}`}>
-                    <Icon className={`h-5 w-5 ${task.iconColor}`} />
-                  </div>
-                  {statusIcon}
+          {!compliance.loading && !compliance.todayVehicleCheck && (
+            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-red-800">Daily vehicle check required</p>
+                  <p className="text-xs text-red-700 mt-0.5">Complete your vehicle inspection before starting work</p>
                 </div>
-                <h3 className="font-semibold text-slate-900 mb-1">{task.title}</h3>
-                <p className={`text-sm font-medium ${statusColor}`}>{statusText}</p>
+                <button
+                  onClick={() => onTaskSelect('inspection')}
+                  className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
+                >
+                  Start Check
+                </button>
               </div>
-            );
-          })}
+            </div>
+          )}
+
+          {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekHavs && (
+            <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <p className="text-sm font-medium text-emerald-800">All compliance requirements complete</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-lg">
+        <div className="px-6 py-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <HardHat className="h-5 w-5 text-amber-600" />
+            <h2 className="text-sm font-semibold text-slate-900">HAVs Exposure Summary</h2>
+            <span className="text-xs text-slate-500">(Read Only)</span>
+          </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="mt-6 pt-6 border-t border-slate-200">
-          <div className="flex flex-wrap gap-3">
-            {!compliance.loading && !compliance.todayVehicleCheck && (
-              <button
-                onClick={() => onTaskSelect('inspection')}
-                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-              >
-                <AlertTriangle className="h-4 w-4" />
-                <span>Complete Daily Check</span>
-              </button>
-            )}
-            {!compliance.loading && !compliance.currentWeekHavs && (
+        <div className="px-6 py-4">
+          <div className="grid grid-cols-4 gap-6">
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
+              <p className="text-sm font-medium text-slate-900">
+                {havsSnapshot.weekEnding
+                  ? new Date(havsSnapshot.weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Total Exposure</p>
+              <p className="text-sm font-semibold text-amber-600">
+                {havsSnapshot.totalMinutes} minutes
+                {havsSnapshot.totalMinutes > 0 && (
+                  <span className="font-normal text-slate-500 ml-1">
+                    ({(havsSnapshot.totalMinutes / 60).toFixed(1)}h)
+                  </span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Status</p>
+              {havsSnapshot.status === 'submitted' ? (
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">
+                  <Shield className="h-3.5 w-3.5" />
+                  Submitted
+                </span>
+              ) : havsSnapshot.status === 'draft' ? (
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-600">
+                  <Clock className="h-3.5 w-3.5" />
+                  In Progress
+                </span>
+              ) : (
+                <span className="text-sm text-slate-400">Not Started</span>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Last Updated</p>
+              <p className="text-sm text-slate-600">
+                {havsSnapshot.updatedAt
+                  ? new Date(havsSnapshot.updatedAt).toLocaleString('en-GB', {
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  : '-'}
+              </p>
+            </div>
+          </div>
+
+          {havsSnapshot.status !== 'submitted' && (
+            <div className="mt-4 pt-4 border-t border-slate-200">
               <button
                 onClick={() => onTaskSelect('havs')}
-                className="flex items-center space-x-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
               >
-                <HardHat className="h-4 w-4" />
-                <span>Submit HAVs</span>
+                {havsSnapshot.status === 'draft' ? 'Continue HAVs Timesheet' : 'Start HAVs Timesheet'}
+                <ChevronRight className="h-4 w-4" />
               </button>
-            )}
-
-            {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekHavs && (
-              <div className="w-full text-center py-4">
-                <div className="inline-flex items-center space-x-2 bg-green-100 text-green-800 px-4 py-2 rounded-lg">
-                  <CheckCircle className="h-5 w-5" />
-                  <span className="font-medium">All compliance requirements completed!</span>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Main Task Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {tasks.map((task) => {
-          const Icon = task.icon;
-          return (
-            <div
-              key={task.id}
-              className={`bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden group cursor-pointer border-2 ${
-                task.isCompleted 
-                  ? 'border-green-200 hover:border-green-300' 
-                  : `${task.borderColor} ${task.hoverColor}`
-              }`}
-              onClick={() => onTaskSelect(task.id)}
-            >
-              <div className={`${task.lightColor} p-6 border-b border-slate-100`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className={`p-3 ${task.lightColor} rounded-xl border-2 border-white shadow-sm group-hover:scale-110 transition-transform duration-200`}>
-                    <Icon className={`h-8 w-8 ${task.iconColor}`} />
-                  </div>
-                  <div className="flex flex-col items-end space-y-1">
-                    {getStatusIcon(task.isCompleted, task.urgency)}
-                    <span className={`text-xs font-medium ${getStatusColor(task.isCompleted, task.urgency)}`}>
-                      {task.frequency}
-                    </span>
-                  </div>
-                </div>
-                <h3 className="text-xl font-bold text-slate-900 group-hover:text-slate-700 transition-colors mb-2">
-                  {task.title}
-                </h3>
-                <p className="text-slate-600 leading-relaxed">{task.description}</p>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm font-medium ${getStatusColor(task.isCompleted, task.urgency)}`}>
-                    {getStatusText(task.isCompleted, task.frequency)}
-                  </span>
-                  <div className={`w-8 h-8 ${task.color} rounded-full flex items-center justify-center group-hover:scale-110 transition-transform duration-200`}>
-                    <Icon className="h-4 w-4 text-white" />
-                  </div>
-                </div>
-              </div>
+      <div className="grid grid-cols-2 gap-4">
+        <button
+          onClick={() => onTaskSelect('inspection')}
+          className={`p-5 text-left rounded-lg border-2 transition-all ${
+            compliance.todayVehicleCheck
+              ? 'bg-white border-slate-200 hover:border-slate-300'
+              : 'bg-white border-red-200 hover:border-red-300'
+          }`}
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className={`p-2.5 rounded-lg ${compliance.todayVehicleCheck ? 'bg-blue-50' : 'bg-red-50'}`}>
+              <ClipboardList className={`h-6 w-6 ${compliance.todayVehicleCheck ? 'text-blue-600' : 'text-red-600'}`} />
             </div>
-          );
-        })}
+            {!compliance.loading && (
+              compliance.todayVehicleCheck ? (
+                <CheckCircle className="h-5 w-5 text-emerald-500" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+              )
+            )}
+          </div>
+          <h3 className="text-base font-semibold text-slate-900 mb-1">Daily Vehicle Check</h3>
+          <p className="text-sm text-slate-500 mb-3">Safety inspection for vehicles and equipment</p>
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium ${
+              compliance.todayVehicleCheck ? 'text-emerald-600' : 'text-red-600'
+            }`}>
+              {compliance.loading ? 'Checking...' : compliance.todayVehicleCheck ? 'Completed Today' : 'Not Completed'}
+            </span>
+            <ChevronRight className="h-4 w-4 text-slate-400" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => onTaskSelect('havs')}
+          className={`p-5 text-left rounded-lg border-2 transition-all ${
+            compliance.currentWeekHavs
+              ? 'bg-white border-slate-200 hover:border-slate-300'
+              : 'bg-white border-amber-200 hover:border-amber-300'
+          }`}
+        >
+          <div className="flex items-start justify-between mb-3">
+            <div className={`p-2.5 rounded-lg ${compliance.currentWeekHavs ? 'bg-amber-50' : 'bg-amber-50'}`}>
+              <HardHat className="h-6 w-6 text-amber-600" />
+            </div>
+            {!compliance.loading && (
+              compliance.currentWeekHavs ? (
+                <CheckCircle className="h-5 w-5 text-emerald-500" />
+              ) : (
+                <Clock className="h-5 w-5 text-amber-500" />
+              )
+            )}
+          </div>
+          <h3 className="text-base font-semibold text-slate-900 mb-1">HAVs Timesheet</h3>
+          <p className="text-sm text-slate-500 mb-3">Record vibrating equipment exposure</p>
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium ${
+              compliance.currentWeekHavs ? 'text-emerald-600' : 'text-amber-600'
+            }`}>
+              {compliance.loading ? 'Checking...' : compliance.currentWeekHavs ? 'Submitted This Week' : 'Weekly - Due Sunday'}
+            </span>
+            <ChevronRight className="h-4 w-4 text-slate-400" />
+          </div>
+        </button>
       </div>
 
-      {/* Weekly Reminder */}
-      <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl p-6 border border-slate-200">
-        <div className="text-center">
-          <Calendar className="h-8 w-8 text-blue-600 mx-auto mb-3" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">Weekly Reminder</h3>
-          <p className="text-slate-600 text-sm">
-            Submit your HAVs records by Monday 10:00 AM following the week ending.
-            Daily vehicle checks must be completed each working day.
-          </p>
+      <div className="bg-slate-50 border border-slate-200 rounded-lg px-6 py-4">
+        <div className="flex items-start gap-3">
+          <Calendar className="h-5 w-5 text-slate-500 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-slate-700">Compliance Reminder</p>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Daily vehicle checks must be completed each working day before starting work.
+              HAVs timesheets must be submitted by Monday 10:00 AM following the week ending.
+            </p>
+          </div>
         </div>
       </div>
     </div>
