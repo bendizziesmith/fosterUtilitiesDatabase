@@ -1,19 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Users, X, Plus, Search, UserPlus } from 'lucide-react';
-import { supabase, Employee, GangOperative } from '../../../lib/supabase';
+import { Users, X, Plus, Search, UserPlus, AlertCircle } from 'lucide-react';
+import { supabase, Employee, HavsWeekMember } from '../../../lib/supabase';
 
 interface GangMemberSelectorProps {
+  havsWeekId: string;
   gangerId: string;
-  weekEnding: string;
-  selectedMembers: GangOperative[];
-  onMembersChange: (members: GangOperative[]) => void;
+  selectedMembers: HavsWeekMember[];
+  onMembersChange: () => void;
+  isSubmitted: boolean;
 }
 
 export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
+  havsWeekId,
   gangerId,
-  weekEnding,
   selectedMembers,
   onMembersChange,
+  isSubmitted,
 }) => {
   const [showSelector, setShowSelector] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -22,6 +24,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
   const [manualName, setManualName] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (showSelector) {
@@ -31,6 +34,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
 
   const loadAvailableEmployees = async () => {
     setLoading(true);
+    setError(null);
     try {
       const { data, error } = await supabase
         .from('employees')
@@ -41,100 +45,51 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
       if (error) throw error;
 
       setAvailableEmployees(data || []);
-    } catch (error) {
-      console.error('Error loading employees:', error);
+    } catch (err: any) {
+      console.error('Error loading employees:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  const saveGangMembership = async (operative: GangOperative) => {
-    try {
-      const membershipData = {
-        week_ending: weekEnding,
-        ganger_id: gangerId,
-        operative_id: operative.is_manual ? null : operative.employee_id,
-        operative_name: operative.is_manual ? operative.full_name : null,
-        operative_role: operative.role,
-        is_manual: operative.is_manual,
-      };
-
-      console.log('Inserting gang membership:', membershipData);
-
-      const { error } = await supabase
-        .from('gang_membership')
-        .insert(membershipData);
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      console.log('Gang membership saved successfully');
-    } catch (error) {
-      console.error('Error saving gang membership:', error);
-      throw error;
-    }
-  };
-
-  const deleteGangMembership = async (operative: GangOperative) => {
-    try {
-      let query = supabase
-        .from('gang_membership')
-        .delete()
-        .eq('week_ending', weekEnding)
-        .eq('ganger_id', gangerId);
-
-      if (operative.is_manual) {
-        query = query.eq('operative_name', operative.full_name).eq('is_manual', true);
-      } else {
-        query = query.eq('operative_id', operative.employee_id);
-      }
-
-      console.log('Deleting gang membership for:', operative);
-
-      const { error } = await query;
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      console.log('Gang membership deleted successfully');
-    } catch (error) {
-      console.error('Error deleting gang membership:', error);
-      throw error;
-    }
-  };
-
   const handleAddEmployee = async (employee: Employee) => {
-    if (selectedMembers.length >= 2) {
+    const operativeCount = selectedMembers.filter(m => m.person_type === 'operative').length;
+    if (operativeCount >= 2) {
       alert('Maximum 2 additional operatives allowed (3 people total including ganger)');
       return;
     }
 
     if (selectedMembers.some(m => m.employee_id === employee.id)) {
+      alert('This employee is already in the gang');
       return;
     }
 
     setSaving(true);
-    const operative: GangOperative = {
-      id: employee.id,
-      full_name: employee.full_name,
-      role: employee.role,
-      is_manual: false,
-      employee_id: employee.id,
-    };
-
+    setError(null);
     try {
-      await saveGangMembership(operative);
-      onMembersChange([...selectedMembers, operative]);
+      const { error: insertError } = await supabase
+        .from('havs_week_members')
+        .insert({
+          havs_week_id: havsWeekId,
+          person_type: 'operative',
+          employee_id: employee.id,
+          manual_name: null,
+          role: employee.role,
+        });
+
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw insertError;
+      }
+
+      onMembersChange();
       setShowSelector(false);
       setSearchTerm('');
-    } catch (error: any) {
-      console.error('Failed to add employee operative:', error);
-      const errorMsg = error?.message || 'Failed to add operative. Please try again.';
-      alert(`Failed to add operative: ${errorMsg}`);
+    } catch (err: any) {
+      console.error('Failed to add employee operative:', err);
+      setError(err.message || 'Failed to add operative');
+      alert(`Failed to add operative: ${err.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
@@ -146,55 +101,84 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
       return;
     }
 
-    if (selectedMembers.length >= 2) {
+    const operativeCount = selectedMembers.filter(m => m.person_type === 'operative').length;
+    if (operativeCount >= 2) {
       alert('Maximum 2 additional operatives allowed (3 people total including ganger)');
       return;
     }
 
-    if (selectedMembers.some(m => m.is_manual && m.full_name === manualName.trim())) {
+    if (selectedMembers.some(m => m.manual_name === manualName.trim())) {
       alert('An operative with this name already exists');
       return;
     }
 
     setSaving(true);
-    const operative: GangOperative = {
-      id: `manual-${Date.now()}`,
-      full_name: manualName.trim(),
-      role: 'Operative',
-      is_manual: true,
-    };
-
+    setError(null);
     try {
-      await saveGangMembership(operative);
-      onMembersChange([...selectedMembers, operative]);
+      const { error: insertError } = await supabase
+        .from('havs_week_members')
+        .insert({
+          havs_week_id: havsWeekId,
+          person_type: 'operative',
+          employee_id: null,
+          manual_name: manualName.trim(),
+          role: 'Operative',
+        });
+
+      if (insertError) {
+        console.error('Insert error:', insertError);
+        throw insertError;
+      }
+
+      onMembersChange();
       setShowManualEntry(false);
       setManualName('');
-    } catch (error: any) {
-      console.error('Failed to add manual operative:', error);
-      const errorMsg = error?.message || 'Failed to add operative. Please try again.';
-      alert(`Failed to add operative: ${errorMsg}`);
+    } catch (err: any) {
+      console.error('Failed to add manual operative:', err);
+      setError(err.message || 'Failed to add operative');
+      alert(`Failed to add operative: ${err.message || 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleRemoveMember = async (operative: GangOperative) => {
+  const handleRemoveMember = async (member: HavsWeekMember) => {
+    if (member.person_type === 'ganger') {
+      alert('Cannot remove the ganger from the gang');
+      return;
+    }
+
+    if (!confirm(`Remove ${member.manual_name || member.employee?.full_name || 'this operative'} from the gang? This will delete all their HAVS data for this week.`)) {
+      return;
+    }
+
+    setError(null);
     try {
-      await deleteGangMembership(operative);
-      onMembersChange(selectedMembers.filter(m => m.id !== operative.id));
-    } catch (error: any) {
-      console.error('Failed to remove operative:', error);
-      const errorMsg = error?.message || 'Failed to remove operative. Please try again.';
-      alert(`Failed to remove operative: ${errorMsg}`);
+      const { error: deleteError } = await supabase
+        .from('havs_week_members')
+        .delete()
+        .eq('id', member.id);
+
+      if (deleteError) {
+        console.error('Delete error:', deleteError);
+        throw deleteError;
+      }
+
+      onMembersChange();
+    } catch (err: any) {
+      console.error('Failed to remove operative:', err);
+      setError(err.message || 'Failed to remove operative');
+      alert(`Failed to remove operative: ${err.message || 'Unknown error'}`);
     }
   };
 
+  const operativeMembers = selectedMembers.filter(m => m.person_type === 'operative');
   const filteredEmployees = availableEmployees.filter(emp =>
     !selectedMembers.some(m => m.employee_id === emp.id) &&
     emp.full_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const canAddMore = selectedMembers.length < 2;
+  const canAddMore = operativeMembers.length < 2 && !isSubmitted;
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg">
@@ -204,7 +188,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
             <Users className="h-4 w-4 text-slate-600" />
             <h3 className="text-sm font-semibold text-slate-900">Gang Members</h3>
             <span className="text-xs text-slate-500">
-              ({selectedMembers.length + 1}/3 people)
+              ({operativeMembers.length + 1}/3 people)
             </span>
           </div>
           {canAddMore && (
@@ -228,37 +212,52 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
         </div>
       </div>
 
-      {selectedMembers.length > 0 && (
-        <div className="p-4 space-y-2">
-          {selectedMembers.map((member) => (
-            <div
-              key={member.id}
-              className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-md"
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-slate-900">{member.full_name}</p>
-                  {member.is_manual && (
-                    <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                      Manual
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs text-slate-500">{member.role}</p>
-              </div>
-              <button
-                onClick={() => handleRemoveMember(member)}
-                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                title="Remove from gang"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
+      {error && (
+        <div className="mx-4 mt-4 px-3 py-2 bg-red-50 border border-red-200 rounded-md flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+          <p className="text-sm text-red-700">{error}</p>
         </div>
       )}
 
-      {selectedMembers.length === 0 && (
+      {operativeMembers.length > 0 && (
+        <div className="p-4 space-y-2">
+          {operativeMembers.map((member) => {
+            const displayName = member.manual_name || member.employee?.full_name || 'Unknown';
+            return (
+              <div
+                key={member.id}
+                className="flex items-center justify-between px-3 py-2 bg-slate-50 border border-slate-200 rounded-md"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-slate-900">{displayName}</p>
+                    {member.manual_name && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                        Manual
+                      </span>
+                    )}
+                    <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                      Operative
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500">{member.role}</p>
+                </div>
+                {!isSubmitted && (
+                  <button
+                    onClick={() => handleRemoveMember(member)}
+                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    title="Remove from gang"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {operativeMembers.length === 0 && (
         <div className="p-4">
           <p className="text-sm text-slate-500 text-center">
             Working solo - add operatives from employees or manual entry
@@ -275,6 +274,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
                 onClick={() => {
                   setShowSelector(false);
                   setSearchTerm('');
+                  setError(null);
                 }}
                 className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
               >
@@ -312,7 +312,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
                       key={employee.id}
                       onClick={() => handleAddEmployee(employee)}
                       disabled={saving}
-                      className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors mb-2 disabled:opacity-50"
+                      className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors mb-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <p className="text-sm font-medium text-slate-900">{employee.full_name}</p>
                       <p className="text-xs text-slate-500">{employee.role}</p>
@@ -337,6 +337,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
                 onClick={() => {
                   setShowManualEntry(false);
                   setManualName('');
+                  setError(null);
                 }}
                 className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
               >
@@ -371,6 +372,7 @@ export const GangMemberSelector: React.FC<GangMemberSelectorProps> = ({
                 onClick={() => {
                   setShowManualEntry(false);
                   setManualName('');
+                  setError(null);
                 }}
                 className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
               >

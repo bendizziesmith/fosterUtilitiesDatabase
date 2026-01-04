@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
-import { supabase, Employee, GangOperative, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
+import { supabase, Employee, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
 
 interface HavsTimesheetFormProps {
@@ -101,8 +101,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekSunday());
-  const [gangMembers, setGangMembers] = useState<GangOperative[]>([]);
   const [havsWeek, setHavsWeek] = useState<HavsWeek | null>(null);
+  const [allMembers, setAllMembers] = useState<HavsWeekMember[]>([]);
   const [peopleState, setPeopleState] = useState<PersonState[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -119,12 +119,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   useEffect(() => {
     initializeWeekData(selectedWeek);
   }, [selectedEmployee.id, selectedWeek]);
-
-  useEffect(() => {
-    if (!isLoading && havsWeek) {
-      syncGangMembersToState();
-    }
-  }, [gangMembers, isLoading]);
 
   const generateAvailableWeeks = () => {
     const weeks: string[] = [];
@@ -148,8 +142,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       const week = await loadOrCreateHavsWeek(weekEnding);
       setHavsWeek(week);
 
-      const gangOps = await loadGangMembership(weekEnding);
-      setGangMembers(gangOps);
+      await ensureGangerMemberExists(week.id);
 
       await loadAllMembersAndExposure(week.id);
     } catch (error) {
@@ -188,51 +181,25 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     return newWeek;
   };
 
-  const loadGangMembership = async (weekEnding: string): Promise<GangOperative[]> => {
-    try {
-      const { data, error } = await supabase
-        .from('gang_membership')
-        .select('*')
-        .eq('week_ending', weekEnding)
-        .eq('ganger_id', selectedEmployee.id);
+  const ensureGangerMemberExists = async (weekId: string) => {
+    const { data: existing } = await supabase
+      .from('havs_week_members')
+      .select('id')
+      .eq('havs_week_id', weekId)
+      .eq('person_type', 'ganger')
+      .eq('employee_id', selectedEmployee.id)
+      .maybeSingle();
 
-      if (error) throw error;
-
-      const operatives: GangOperative[] = [];
-
-      if (data) {
-        for (const membership of data) {
-          if (membership.is_manual) {
-            operatives.push({
-              id: `manual-${membership.id}`,
-              full_name: membership.operative_name,
-              role: membership.operative_role,
-              is_manual: true,
-            });
-          } else if (membership.operative_id) {
-            const { data: employeeData } = await supabase
-              .from('employees')
-              .select('*')
-              .eq('id', membership.operative_id)
-              .maybeSingle();
-
-            if (employeeData) {
-              operatives.push({
-                id: employeeData.id,
-                full_name: employeeData.full_name,
-                role: employeeData.role,
-                is_manual: false,
-                employee_id: employeeData.id,
-              });
-            }
-          }
-        }
-      }
-
-      return operatives;
-    } catch (error) {
-      console.error('Error loading gang membership:', error);
-      return [];
+    if (!existing) {
+      await supabase
+        .from('havs_week_members')
+        .insert({
+          havs_week_id: weekId,
+          person_type: 'ganger',
+          employee_id: selectedEmployee.id,
+          manual_name: null,
+          role: selectedEmployee.role,
+        });
     }
   };
 
@@ -241,19 +208,26 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       .from('havs_week_members')
       .select(`
         *,
+        employee:employees(*),
         exposure_entries:havs_exposure_entries(*)
       `)
       .eq('havs_week_id', weekId)
-      .order('person_type', { ascending: false });
+      .order('person_type', { ascending: false })
+      .order('created_at', { ascending: true });
 
     if (error) {
       console.error('Error loading members:', error);
+      setSaveError('Failed to load gang members');
       return;
     }
 
     if (!members || members.length === 0) {
+      setPeopleState([]);
+      setAllMembers([]);
       return;
     }
+
+    setAllMembers(members);
 
     const peopleData: PersonState[] = members.map(member => {
       const exposure = createEmptyExposure();
@@ -266,9 +240,20 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         });
       }
 
+      let displayName = 'Unknown';
+      if (member.manual_name) {
+        displayName = member.manual_name;
+      } else if (member.employee && Array.isArray(member.employee) && member.employee[0]) {
+        displayName = member.employee[0].full_name;
+      } else if (member.employee && !Array.isArray(member.employee)) {
+        displayName = member.employee.full_name;
+      } else if (member.person_type === 'ganger') {
+        displayName = selectedEmployee.full_name;
+      }
+
       return {
         member,
-        displayName: member.manual_name || selectedEmployee.full_name,
+        displayName,
         personType: member.person_type as 'ganger' | 'operative',
         exposure,
         totalMinutes: calculatePersonTotal(exposure),
@@ -280,99 +265,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setPeopleState(peopleData);
     setLastSaved(new Date());
     setHasUnsavedChanges(false);
-  };
-
-  const syncGangMembersToState = async () => {
-    if (!havsWeek) return;
-
-    const gangerAsOperative: GangOperative = {
-      id: selectedEmployee.id,
-      full_name: selectedEmployee.full_name,
-      role: selectedEmployee.role,
-      is_manual: false,
-      employee_id: selectedEmployee.id,
-    };
-
-    const allExpectedPeople = [gangerAsOperative, ...gangMembers];
-
-    const newPeopleToAdd: PersonState[] = [];
-
-    for (const person of allExpectedPeople) {
-      const isGanger = person.id === selectedEmployee.id;
-      const existsInState = peopleState.some(p => {
-        if (isGanger) {
-          return p.personType === 'ganger';
-        }
-        if (person.is_manual) {
-          return p.member.manual_name === person.full_name && p.personType === 'operative';
-        }
-        return p.member.employee_id === person.employee_id && p.personType === 'operative';
-      });
-
-      if (!existsInState) {
-        const existingMember = await findOrCreateWeekMember(havsWeek.id, person, isGanger);
-
-        newPeopleToAdd.push({
-          member: existingMember,
-          displayName: person.full_name,
-          personType: isGanger ? 'ganger' : 'operative',
-          exposure: createEmptyExposure(),
-          totalMinutes: 0,
-          comments: '',
-          actions: '',
-        });
-      }
-    }
-
-    if (newPeopleToAdd.length > 0) {
-      setPeopleState(prev => {
-        const gangerFirst = [...newPeopleToAdd, ...prev].sort((a, b) => {
-          if (a.personType === 'ganger') return -1;
-          if (b.personType === 'ganger') return 1;
-          return 0;
-        });
-        return gangerFirst;
-      });
-    }
-  };
-
-  const findOrCreateWeekMember = async (
-    weekId: string,
-    person: GangOperative,
-    isGanger: boolean
-  ): Promise<HavsWeekMember> => {
-    const query = supabase
-      .from('havs_week_members')
-      .select('*')
-      .eq('havs_week_id', weekId)
-      .eq('person_type', isGanger ? 'ganger' : 'operative');
-
-    if (person.is_manual) {
-      query.eq('manual_name', person.full_name);
-    } else {
-      query.eq('employee_id', person.employee_id!);
-    }
-
-    const { data: existing } = await query.maybeSingle();
-
-    if (existing) {
-      return existing;
-    }
-
-    const { data: newMember, error } = await supabase
-      .from('havs_week_members')
-      .insert({
-        havs_week_id: weekId,
-        person_type: isGanger ? 'ganger' : 'operative',
-        employee_id: person.is_manual ? null : person.employee_id,
-        manual_name: person.is_manual ? person.full_name : null,
-        role: person.role,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return newMember;
   };
 
   const handleWeekSelect = (weekEnding: string) => {
@@ -536,6 +428,12 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
+  const handleMembersChange = async () => {
+    if (havsWeek) {
+      await loadAllMembersAndExposure(havsWeek.id);
+    }
+  };
+
   const isSubmitted = havsWeek?.status === 'submitted';
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
@@ -654,45 +552,53 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         </div>
       </div>
 
-      {!isSubmitted && (
+      {havsWeek && !isSubmitted && (
         <GangMemberSelector
+          havsWeekId={havsWeek.id}
           gangerId={selectedEmployee.id}
-          weekEnding={selectedWeek}
-          selectedMembers={gangMembers}
-          onMembersChange={setGangMembers}
+          selectedMembers={allMembers}
+          onMembersChange={handleMembersChange}
+          isSubmitted={isSubmitted}
         />
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
-          <div>
-            <h3 className="text-sm font-semibold text-blue-900">HAVS Gang Status (Live Data)</h3>
-            <div className="mt-2 space-y-2">
-              {peopleState.map((person, idx) => (
-                <div key={idx} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-900">{person.displayName}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      person.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
-                    }`}>
-                      {person.personType === 'ganger' ? 'Ganger' : 'Operative'}
-                    </span>
+      {peopleState.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Shield className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-blue-900 mb-2">HAVS Gang Status (Live Data)</h3>
+              <div className="space-y-2">
+                {peopleState.map((person) => (
+                  <div key={person.member.id} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-slate-900">{person.displayName}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                        person.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                      }`}>
+                        {person.personType === 'ganger' ? 'Ganger' : 'Operative'}
+                      </span>
+                      {person.member.manual_name && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                          Manual
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold text-amber-600">{person.totalMinutes} min</span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                        person.totalMinutes === 0 ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {person.totalMinutes === 0 ? 'Not Started' : 'In Progress'}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-amber-600">{person.totalMinutes} min</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      person.totalMinutes === 0 ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'
-                    }`}>
-                      {person.totalMinutes === 0 ? 'Not Started' : 'In Progress'}
-                    </span>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {peopleState.map((personState, personIndex) => {
         return (
@@ -705,17 +611,17 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                       {personState.displayName}
                     </h2>
                     {personState.member.manual_name && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white">
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white font-medium">
                         Manual
                       </span>
                     )}
-                    <span className={`text-xs px-2 py-0.5 rounded ${
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
                       personState.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                     }`}>
                       {personState.personType === 'ganger' ? 'Ganger' : 'Operative'}
                     </span>
                     {isSubmitted && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white flex items-center gap-1">
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white flex items-center gap-1 font-medium">
                         <Shield className="h-3 w-3" />
                         Submitted
                       </span>
@@ -883,7 +789,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         );
       })}
 
-      {!isSubmitted && (
+      {!isSubmitted && peopleState.length > 0 && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -1034,11 +940,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                       <div className="flex items-center gap-2 mb-2">
                         <p className="font-medium text-slate-900">{personState.displayName}</p>
                         {personState.member.manual_name && (
-                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
                             Manual
                           </span>
                         )}
-                        <span className={`text-xs px-2 py-0.5 rounded ${
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
                           personState.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                         }`}>
                           {personState.personType === 'ganger' ? 'Ganger' : 'Operative'}
