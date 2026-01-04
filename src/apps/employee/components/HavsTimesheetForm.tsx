@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Users } from 'lucide-react';
-import { supabase, Employee, HavsTimesheetEntry } from '../../../lib/supabase';
+import { supabase, Employee, HavsTimesheetEntry, GangOperative } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
 
 interface HavsTimesheetFormProps {
@@ -9,7 +9,7 @@ interface HavsTimesheetFormProps {
 }
 
 interface PersonTimesheetData {
-  employee: Employee;
+  operative: GangOperative;
   role: 'Ganger' | 'Operative';
   timesheetData: TimesheetData;
 }
@@ -116,7 +116,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekSunday());
-  const [gangMembers, setGangMembers] = useState<Employee[]>([]);
+  const [gangMembers, setGangMembers] = useState<GangOperative[]>([]);
   const [peopleTimesheets, setPeopleTimesheets] = useState<PersonTimesheetData[]>([]);
 
   const [saving, setSaving] = useState(false);
@@ -131,7 +131,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   }, []);
 
   useEffect(() => {
-    loadAllTimesheets(selectedWeek);
+    loadGangMembership(selectedWeek);
+  }, [selectedEmployee.id, selectedWeek]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      loadAllTimesheets(selectedWeek);
+    }
   }, [selectedEmployee.id, selectedWeek, gangMembers]);
 
   const generateAvailableWeeks = () => {
@@ -148,14 +154,64 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setAvailableWeeks(weeks);
   };
 
-  const loadTimesheetForPerson = async (employee: Employee, weekEnding: string): Promise<TimesheetData> => {
+  const loadGangMembership = async (weekEnding: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('gang_membership')
+        .select('*')
+        .eq('week_ending', weekEnding)
+        .eq('ganger_id', selectedEmployee.id);
+
+      if (error) throw error;
+
+      const operatives: GangOperative[] = [];
+
+      if (data) {
+        for (const membership of data) {
+          if (membership.is_manual) {
+            operatives.push({
+              id: `manual-${membership.id}`,
+              full_name: membership.operative_name,
+              role: membership.operative_role,
+              is_manual: true,
+            });
+          } else if (membership.operative_id) {
+            const { data: employeeData } = await supabase
+              .from('employees')
+              .select('*')
+              .eq('id', membership.operative_id)
+              .maybeSingle();
+
+            if (employeeData) {
+              operatives.push({
+                id: employeeData.id,
+                full_name: employeeData.full_name,
+                role: employeeData.role,
+                is_manual: false,
+                employee_id: employeeData.id,
+              });
+            }
+          }
+        }
+      }
+
+      setGangMembers(operatives);
+    } catch (error) {
+      console.error('Error loading gang membership:', error);
+      setGangMembers([]);
+    }
+  };
+
+  const loadTimesheetForPerson = async (operative: GangOperative, weekEnding: string): Promise<TimesheetData> => {
+    const personId = operative.is_manual ? operative.id : operative.employee_id!;
+
     const { data: timesheets, error } = await supabase
       .from('havs_timesheets')
       .select(`
         *,
         havs_entries:havs_timesheet_entries(*)
       `)
-      .eq('employee_id', employee.id)
+      .eq('employee_id', personId)
       .eq('week_ending', weekEnding)
       .order('updated_at', { ascending: false });
 
@@ -197,7 +253,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       };
     } else {
       return {
-        employee_name: employee.full_name,
+        employee_name: operative.full_name,
         week_ending: weekEnding,
         comments: '',
         actions: '',
@@ -214,14 +270,22 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setSaveError(null);
 
     try {
-      const allPeople = [selectedEmployee, ...gangMembers];
+      const gangerAsOperative: GangOperative = {
+        id: selectedEmployee.id,
+        full_name: selectedEmployee.full_name,
+        role: selectedEmployee.role,
+        is_manual: false,
+        employee_id: selectedEmployee.id,
+      };
+
+      const allPeople = [gangerAsOperative, ...gangMembers];
       const peopleData: PersonTimesheetData[] = [];
 
       for (let i = 0; i < allPeople.length; i++) {
         const person = allPeople[i];
         const role = i === 0 ? 'Ganger' : 'Operative';
         const timesheetData = await loadTimesheetForPerson(person, weekEnding);
-        peopleData.push({ employee: person, role, timesheetData });
+        peopleData.push({ operative: person, role, timesheetData });
       }
 
       setPeopleTimesheets(peopleData);
@@ -300,9 +364,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const saveTimesheetForPerson = async (personData: PersonTimesheetData) => {
-    const { employee, timesheetData } = personData;
+    const { operative, timesheetData } = personData;
     const now = new Date().toISOString();
     let timesheetId = timesheetData.id;
+    const personId = operative.is_manual ? operative.id : operative.employee_id!;
 
     if (timesheetId) {
       const { error } = await supabase
@@ -322,7 +387,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       const { data: newTimesheet, error } = await supabase
         .from('havs_timesheets')
         .insert({
-          employee_id: employee.id,
+          employee_id: personId,
           employee_name: timesheetData.employee_name,
           week_ending: timesheetData.week_ending,
           comments: timesheetData.comments,
@@ -564,24 +629,30 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       {!allSubmitted && (
         <GangMemberSelector
           gangerId={selectedEmployee.id}
+          weekEnding={selectedWeek}
           selectedMembers={gangMembers}
           onMembersChange={setGangMembers}
         />
       )}
 
       {peopleTimesheets.map((personData, personIndex) => {
-        const { employee, role, timesheetData } = personData;
+        const { operative, role, timesheetData } = personData;
         const isPersonReadOnly = timesheetData.status === 'submitted';
 
         return (
-          <div key={employee.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div key={operative.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
             <div className="px-6 py-3 bg-slate-800 border-b border-slate-700">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
-                      {employee.full_name}
+                      {operative.full_name}
                     </h2>
+                    {operative.is_manual && (
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white">
+                        Manual
+                      </span>
+                    )}
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                     }`}>
@@ -787,8 +858,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             </button>
             <div className="mt-3 space-y-2">
               {peopleTimesheets.map((p) => (
-                <div key={p.employee.id} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600">{p.employee.full_name}:</span>
+                <div key={p.operative.id} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600">{p.operative.full_name}:</span>
                   <span className="font-semibold text-amber-600">{p.timesheetData.total_hours} min</span>
                 </div>
               ))}
@@ -911,9 +982,14 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Submission Summary</p>
                 <div className="space-y-3">
                   {peopleTimesheets.map((personData) => (
-                    <div key={personData.employee.id} className="pb-3 border-b border-slate-200 last:border-0">
+                    <div key={personData.operative.id} className="pb-3 border-b border-slate-200 last:border-0">
                       <div className="flex items-center gap-2 mb-2">
-                        <p className="font-medium text-slate-900">{personData.employee.full_name}</p>
+                        <p className="font-medium text-slate-900">{personData.operative.full_name}</p>
+                        {personData.operative.is_manual && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                            Manual
+                          </span>
+                        )}
                         <span className={`text-xs px-2 py-0.5 rounded ${
                           personData.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                         }`}>

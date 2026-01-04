@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw } from 'lucide-react';
-import { supabase, Employee } from '../../../lib/supabase';
+import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw, Users } from 'lucide-react';
+import { supabase, Employee, GangOperative } from '../../../lib/supabase';
 
 interface EmployeeLandingProps {
   onTaskSelect: (task: 'inspection' | 'havs') => void;
@@ -13,10 +13,11 @@ interface ComplianceStatus {
   loading: boolean;
 }
 
-interface HavsSnapshot {
-  weekEnding: string;
+interface GangMemberHavsStatus {
+  operative: GangOperative;
+  role: 'Ganger' | 'Operative';
   totalMinutes: number;
-  status: 'draft' | 'submitted' | 'none';
+  status: 'none' | 'draft' | 'submitted';
   updatedAt: string | null;
 }
 
@@ -30,13 +31,8 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     loading: true,
   });
 
-  const [havsSnapshot, setHavsSnapshot] = useState<HavsSnapshot>({
-    weekEnding: '',
-    totalMinutes: 0,
-    status: 'none',
-    updatedAt: null,
-  });
-
+  const [gangHavsStatus, setGangHavsStatus] = useState<GangMemberHavsStatus[]>([]);
+  const [weekEnding, setWeekEnding] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -108,45 +104,102 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     return false;
   };
 
+  const loadGangHavsStatus = async (weekEndingStr: string) => {
+    try {
+      const { data: memberships } = await supabase
+        .from('gang_membership')
+        .select('*')
+        .eq('week_ending', weekEndingStr)
+        .eq('ganger_id', selectedEmployee.id);
+
+      const operatives: GangOperative[] = [];
+
+      const gangerAsOperative: GangOperative = {
+        id: selectedEmployee.id,
+        full_name: selectedEmployee.full_name,
+        role: selectedEmployee.role,
+        is_manual: false,
+        employee_id: selectedEmployee.id,
+      };
+
+      operatives.push(gangerAsOperative);
+
+      if (memberships) {
+        for (const membership of memberships) {
+          if (membership.is_manual) {
+            operatives.push({
+              id: `manual-${membership.id}`,
+              full_name: membership.operative_name,
+              role: membership.operative_role,
+              is_manual: true,
+            });
+          } else if (membership.operative_id) {
+            const { data: employeeData } = await supabase
+              .from('employees')
+              .select('*')
+              .eq('id', membership.operative_id)
+              .maybeSingle();
+
+            if (employeeData) {
+              operatives.push({
+                id: employeeData.id,
+                full_name: employeeData.full_name,
+                role: employeeData.role,
+                is_manual: false,
+                employee_id: employeeData.id,
+              });
+            }
+          }
+        }
+      }
+
+      const statusList: GangMemberHavsStatus[] = [];
+
+      for (let i = 0; i < operatives.length; i++) {
+        const operative = operatives[i];
+        const personId = operative.is_manual ? operative.id : operative.employee_id!;
+
+        const { data: havs } = await supabase
+          .from('havs_timesheets')
+          .select('id, total_hours, status, updated_at')
+          .eq('employee_id', personId)
+          .eq('week_ending', weekEndingStr)
+          .maybeSingle();
+
+        statusList.push({
+          operative,
+          role: i === 0 ? 'Ganger' : 'Operative',
+          totalMinutes: havs?.total_hours || 0,
+          status: havs?.status || 'none',
+          updatedAt: havs?.updated_at || null,
+        });
+      }
+
+      setGangHavsStatus(statusList);
+      return statusList.every(s => s.status === 'submitted');
+    } catch (error) {
+      console.error('Error loading gang HAVS status:', error);
+      setGangHavsStatus([]);
+      return false;
+    }
+  };
+
   const checkComplianceStatus = async () => {
     try {
       setCompliance(prev => ({ ...prev, loading: true }));
 
       const employeeId = selectedEmployee.id;
       const weekEndingStr = getCurrentWeekEnding();
+      setWeekEnding(weekEndingStr);
 
       const todayDone = await didSubmitVehicleCheckToday(employeeId);
-
-      const { data: havs } = await supabase
-        .from('havs_timesheets')
-        .select('id, total_hours, status, updated_at, week_ending')
-        .eq('employee_id', employeeId)
-        .eq('week_ending', weekEndingStr)
-        .maybeSingle();
-
-      const havsSubmitted = havs?.status === 'submitted';
+      const allHavsSubmitted = await loadGangHavsStatus(weekEndingStr);
 
       setCompliance({
         todayVehicleCheck: todayDone,
-        currentWeekHavs: havsSubmitted,
+        currentWeekHavs: allHavsSubmitted,
         loading: false,
       });
-
-      if (havs) {
-        setHavsSnapshot({
-          weekEnding: havs.week_ending,
-          totalMinutes: havs.total_hours || 0,
-          status: havs.status,
-          updatedAt: havs.updated_at,
-        });
-      } else {
-        setHavsSnapshot({
-          weekEnding: weekEndingStr,
-          totalMinutes: 0,
-          status: 'none',
-          updatedAt: null,
-        });
-      }
     } catch (error) {
       console.error('Error checking compliance status:', error);
       setCompliance(prev => ({ ...prev, loading: false }));
@@ -295,72 +348,91 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
 
       <div className="bg-white border border-slate-200 rounded-lg">
         <div className="px-6 py-4 border-b border-slate-200">
-          <div className="flex items-center gap-2">
-            <HardHat className="h-5 w-5 text-amber-600" />
-            <h2 className="text-sm font-semibold text-slate-900">HAVs Exposure Summary</h2>
-            <span className="text-xs text-slate-500">(Read Only)</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <HardHat className="h-5 w-5 text-amber-600" />
+              <h2 className="text-sm font-semibold text-slate-900">HAVs Gang Status</h2>
+              <span className="text-xs text-slate-500">(Live Data)</span>
+            </div>
+            {gangHavsStatus.length > 1 && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                <Users className="h-3.5 w-3.5" />
+                <span>{gangHavsStatus.length} members</span>
+              </div>
+            )}
           </div>
+          {weekEnding && (
+            <p className="text-xs text-slate-500 mt-2">
+              Week ending: {new Date(weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </p>
+          )}
         </div>
 
         <div className="px-6 py-4">
-          <div className="grid grid-cols-4 gap-6">
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
-              <p className="text-sm font-medium text-slate-900">
-                {havsSnapshot.weekEnding
-                  ? new Date(havsSnapshot.weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                  : '-'}
-              </p>
+          {gangHavsStatus.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-4">Loading gang status...</p>
+          ) : (
+            <div className="space-y-3">
+              {gangHavsStatus.map((member) => (
+                <div key={member.operative.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-md">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-medium text-slate-900">{member.operative.full_name}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded ${
+                        member.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                      }`}>
+                        {member.role}
+                      </span>
+                      {member.operative.is_manual && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                          Manual
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs text-slate-600">
+                      <span>
+                        {member.totalMinutes} min
+                        {member.totalMinutes > 0 && ` (${(member.totalMinutes / 60).toFixed(1)}h)`}
+                      </span>
+                      {member.updatedAt && (
+                        <span>
+                          Updated: {new Date(member.updatedAt).toLocaleString('en-GB', {
+                            day: 'numeric',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    {member.status === 'submitted' ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 px-2 py-1 bg-emerald-50 rounded">
+                        <CheckCircle className="h-3.5 w-3.5" />
+                        Submitted
+                      </span>
+                    ) : member.status === 'draft' ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 px-2 py-1 bg-amber-50 rounded">
+                        <Clock className="h-3.5 w-3.5" />
+                        In Progress
+                      </span>
+                    ) : (
+                      <span className="text-xs text-slate-400 px-2 py-1">Not Started</span>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Total Exposure</p>
-              <p className="text-sm font-semibold text-amber-600">
-                {havsSnapshot.totalMinutes} minutes
-                {havsSnapshot.totalMinutes > 0 && (
-                  <span className="font-normal text-slate-500 ml-1">
-                    ({(havsSnapshot.totalMinutes / 60).toFixed(1)}h)
-                  </span>
-                )}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Status</p>
-              {havsSnapshot.status === 'submitted' ? (
-                <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">
-                  <Shield className="h-3.5 w-3.5" />
-                  Submitted
-                </span>
-              ) : havsSnapshot.status === 'draft' ? (
-                <span className="inline-flex items-center gap-1 text-sm font-medium text-amber-600">
-                  <Clock className="h-3.5 w-3.5" />
-                  In Progress
-                </span>
-              ) : (
-                <span className="text-sm text-slate-400">Not Started</span>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Last Updated</p>
-              <p className="text-sm text-slate-600">
-                {havsSnapshot.updatedAt
-                  ? new Date(havsSnapshot.updatedAt).toLocaleString('en-GB', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })
-                  : '-'}
-              </p>
-            </div>
-          </div>
+          )}
 
-          {havsSnapshot.status !== 'submitted' && (
+          {!compliance.currentWeekHavs && gangHavsStatus.length > 0 && (
             <div className="mt-4 pt-4 border-t border-slate-200">
               <button
                 onClick={() => onTaskSelect('havs')}
                 className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
               >
-                {havsSnapshot.status === 'draft' ? 'Continue HAVs Timesheet' : 'Start HAVs Timesheet'}
+                {gangHavsStatus.some(m => m.status === 'draft') ? 'Continue HAVs Timesheet' : 'Start HAVs Timesheet'}
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>

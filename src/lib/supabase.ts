@@ -40,6 +40,26 @@ export interface Employee {
   password: string;
 }
 
+export interface GangOperative {
+  id: string;
+  full_name: string;
+  role: string;
+  is_manual: boolean;
+  employee_id?: string;
+}
+
+export interface GangMembership {
+  id: string;
+  week_ending: string;
+  ganger_id: string;
+  operative_id?: string;
+  operative_name?: string;
+  operative_role: string;
+  is_manual: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChecklistTemplate {
   id: string;
   name: string;
