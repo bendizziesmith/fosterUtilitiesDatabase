@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Car, CheckCircle, XCircle, Camera, ArrowRight, ArrowLeft, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Car, CheckCircle, XCircle, Camera, ArrowLeft, AlertTriangle, Check, Truck } from 'lucide-react';
 import { supabase, Vehicle, Employee, uploadInspectionPhoto } from '../../../lib/supabase';
 
 interface SingleQuestionInspectionProps {
@@ -17,7 +17,7 @@ interface InspectionItem {
   notes: string;
   photo: File | null;
   previousDefectId?: string;
-  wasDefectFixed?: boolean;  // only used when a previous defect exists
+  wasDefectFixed?: boolean;
   hasPreviousDefect?: boolean;
 }
 
@@ -51,11 +51,14 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
 }) => {
   const assignedVehicle = (selectedEmployee.assigned_vehicle || null) as Vehicle | null;
 
-  const [currentStep, setCurrentStep] =
-    useState<'vehicle' | 'odometer' | 'inspection' | 'additional'>('vehicle');
+  const [currentStep, setCurrentStep] = useState<'vehicle' | 'odometer' | 'inspection' | 'additional'>('vehicle');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [loadingPreviousDefects, setLoadingPreviousDefects] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [slideDirection, setSlideDirection] = useState<'left' | 'right'>('left');
+  const [showDefectInput, setShowDefectInput] = useState(false);
+  const notesInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -73,7 +76,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     additionalItems: [],
   });
 
-  // Reset when employee changes (e.g., admin switches user)
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
@@ -81,15 +83,17 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       useAssignedVehicle: !!assignedVehicle,
       overrideVehicleRegistration: '',
     }));
-  }, [selectedEmployee.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedEmployee.id, assignedVehicle]);
 
-  // Load “previous defects” whenever target vehicle changes
   useEffect(() => {
     if (formData.vehicleId || formData.overrideVehicleRegistration) {
       loadPreviousDefects();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.vehicleId, formData.overrideVehicleRegistration]);
+
+  useEffect(() => {
+    setShowDefectInput(false);
+  }, [currentQuestionIndex]);
 
   const loadPreviousDefects = async () => {
     setLoadingPreviousDefects(true);
@@ -97,18 +101,15 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      // Pull recent inspections + items for this vehicle or override reg
       let q = supabase
         .from('vehicle_inspections')
-        .select(
-          `
+        .select(`
           id,
           submitted_at,
           override_vehicle_registration,
           vehicle_id,
           inspection_items(id,item_name,status,defect_status)
-        `
-        )
+        `)
         .gte('submitted_at', sevenDaysAgo.toISOString())
         .order('submitted_at', { ascending: false });
 
@@ -123,7 +124,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       const { data, error } = await q;
       if (error) throw error;
 
-      // Keep the most recent, still-active defect per item
       const previousDefects: Record<string, { id: string; submitted_at: string }> = {};
       (data || []).forEach((ins: any) => {
         (ins.inspection_items || []).forEach((it: any) => {
@@ -151,8 +151,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     }
   };
 
-  // --- UI handlers ----------------------------------------------------------
-
   const handleVehicleToggle = (useAssigned: boolean) => {
     setFormData((prev) => ({
       ...prev,
@@ -178,26 +176,88 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     setErrors((e) => ({ ...e, odometer: '' }));
   };
 
-  const updateCurrentInspectionItem = (field: keyof InspectionItem, value: any) => {
+  const updateCurrentInspectionItem = useCallback((field: keyof InspectionItem, value: any) => {
     setFormData((prev) => ({
       ...prev,
       inspectionItems: prev.inspectionItems.map((item, i) =>
         i === currentQuestionIndex ? { ...item, [field]: value } : item
       ),
     }));
-  };
+  }, [currentQuestionIndex]);
+
+  const advanceToNextQuestion = useCallback(() => {
+    if (isTransitioning) return;
+
+    setIsTransitioning(true);
+    setSlideDirection('left');
+
+    setTimeout(() => {
+      if (currentQuestionIndex < formData.inspectionItems.length - 1) {
+        setCurrentQuestionIndex((i) => i + 1);
+      } else {
+        setCurrentStep('additional');
+      }
+      setIsTransitioning(false);
+    }, 200);
+  }, [currentQuestionIndex, formData.inspectionItems.length, isTransitioning]);
+
+  const handleOkClick = useCallback(() => {
+    if (isTransitioning) return;
+
+    const item = formData.inspectionItems[currentQuestionIndex];
+    if (item.hasPreviousDefect && item.wasDefectFixed === false) return;
+
+    updateCurrentInspectionItem('status', 'ok');
+    setErrors({});
+
+    setTimeout(() => {
+      advanceToNextQuestion();
+    }, 150);
+  }, [currentQuestionIndex, formData.inspectionItems, isTransitioning, updateCurrentInspectionItem, advanceToNextQuestion]);
+
+  const handleDefectClick = useCallback(() => {
+    if (isTransitioning) return;
+
+    const item = formData.inspectionItems[currentQuestionIndex];
+    if (item.hasPreviousDefect && item.wasDefectFixed === true) return;
+
+    updateCurrentInspectionItem('status', 'defect');
+    setShowDefectInput(true);
+    setErrors({});
+
+    setTimeout(() => {
+      notesInputRef.current?.focus();
+    }, 100);
+  }, [currentQuestionIndex, formData.inspectionItems, isTransitioning, updateCurrentInspectionItem]);
+
+  const handleDefectNotesChange = useCallback((notes: string) => {
+    updateCurrentInspectionItem('notes', notes);
+  }, [updateCurrentInspectionItem]);
+
+  const handleDefectContinue = useCallback(() => {
+    const item = formData.inspectionItems[currentQuestionIndex];
+    const isContinuingDefect = item.hasPreviousDefect === true && item.wasDefectFixed === false;
+
+    if (!isContinuingDefect && !item.notes.trim()) {
+      setErrors({ question: 'Please add comments for this defect' });
+      return;
+    }
+
+    setErrors({});
+    advanceToNextQuestion();
+  }, [currentQuestionIndex, formData.inspectionItems, advanceToNextQuestion]);
 
   const handleDefectFixedResponse = (wasFixed: boolean) => {
     updateCurrentInspectionItem('wasDefectFixed', wasFixed);
     if (wasFixed) {
       updateCurrentInspectionItem('status', 'ok');
       updateCurrentInspectionItem('notes', 'Previous defect has been fixed');
+      setTimeout(() => advanceToNextQuestion(), 200);
     } else {
       updateCurrentInspectionItem('status', 'defect');
+      setShowDefectInput(true);
     }
   };
-
-  // --- validation -----------------------------------------------------------
 
   const validateVehicleStep = () => {
     const errs: Record<string, string> = {};
@@ -221,40 +281,23 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
     return Object.keys(errs).length === 0;
   };
 
-  const handleNextQuestion = () => {
-    const item = formData.inspectionItems[currentQuestionIndex];
-
-    if (!item.status) {
-      setErrors({ question: 'Please select OK or Defect before continuing' });
-      return;
-    }
-
-    // Require notes ONLY for *new* defects (continuing defects are allowed with optional notes)
-    const isContinuingDefect =
-      item.hasPreviousDefect === true && item.wasDefectFixed === false && item.status === 'defect';
-
-    if (item.status === 'defect' && !isContinuingDefect && !item.notes.trim()) {
-      setErrors({ question: 'Please add comments for defects before continuing' });
-      return;
-    }
-
-    setErrors({});
-    if (currentQuestionIndex < formData.inspectionItems.length - 1) {
-      setCurrentQuestionIndex((i) => i + 1);
-    } else {
-      setCurrentStep('additional');
-    }
-  };
-
   const handlePreviousQuestion = () => {
-    if (currentQuestionIndex > 0) setCurrentQuestionIndex((i) => i - 1);
-    else setCurrentStep('odometer');
-  };
+    if (isTransitioning) return;
 
-  // --- final submit ---------------------------------------------------------
+    setIsTransitioning(true);
+    setSlideDirection('right');
+
+    setTimeout(() => {
+      if (currentQuestionIndex > 0) {
+        setCurrentQuestionIndex((i) => i - 1);
+      } else {
+        setCurrentStep('odometer');
+      }
+      setIsTransitioning(false);
+    }, 200);
+  };
 
   const handleSubmit = async () => {
-    // Validate additional items: defects must include notes
     for (const ai of formData.additionalItems) {
       if (ai.name.trim() && ai.status === 'defect' && !ai.notes.trim()) {
         setErrors({ additional: 'Please add comments for all additional items marked as defect.' });
@@ -264,10 +307,8 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
 
     setSubmitting(true);
     try {
-      const hasAnyDefect =
-        [...formData.inspectionItems, ...formData.additionalItems].some((i) => i.status === 'defect');
+      const hasAnyDefect = [...formData.inspectionItems, ...formData.additionalItems].some((i) => i.status === 'defect');
 
-      // Build inspection header row
       const inspectionData: any = {
         employee_id: selectedEmployee.id,
         odometer_reading: parseFloat(formData.odometerReading),
@@ -279,7 +320,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       } else if (formData.vehicleId) {
         inspectionData.vehicle_id = formData.vehicleId;
       } else {
-        // typed/temporary kit: no vehicle_id, only manual registration
         inspectionData.vehicle_id = null;
         inspectionData.override_vehicle_registration = formData.overrideVehicleRegistration.trim();
       }
@@ -291,7 +331,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         .single();
       if (inspectionError) throw inspectionError;
 
-      // Build rows for inspection_items
       const rows: any[] = [];
       const allItems = [...formData.inspectionItems, ...formData.additionalItems];
 
@@ -303,7 +342,7 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
           try {
             photoUrl = await uploadInspectionPhoto(it.photo, inspection.id, it.name);
           } catch (e) {
-            console.warn('Photo upload failed, continuing without photo:', e);
+            console.warn('Photo upload failed:', e);
           }
         }
 
@@ -317,7 +356,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
           action_required: it.status === 'defect',
         };
 
-        // Link/close previous defects when resolved
         if (it.hasPreviousDefect && it.wasDefectFixed) {
           row.defect_fixed = true;
           row.previous_defect_id = it.previousDefectId;
@@ -337,13 +375,9 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
         if (itemsErr) throw itemsErr;
       }
 
-      // Build vehicle display label for the success toast/next UI step
       let vehicleLabel = '';
       if (formData.useAssignedVehicle || formData.vehicleId) {
-        const v =
-          vehicles.find((x) => x.id === formData.vehicleId) ||
-          assignedVehicle ||
-          null;
+        const v = vehicles.find((x) => x.id === formData.vehicleId) || assignedVehicle || null;
         vehicleLabel = v ? `${v.registration_number} (${(v as any).make_model ?? ''})` : 'Vehicle';
       } else {
         vehicleLabel = formData.overrideVehicleRegistration || 'Vehicle/Plant';
@@ -357,8 +391,6 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       setSubmitting(false);
     }
   };
-
-  // --- additional items helpers --------------------------------------------
 
   const addAdditionalItem = () =>
     setFormData((prev) => ({
@@ -378,152 +410,143 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
       additionalItems: prev.additionalItems.map((it, i) => (i === index ? { ...it, [field]: value } : it)),
     }));
 
-  // --- progress -------------------------------------------------------------
-
   const getProgress = () => {
     switch (currentStep) {
-      case 'vehicle':
-        return 10;
-      case 'odometer':
-        return 20;
-      case 'inspection':
-        return 20 + ((currentQuestionIndex + 1) / formData.inspectionItems.length) * 60;
-      case 'additional':
-        return 90;
-      default:
-        return 0;
+      case 'vehicle': return 5;
+      case 'odometer': return 15;
+      case 'inspection': return 15 + ((currentQuestionIndex + 1) / formData.inspectionItems.length) * 75;
+      case 'additional': return 95;
+      default: return 0;
     }
   };
 
-  // --- render ---------------------------------------------------------------
+  const currentItem = formData.inspectionItems[currentQuestionIndex];
 
   return (
-    <div className="space-y-6">
-      {/* Progress Header */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <button
-              type="button"
-              onClick={onBack}
-              className="px-3 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-            >
-              Back
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Daily Vehicle & Plant Check</h1>
-              <p className="text-blue-600 font-medium">Welcome, {selectedEmployee.full_name}</p>
-              <p className="text-slate-600">{selectedEmployee.role}</p>
+    <div className="space-y-4">
+      {/* Compact Progress Header */}
+      <div className="bg-white rounded-xl shadow-sm p-4">
+        <div className="flex items-center justify-between mb-3">
+          <button
+            type="button"
+            onClick={currentStep === 'vehicle' ? onBack :
+              currentStep === 'odometer' ? () => setCurrentStep('vehicle') :
+              currentStep === 'inspection' && currentQuestionIndex === 0 ? () => setCurrentStep('odometer') :
+              currentStep === 'inspection' ? handlePreviousQuestion :
+              () => setCurrentStep('inspection')}
+            className="flex items-center space-x-1 text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+
+          <div className="text-center">
+            <div className="text-xs text-slate-500 uppercase tracking-wide">
+              {currentStep === 'vehicle' && 'Step 1 of 4'}
+              {currentStep === 'odometer' && 'Step 2 of 4'}
+              {currentStep === 'inspection' && `${currentQuestionIndex + 1} of ${formData.inspectionItems.length}`}
+              {currentStep === 'additional' && 'Final Step'}
             </div>
           </div>
-          <div className="text-right text-sm text-slate-500">
-            {currentStep === 'vehicle' && 'Step 1: Vehicle Selection'}
-            {currentStep === 'odometer' && 'Step 2: Odometer Reading'}
-            {currentStep === 'inspection' &&
-              `Question ${currentQuestionIndex + 1} of ${formData.inspectionItems.length}`}
-            {currentStep === 'additional' && 'Additional Plant Items'}
-          </div>
+
+          <div className="w-16" />
         </div>
 
-        <div className="w-full bg-slate-200 rounded-full h-2">
+        <div className="w-full bg-slate-100 rounded-full h-1.5">
           <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+            className="bg-blue-600 h-1.5 rounded-full transition-all duration-300 ease-out"
             style={{ width: `${getProgress()}%` }}
           />
         </div>
       </div>
 
-      {/* Body */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        {/* Step 1: Vehicle */}
+      {/* Main Content */}
+      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+        {/* Vehicle Selection */}
         {currentStep === 'vehicle' && (
-          <div className="space-y-6">
-            <div className="flex items-center space-x-3 mb-6">
-              <Car className="h-6 w-6 text-blue-600" />
-              <h2 className="text-xl font-semibold text-slate-900">Vehicle Selection</h2>
+          <div className="p-6 space-y-6">
+            <div className="text-center mb-2">
+              <h2 className="text-xl font-bold text-slate-900">Select Vehicle</h2>
+              <p className="text-slate-500 text-sm mt-1">Which vehicle are you checking today?</p>
             </div>
 
             {assignedVehicle && (
-              <div className="mb-4">
-                <label
-                  className={`block p-6 border-2 rounded-xl cursor-pointer transition-all ${
-                    formData.useAssignedVehicle
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="vehicleOption"
-                    checked={formData.useAssignedVehicle}
-                    onChange={() => handleVehicleToggle(true)}
-                    className="sr-only"
-                  />
-                  <div className="flex items-center space-x-4">
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        formData.useAssignedVehicle ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
-                      }`}
-                    >
-                      {formData.useAssignedVehicle && <div className="w-2 h-2 rounded-full bg-white" />}
-                    </div>
-                    <div className="text-center">
-                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-3">
-                        <Car className="h-8 w-8 text-blue-600" />
-                      </div>
-                      <div className="text-2xl font-bold text-slate-900">{assignedVehicle.registration_number}</div>
-                      <div className="text-slate-600">{(assignedVehicle as any)?.make_model}</div>
-                      <div className="text-sm text-slate-500 mt-2">Your assigned vehicle</div>
-                    </div>
-                  </div>
-                </label>
-              </div>
-            )}
-
-            <div className="mb-6">
-              <label
-                className={`block p-6 border-2 rounded-xl cursor-pointer transition-all ${
-                  !formData.useAssignedVehicle
-                    ? 'border-blue-500 bg-blue-50'
+              <button
+                type="button"
+                onClick={() => {
+                  handleVehicleToggle(true);
+                  if (validateVehicleStep()) {
+                    setTimeout(() => setCurrentStep('odometer'), 100);
+                  }
+                }}
+                className={`w-full p-5 rounded-2xl border-2 transition-all duration-200 text-left ${
+                  formData.useAssignedVehicle
+                    ? 'border-blue-500 bg-blue-50 shadow-md'
                     : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
                 }`}
               >
-                <input
-                  type="radio"
-                  name="vehicleOption"
-                  checked={!formData.useAssignedVehicle}
-                  onChange={() => handleVehicleToggle(false)}
-                  className="sr-only"
-                />
                 <div className="flex items-center space-x-4">
-                  <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      !formData.useAssignedVehicle ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
-                    }`}
-                  >
-                    {!formData.useAssignedVehicle && <div className="w-2 h-2 rounded-full bg-white" />}
+                  <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Car className="h-7 w-7 text-blue-600" />
                   </div>
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
-                      <Car className="h-8 w-8 text-orange-600" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xl font-bold text-slate-900">{assignedVehicle.registration_number}</span>
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">Assigned</span>
                     </div>
-                    <div className="font-medium text-slate-900">Use different vehicle/plant today</div>
-                    <div className="text-sm text-slate-600">Select from fleet or enter registration manually</div>
+                    <div className="text-slate-600 text-sm truncate">{(assignedVehicle as any)?.make_model}</div>
+                  </div>
+                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                    formData.useAssignedVehicle ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                  }`}>
+                    {formData.useAssignedVehicle && <Check className="h-4 w-4 text-white" />}
                   </div>
                 </div>
-              </label>
+              </button>
+            )}
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="px-3 bg-white text-sm text-slate-500">or</span>
+              </div>
             </div>
 
-            {!formData.useAssignedVehicle && (
-              <div className="space-y-4 bg-slate-50 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Alternative Vehicle Options</h3>
+            <button
+              type="button"
+              onClick={() => handleVehicleToggle(false)}
+              className={`w-full p-5 rounded-2xl border-2 transition-all duration-200 text-left ${
+                !formData.useAssignedVehicle
+                  ? 'border-orange-500 bg-orange-50 shadow-md'
+                  : 'border-slate-200 hover:border-orange-300 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center space-x-4">
+                <div className="w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Truck className="h-7 w-7 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-semibold text-slate-900">Different Vehicle / Plant</div>
+                  <div className="text-slate-500 text-sm">Select from fleet or enter manually</div>
+                </div>
+                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                  !formData.useAssignedVehicle ? 'border-orange-600 bg-orange-600' : 'border-slate-300'
+                }`}>
+                  {!formData.useAssignedVehicle && <Check className="h-4 w-4 text-white" />}
+                </div>
+              </div>
+            </button>
 
+            {!formData.useAssignedVehicle && (
+              <div className="space-y-4 bg-slate-50 rounded-xl p-5 animate-in slide-in-from-top-2 duration-200">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">Select from Fleet</label>
                   <select
                     value={formData.vehicleId}
                     onChange={(e) => handleVehicleChange(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
                   >
                     <option value="">Choose a vehicle...</option>
                     {vehicles
@@ -536,318 +559,285 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                   </select>
                 </div>
 
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-300" />
+                  </div>
+                  <div className="relative flex justify-center">
+                    <span className="px-2 bg-slate-50 text-xs text-slate-500">OR ENTER MANUALLY</span>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Or Enter Registration/ID Manually
-                  </label>
                   <input
                     type="text"
                     value={formData.overrideVehicleRegistration}
-                    onChange={(e) => handleOverrideRegistrationChange(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="e.g., ABC123 or Plant-ID-001"
+                    onChange={(e) => handleOverrideRegistrationChange(e.target.value.toUpperCase())}
+                    className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base font-mono"
+                    placeholder="e.g., ABC 123 or PLANT-001"
                   />
-                  <p className="mt-1 text-xs text-slate-500">
-                    Use this for vehicles/plant not in the fleet or temporary equipment
-                  </p>
                 </div>
+
+                <button
+                  onClick={() => validateVehicleStep() && setCurrentStep('odometer')}
+                  disabled={!formData.vehicleId && !formData.overrideVehicleRegistration.trim()}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 px-4 rounded-xl transition-colors"
+                >
+                  Continue
+                </button>
               </div>
             )}
 
-            {errors.vehicle && <p className="text-sm text-red-600">{errors.vehicle}</p>}
+            {errors.vehicle && (
+              <p className="text-sm text-red-600 text-center">{errors.vehicle}</p>
+            )}
+          </div>
+        )}
+
+        {/* Odometer Reading */}
+        {currentStep === 'odometer' && (
+          <div className="p-6 space-y-6">
+            <div className="text-center">
+              <h2 className="text-xl font-bold text-slate-900">Odometer Reading</h2>
+              <p className="text-slate-500 text-sm mt-1">Enter current mileage</p>
+            </div>
+
+            <div>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={formData.odometerReading}
+                onChange={(e) => handleOdometerChange(e.target.value)}
+                className={`w-full px-4 py-4 border-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-2xl text-center font-semibold ${
+                  errors.odometer ? 'border-red-300' : 'border-slate-200'
+                }`}
+                placeholder="0"
+                step="1"
+              />
+              {errors.odometer && <p className="mt-2 text-sm text-red-600 text-center">{errors.odometer}</p>}
+            </div>
 
             <button
-              onClick={() => validateVehicleStep() && setCurrentStep('odometer')}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
+              onClick={() => validateOdometerStep() && setCurrentStep('inspection')}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-4 rounded-xl transition-colors text-lg"
             >
-              <span>Continue to Odometer Reading</span>
-              <ArrowRight className="h-4 w-4" />
+              Start Inspection
             </button>
           </div>
         )}
 
-        {/* Step 2: Odometer */}
-        {currentStep === 'odometer' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-slate-900">Odometer Reading</h2>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Current Odometer Reading (miles/km)
-              </label>
-              <input
-                type="number"
-                value={formData.odometerReading}
-                onChange={(e) => handleOdometerChange(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg ${
-                  errors.odometer ? 'border-red-300' : 'border-slate-300'
-                }`}
-                placeholder="Enter current reading..."
-                step="0.1"
-              />
-              {errors.odometer && <p className="mt-2 text-sm text-red-600">{errors.odometer}</p>}
-            </div>
-
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setCurrentStep('vehicle')}
-                className="flex items-center space-x-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Back</span>
-              </button>
-              <button
-                onClick={() => validateOdometerStep() && setCurrentStep('inspection')}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-              >
-                <span>Start Daily Check</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Questions */}
+        {/* Inspection Questions */}
         {currentStep === 'inspection' && (
-          <div className="space-y-6">
+          <div
+            className={`transition-all duration-200 ease-out ${
+              isTransitioning
+                ? slideDirection === 'left'
+                  ? 'opacity-0 -translate-x-4'
+                  : 'opacity-0 translate-x-4'
+                : 'opacity-100 translate-x-0'
+            }`}
+          >
             {/* Previous defect notice */}
-            {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2 bg-amber-100 rounded-lg">
-                    <AlertTriangle className="h-6 w-6 text-amber-600" />
+            {currentItem.hasPreviousDefect && currentItem.wasDefectFixed === undefined && (
+              <div className="bg-amber-50 border-b border-amber-200 p-5">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 bg-amber-100 rounded-lg flex-shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
                   </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-amber-800">Previous Defect Found</h3>
-                    <p className="text-amber-700">This item had a defect in a recent inspection.</p>
-                  </div>
-                </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-amber-800">Previous Defect</h3>
+                    <p className="text-amber-700 text-sm mt-0.5">This item had a defect recently. Has it been fixed?</p>
 
-                <div className="bg-white border border-amber-200 rounded-lg p-4 mb-4">
-                  <h4 className="font-medium text-slate-900 mb-2">Has this defect been fixed?</h4>
-                  <div className="flex space-x-3">
-                    <button
-                      type="button"
-                      onClick={() => handleDefectFixedResponse(true)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
-                          ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                          : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent hover:border-green-200'
-                      }`}
-                    >
-                      <CheckCircle className="h-4 w-4" />
-                      <span>Yes, Fixed</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDefectFixedResponse(false)}
-                      className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
-                          ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                          : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent hover:border-red-200'
-                      }`}
-                    >
-                      <XCircle className="h-4 w-4" />
-                      <span>Still Defective</span>
-                    </button>
+                    <div className="flex space-x-3 mt-4">
+                      <button
+                        type="button"
+                        onClick={() => handleDefectFixedResponse(true)}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition-all active:scale-95"
+                      >
+                        <CheckCircle className="h-5 w-5" />
+                        <span>Yes, Fixed</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDefectFixedResponse(false)}
+                        className="flex-1 flex items-center justify-center space-x-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all active:scale-95"
+                      >
+                        <XCircle className="h-5 w-5" />
+                        <span>Still Defective</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="text-center mb-8">
-              <div className="text-sm text-slate-500 mb-2">
-                Question {currentQuestionIndex + 1} of {formData.inspectionItems.length}
-              </div>
-              <h2 className="text-3xl font-bold text-slate-900 mb-4">
-                {formData.inspectionItems[currentQuestionIndex].name}
-              </h2>
-              <p className="text-slate-600">Check this item and select the appropriate status</p>
-              {loadingPreviousDefects && (
-                <div className="flex items-center justify-center space-x-2 text-blue-600 mt-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-                  <span className="text-sm">Checking for previous defects...</span>
+            {/* Question display - only show if no previous defect or defect status is determined */}
+            {(!currentItem.hasPreviousDefect || currentItem.wasDefectFixed !== undefined) && (
+              <div className="p-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                    {currentItem.name}
+                  </h2>
+                  {loadingPreviousDefects && (
+                    <div className="flex items-center justify-center space-x-2 text-slate-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-blue-600" />
+                      <span className="text-sm">Checking history...</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {errors.question && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
-                <p className="text-red-800 text-sm">{errors.question}</p>
-              </div>
-            )}
-
-            {/* Action buttons */}
-            {(!formData.inspectionItems[currentQuestionIndex].hasPreviousDefect ||
-              formData.inspectionItems[currentQuestionIndex].wasDefectFixed !== undefined) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <button
-                  type="button"
-                  onClick={() => updateCurrentInspectionItem('status', 'ok')}
-                  disabled={
-                    formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                    formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
-                  }
-                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
-                    formData.inspectionItems[currentQuestionIndex].status === 'ok'
-                      ? 'border-green-500 bg-green-50 shadow-lg scale-105'
-                      : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
-                      ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
-                      : 'border-slate-200 hover:border-green-300 hover:bg-green-50'
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <CheckCircle className="h-8 w-8 text-green-600" />
-                    </div>
-                    <div className="text-2xl font-bold text-green-700 mb-2">
-                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                      formData.inspectionItems[currentQuestionIndex].wasDefectFixed
-                        ? 'Fixed'
-                        : 'OK'}
-                    </div>
-                    <div className="text-sm text-green-600">
-                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                      formData.inspectionItems[currentQuestionIndex].wasDefectFixed
-                        ? 'Defect has been resolved'
-                        : 'Item is in good condition'}
-                    </div>
+                {errors.question && (
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-6 text-center">
+                    <p className="text-red-700 text-sm font-medium">{errors.question}</p>
                   </div>
-                </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => updateCurrentInspectionItem('status', 'defect')}
-                  disabled={
-                    formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                    formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
-                  }
-                  className={`p-8 rounded-2xl border-2 transition-all duration-200 ${
-                    formData.inspectionItems[currentQuestionIndex].status === 'defect'
-                      ? 'border-red-500 bg-red-50 shadow-lg scale-105'
-                      : formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                        formData.inspectionItems[currentQuestionIndex].wasDefectFixed === true
-                      ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
-                      : 'border-slate-200 hover:border-red-300 hover:bg-red-50'
-                  }`}
-                >
-                  <div className="text-center">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <XCircle className="h-8 w-8 text-red-600" />
-                    </div>
-                    <div className="text-2xl font-bold text-red-700 mb-2">
-                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                      formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
-                        ? 'Still Defective'
-                        : 'Defect'}
-                    </div>
-                    <div className="text-sm text-red-600">
-                      {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                      formData.inspectionItems[currentQuestionIndex].wasDefectFixed === false
-                        ? 'Defect remains unfixed'
-                        : 'Item has issues or defects'}
-                    </div>
-                  </div>
-                </button>
-              </div>
-            )}
-
-            {/* Defect details */}
-            {formData.inspectionItems[currentQuestionIndex].status === 'defect' &&
-              !(
-                formData.inspectionItems[currentQuestionIndex].hasPreviousDefect &&
-                formData.inspectionItems[currentQuestionIndex].wasDefectFixed
-              ) && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-                  <h3 className="text-lg font-semibold text-red-800 mb-4">Defect Details</h3>
-
+                {/* OK / Defect buttons - full width, stacked on mobile */}
+                {!showDefectInput ? (
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-red-700 mb-2">
-                        Comments{' '}
-                        {formData.inspectionItems[currentQuestionIndex].hasPreviousDefect
-                          ? '(Optional - continuing previous defect)'
-                          : '(Required)'}
-                      </label>
-                      <textarea
-                        value={formData.inspectionItems[currentQuestionIndex].notes}
-                        onChange={(e) => updateCurrentInspectionItem('notes', e.target.value)}
-                        className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        rows={3}
-                        placeholder={
-                          formData.inspectionItems[currentQuestionIndex].hasPreviousDefect
-                            ? 'Add any additional comments about this continuing defect...'
-                            : 'Describe the defect in detail...'
-                        }
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleOkClick}
+                      disabled={isTransitioning || (currentItem.hasPreviousDefect && currentItem.wasDefectFixed === false)}
+                      className={`w-full p-6 rounded-2xl border-2 transition-all duration-150 active:scale-[0.98] ${
+                        currentItem.status === 'ok'
+                          ? 'border-green-500 bg-green-50 shadow-lg'
+                          : currentItem.hasPreviousDefect && currentItem.wasDefectFixed === false
+                          ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
+                          : 'border-slate-200 hover:border-green-400 hover:bg-green-50 active:bg-green-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center space-x-4">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                          currentItem.status === 'ok' ? 'bg-green-500' : 'bg-green-100'
+                        }`}>
+                          <CheckCircle className={`h-8 w-8 ${currentItem.status === 'ok' ? 'text-white' : 'text-green-600'}`} />
+                        </div>
+                        <div className="text-left">
+                          <div className={`text-xl font-bold ${currentItem.status === 'ok' ? 'text-green-700' : 'text-slate-900'}`}>
+                            OK
+                          </div>
+                          <div className={`text-sm ${currentItem.status === 'ok' ? 'text-green-600' : 'text-slate-500'}`}>
+                            Item is in good condition
+                          </div>
+                        </div>
+                      </div>
+                    </button>
 
-                    <div>
-                      <label className="block text-sm font-medium text-red-700 mb-2">Photo Evidence (Optional)</label>
-                      <div className="flex items-center space-x-3">
-                        <label className="flex items-center px-4 py-2 border border-red-300 rounded-lg hover:bg-red-50 cursor-pointer">
-                          <Camera className="h-4 w-4 mr-2" />
-                          {formData.inspectionItems[currentQuestionIndex].photo ? 'Change Photo' : 'Add Photo'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => updateCurrentInspectionItem('photo', e.target.files?.[0] || null)}
-                            className="sr-only"
+                    <button
+                      type="button"
+                      onClick={handleDefectClick}
+                      disabled={isTransitioning || (currentItem.hasPreviousDefect && currentItem.wasDefectFixed === true)}
+                      className={`w-full p-6 rounded-2xl border-2 transition-all duration-150 active:scale-[0.98] ${
+                        currentItem.status === 'defect'
+                          ? 'border-red-500 bg-red-50 shadow-lg'
+                          : currentItem.hasPreviousDefect && currentItem.wasDefectFixed === true
+                          ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed'
+                          : 'border-slate-200 hover:border-red-400 hover:bg-red-50 active:bg-red-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-center space-x-4">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center ${
+                          currentItem.status === 'defect' ? 'bg-red-500' : 'bg-red-100'
+                        }`}>
+                          <XCircle className={`h-8 w-8 ${currentItem.status === 'defect' ? 'text-white' : 'text-red-600'}`} />
+                        </div>
+                        <div className="text-left">
+                          <div className={`text-xl font-bold ${currentItem.status === 'defect' ? 'text-red-700' : 'text-slate-900'}`}>
+                            Defect
+                          </div>
+                          <div className={`text-sm ${currentItem.status === 'defect' ? 'text-red-600' : 'text-slate-500'}`}>
+                            Item has issues
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                ) : (
+                  /* Defect details input */
+                  <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-200">
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-5">
+                      <div className="flex items-center space-x-2 mb-4">
+                        <XCircle className="h-5 w-5 text-red-600" />
+                        <span className="font-semibold text-red-800">Defect Selected</span>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-red-700 mb-2">
+                            {currentItem.hasPreviousDefect ? 'Additional Comments (Optional)' : 'Describe the defect *'}
+                          </label>
+                          <textarea
+                            ref={notesInputRef}
+                            value={currentItem.notes}
+                            onChange={(e) => handleDefectNotesChange(e.target.value)}
+                            className="w-full px-4 py-3 border border-red-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                            rows={3}
+                            placeholder={currentItem.hasPreviousDefect ? 'Add any updates...' : 'What is wrong with this item?'}
                           />
-                        </label>
-                        {formData.inspectionItems[currentQuestionIndex].photo && (
-                          <span className="text-sm text-red-700">
-                            {formData.inspectionItems[currentQuestionIndex].photo.name}
-                          </span>
-                        )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-red-700 mb-2">Photo (Optional)</label>
+                          <label className="flex items-center justify-center px-4 py-3 border-2 border-dashed border-red-300 rounded-xl hover:bg-red-50 cursor-pointer transition-colors">
+                            <Camera className="h-5 w-5 text-red-500 mr-2" />
+                            <span className="text-red-700 font-medium">
+                              {currentItem.photo ? currentItem.photo.name : 'Add Photo'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              onChange={(e) => updateCurrentInspectionItem('photo', e.target.files?.[0] || null)}
+                              className="sr-only"
+                            />
+                          </label>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              )}
 
-            {/* Navigation */}
-            <div className="flex space-x-3">
-              <button
-                onClick={handlePreviousQuestion}
-                disabled={currentQuestionIndex === 0}
-                className="flex items-center space-x-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 disabled:bg-slate-100 disabled:text-slate-400 text-slate-700 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Previous</span>
-              </button>
-              <button
-                onClick={handleNextQuestion}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
-              >
-                <span>
-                  {currentQuestionIndex === formData.inspectionItems.length - 1
-                    ? 'Continue to Additional Plant'
-                    : 'Next Question'}
-                </span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
+                    <div className="flex space-x-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDefectInput(false);
+                          updateCurrentInspectionItem('status', null);
+                          updateCurrentInspectionItem('notes', '');
+                        }}
+                        className="flex-1 py-3.5 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-xl transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDefectContinue}
+                        className="flex-1 py-3.5 px-4 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Step 4: Additional items */}
+        {/* Additional Plant Items */}
         {currentStep === 'additional' && (
-          <div className="space-y-6">
+          <div className="p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">Additional Plant Requirements</h2>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Additional Plant</h2>
+                <p className="text-slate-500 text-sm">Add any extra equipment checks</p>
+              </div>
               <button
                 onClick={addAdditionalItem}
-                className="flex items-center space-x-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition-colors"
+                className="flex items-center space-x-1 bg-orange-600 hover:bg-orange-700 text-white px-3 py-2 rounded-lg transition-colors text-sm font-medium"
               >
-                <span>Add Plant Item</span>
+                <span>+ Add Item</span>
               </button>
             </div>
-
-            <p className="text-slate-600">
-              Add any additional plant or equipment that requires checking beyond the standard 10 vehicle items.
-            </p>
 
             {errors.additional && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
@@ -856,26 +846,26 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
             )}
 
             {formData.additionalItems.length === 0 ? (
-              <div className="text-center py-8 text-slate-500">
-                <Car className="h-12 w-12 mx-auto mb-4 text-slate-400" />
-                <p>No additional plant items added</p>
-                <p className="text-sm">Click "Add Plant Item" to add equipment checks</p>
+              <div className="text-center py-12 text-slate-500">
+                <Truck className="h-12 w-12 mx-auto mb-4 text-slate-300" />
+                <p className="font-medium">No additional items</p>
+                <p className="text-sm">Add plant equipment if needed, or submit</p>
               </div>
             ) : (
               <div className="space-y-4">
                 {formData.additionalItems.map((item, index) => (
-                  <div key={index} className="border border-slate-200 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
+                  <div key={index} className="border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center space-x-3 mb-3">
                       <input
                         type="text"
                         value={item.name}
                         onChange={(e) => updateAdditionalItem(index, 'name', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mr-3"
-                        placeholder="Enter plant/equipment name..."
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Equipment name..."
                       />
                       <button
                         onClick={() => removeAdditionalItem(index)}
-                        className="text-red-600 hover:text-red-800 transition-colors"
+                        className="text-red-600 hover:text-red-800 text-sm font-medium"
                       >
                         Remove
                       </button>
@@ -887,64 +877,48 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
                           <button
                             type="button"
                             onClick={() => updateAdditionalItem(index, 'status', 'ok')}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                               item.status === 'ok'
-                                ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                                : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent hover:border-green-200'
+                                ? 'bg-green-100 text-green-700 border-2 border-green-400'
+                                : 'bg-slate-100 hover:bg-green-50 text-slate-700 border-2 border-transparent'
                             }`}
                           >
                             <CheckCircle className="h-4 w-4" />
-                            <span>Serviceable</span>
+                            <span className="font-medium">OK</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => updateAdditionalItem(index, 'status', 'defect')}
-                            className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors ${
+                            className={`flex-1 flex items-center justify-center space-x-2 px-3 py-2.5 rounded-lg transition-colors ${
                               item.status === 'defect'
-                                ? 'bg-red-100 text-red-700 border-2 border-red-300'
-                                : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent hover:border-red-200'
+                                ? 'bg-red-100 text-red-700 border-2 border-red-400'
+                                : 'bg-slate-100 hover:bg-red-50 text-slate-700 border-2 border-transparent'
                             }`}
                           >
                             <XCircle className="h-4 w-4" />
-                            <span>Defect</span>
+                            <span className="font-medium">Defect</span>
                           </button>
                         </div>
 
                         {item.status === 'defect' && (
                           <div className="space-y-3 p-3 bg-red-50 rounded-lg">
-                            <div>
-                              <label className="block text-sm font-medium text-red-700 mb-1">
-                                Comments (Required for defects)
-                              </label>
-                              <textarea
-                                value={item.notes}
-                                onChange={(e) => updateAdditionalItem(index, 'notes', e.target.value)}
-                                className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                                rows={2}
-                                placeholder="Describe the defect..."
+                            <textarea
+                              value={item.notes}
+                              onChange={(e) => updateAdditionalItem(index, 'notes', e.target.value)}
+                              className="w-full px-3 py-2 border border-red-300 rounded-lg focus:ring-2 focus:ring-red-500"
+                              rows={2}
+                              placeholder="Describe the defect..."
+                            />
+                            <label className="flex items-center px-3 py-2 border border-red-300 rounded-lg hover:bg-red-50 cursor-pointer">
+                              <Camera className="h-4 w-4 mr-2 text-red-500" />
+                              <span className="text-sm text-red-700">{item.photo ? item.photo.name : 'Add Photo'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)}
+                                className="sr-only"
                               />
-                            </div>
-
-                            <div>
-                              <label className="block text-sm font-medium text-red-700 mb-2">
-                                Photo Evidence (Optional)
-                              </label>
-                              <div className="flex items-center space-x-3">
-                                <label className="flex items-center px-3 py-2 border border-red-300 rounded-lg hover:bg-red-50 cursor-pointer">
-                                  <Camera className="h-4 w-4 mr-2" />
-                                  {item.photo ? 'Change Photo' : 'Add Photo'}
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => updateAdditionalItem(index, 'photo', e.target.files?.[0] || null)}
-                                    className="sr-only"
-                                  />
-                                </label>
-                                {item.photo && (
-                                  <span className="text-sm text-red-700">{item.photo.name}</span>
-                                )}
-                              </div>
-                            </div>
+                            </label>
                           </div>
                         )}
                       </>
@@ -954,29 +928,23 @@ export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> =
               </div>
             )}
 
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setCurrentStep('inspection')}
-                className="flex items-center space-x-2 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                <span>Back to Questions</span>
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center"
-              >
-                {submitting ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                    Submitting Inspection...
-                  </>
-                ) : (
-                  'Submit Daily Check'
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold py-4 px-4 rounded-xl transition-colors flex items-center justify-center text-lg"
+            >
+              {submitting ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mr-2" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-5 w-5 mr-2" />
+                  Submit Inspection
+                </>
+              )}
+            </button>
           </div>
         )}
       </div>
