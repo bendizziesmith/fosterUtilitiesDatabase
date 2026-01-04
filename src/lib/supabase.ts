@@ -106,7 +106,7 @@ export interface PlantRecord {
   employee?: Employee;
 }
 
-// HAVs Timesheet types
+// HAVs Timesheet types (Legacy - kept for backwards compatibility)
 export interface HavsTimesheet {
   id: string;
   employee_id: string;
@@ -131,7 +131,7 @@ export interface HavsTimesheetEntry {
   id: string;
   timesheet_id: string;
   equipment_name: string;
-  equipment_category: 'CIVILS';
+  equipment_category: 'CIVILS' | 'JOINTING' | 'OVERHEADS' | 'EARTH PIN DRIVER';
   monday_hours: number;
   tuesday_hours: number;
   wednesday_hours: number;
@@ -140,6 +140,43 @@ export interface HavsTimesheetEntry {
   saturday_hours: number;
   sunday_hours: number;
   total_hours: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// New Gang-Based HAVS types
+export interface HavsWeek {
+  id: string;
+  ganger_id: string;
+  week_ending: string;
+  status: 'draft' | 'submitted';
+  submitted_at?: string;
+  created_at: string;
+  updated_at: string;
+  members?: HavsWeekMember[];
+}
+
+export interface HavsWeekMember {
+  id: string;
+  havs_week_id: string;
+  person_type: 'ganger' | 'operative';
+  employee_id?: string;
+  manual_name?: string;
+  role: string;
+  comments?: string;
+  actions?: string;
+  created_at: string;
+  employee?: Employee;
+  exposure_entries?: HavsExposureEntry[];
+}
+
+export interface HavsExposureEntry {
+  id: string;
+  havs_week_member_id: string;
+  equipment_name: string;
+  equipment_category: 'CIVILS' | 'JOINTING' | 'OVERHEADS' | 'EARTH PIN DRIVER';
+  day_of_week: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+  minutes: number;
   created_at: string;
   updated_at: string;
 }

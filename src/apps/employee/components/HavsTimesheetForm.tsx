@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Users } from 'lucide-react';
-import { supabase, Employee, HavsTimesheetEntry, GangOperative } from '../../../lib/supabase';
+import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
+import { supabase, Employee, GangOperative, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
 
 interface HavsTimesheetFormProps {
   selectedEmployee: Employee;
   onBack: () => void;
-}
-
-interface PersonTimesheetData {
-  operative: GangOperative;
-  role: 'Ganger' | 'Operative';
-  timesheetData: TimesheetData;
 }
 
 interface EquipmentItem {
@@ -29,6 +23,34 @@ const EQUIPMENT_ITEMS: EquipmentItem[] = [
   { name: 'Electric / Petrol Breaker', category: 'CIVILS' },
 ];
 
+const DAYS = [
+  { key: 'monday', label: 'Mon', full: 'Monday' },
+  { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
+  { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
+  { key: 'thursday', label: 'Thu', full: 'Thursday' },
+  { key: 'friday', label: 'Fri', full: 'Friday' },
+  { key: 'saturday', label: 'Sat', full: 'Saturday' },
+  { key: 'sunday', label: 'Sun', full: 'Sunday' },
+] as const;
+
+type DayKey = typeof DAYS[number]['key'];
+
+interface PersonExposureData {
+  [equipmentName: string]: {
+    [day in DayKey]: number;
+  };
+}
+
+interface PersonState {
+  member: HavsWeekMember;
+  displayName: string;
+  personType: 'ganger' | 'operative';
+  exposure: PersonExposureData;
+  totalMinutes: number;
+  comments: string;
+  actions: string;
+}
+
 function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -45,67 +67,30 @@ function getCurrentWeekSunday(): string {
   return formatLocalDate(sunday);
 }
 
-interface TimesheetData {
-  id?: string;
-  employee_name: string;
-  week_ending: string;
-  comments: string;
-  actions: string;
-  supervisor_name: string;
-  entries: { [key: string]: HavsTimesheetEntry };
-  status: 'draft' | 'submitted';
-  total_hours: number;
-}
-
-const DAYS = [
-  { key: 'monday', label: 'Mon', full: 'Monday' },
-  { key: 'tuesday', label: 'Tue', full: 'Tuesday' },
-  { key: 'wednesday', label: 'Wed', full: 'Wednesday' },
-  { key: 'thursday', label: 'Thu', full: 'Thursday' },
-  { key: 'friday', label: 'Fri', full: 'Friday' },
-  { key: 'saturday', label: 'Sat', full: 'Saturday' },
-  { key: 'sunday', label: 'Sun', full: 'Sunday' },
-] as const;
-
-type DayKey = typeof DAYS[number]['key'];
-
-function createEmptyEntries(): { [key: string]: HavsTimesheetEntry } {
-  const entries: { [key: string]: HavsTimesheetEntry } = {};
+function createEmptyExposure(): PersonExposureData {
+  const exposure: PersonExposureData = {};
   EQUIPMENT_ITEMS.forEach(item => {
-    entries[item.name] = {
-      id: '',
-      timesheet_id: '',
-      equipment_name: item.name,
-      equipment_category: item.category,
-      monday_hours: 0,
-      tuesday_hours: 0,
-      wednesday_hours: 0,
-      thursday_hours: 0,
-      friday_hours: 0,
-      saturday_hours: 0,
-      sunday_hours: 0,
-      total_hours: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+    exposure[item.name] = {
+      monday: 0,
+      tuesday: 0,
+      wednesday: 0,
+      thursday: 0,
+      friday: 0,
+      saturday: 0,
+      sunday: 0,
     };
   });
-  return entries;
+  return exposure;
 }
 
-function calculateEntryTotal(entry: HavsTimesheetEntry): number {
-  return (
-    entry.monday_hours +
-    entry.tuesday_hours +
-    entry.wednesday_hours +
-    entry.thursday_hours +
-    entry.friday_hours +
-    entry.saturday_hours +
-    entry.sunday_hours
-  );
-}
-
-function calculateWeeklyTotal(entries: { [key: string]: HavsTimesheetEntry }): number {
-  return Object.values(entries).reduce((sum, entry) => sum + entry.total_hours, 0);
+function calculatePersonTotal(exposure: PersonExposureData): number {
+  let total = 0;
+  Object.values(exposure).forEach(equipmentDays => {
+    Object.values(equipmentDays).forEach(minutes => {
+      total += minutes;
+    });
+  });
+  return total;
 }
 
 export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
@@ -117,7 +102,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekSunday());
   const [gangMembers, setGangMembers] = useState<GangOperative[]>([]);
-  const [peopleTimesheets, setPeopleTimesheets] = useState<PersonTimesheetData[]>([]);
+  const [havsWeek, setHavsWeek] = useState<HavsWeek | null>(null);
+  const [peopleState, setPeopleState] = useState<PersonState[]>([]);
 
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -133,6 +119,12 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   useEffect(() => {
     initializeWeekData(selectedWeek);
   }, [selectedEmployee.id, selectedWeek]);
+
+  useEffect(() => {
+    if (!isLoading && havsWeek) {
+      syncGangMembersToState();
+    }
+  }, [gangMembers, isLoading]);
 
   const generateAvailableWeeks = () => {
     const weeks: string[] = [];
@@ -153,14 +145,47 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setSaveError(null);
 
     try {
-      const operatives = await loadGangMembership(weekEnding);
-      await loadAllTimesheets(weekEnding, operatives);
+      const week = await loadOrCreateHavsWeek(weekEnding);
+      setHavsWeek(week);
+
+      const gangOps = await loadGangMembership(weekEnding);
+      setGangMembers(gangOps);
+
+      await loadAllMembersAndExposure(week.id);
     } catch (error) {
       console.error('Error initializing week data:', error);
       setSaveError('Failed to load data. Please refresh the page.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const loadOrCreateHavsWeek = async (weekEnding: string): Promise<HavsWeek> => {
+    const { data, error } = await supabase
+      .from('havs_weeks')
+      .select('*')
+      .eq('ganger_id', selectedEmployee.id)
+      .eq('week_ending', weekEnding)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (data) {
+      return data;
+    }
+
+    const { data: newWeek, error: insertError } = await supabase
+      .from('havs_weeks')
+      .insert({
+        ganger_id: selectedEmployee.id,
+        week_ending: weekEnding,
+        status: 'draft',
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+    return newWeek;
   };
 
   const loadGangMembership = async (weekEnding: string): Promise<GangOperative[]> => {
@@ -204,157 +229,150 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         }
       }
 
-      setGangMembers(operatives);
       return operatives;
     } catch (error) {
       console.error('Error loading gang membership:', error);
-      setGangMembers([]);
       return [];
     }
   };
 
-  const loadTimesheetForPerson = async (operative: GangOperative, weekEnding: string): Promise<TimesheetData> => {
-    const personId = operative.is_manual ? operative.id : operative.employee_id!;
+  const loadAllMembersAndExposure = async (weekId: string) => {
+    const { data: members, error } = await supabase
+      .from('havs_week_members')
+      .select(`
+        *,
+        exposure_entries:havs_exposure_entries(*)
+      `)
+      .eq('havs_week_id', weekId)
+      .order('person_type', { ascending: false });
 
-    try {
-      const { data: timesheets, error } = await supabase
-        .from('havs_timesheets')
-        .select(`
-          *,
-          havs_entries:havs_timesheet_entries(*)
-        `)
-        .eq('employee_id', personId)
-        .eq('week_ending', weekEnding)
-        .order('updated_at', { ascending: false });
+    if (error) {
+      console.error('Error loading members:', error);
+      return;
+    }
 
-      if (error) {
-        console.error(`Error loading timesheet for ${operative.full_name}:`, error);
-      }
+    if (!members || members.length === 0) {
+      return;
+    }
 
-      const draftTimesheet = timesheets?.find(t => t.status === 'draft');
-      const submittedTimesheet = timesheets?.find(t => t.status === 'submitted');
-      const existingTimesheet = draftTimesheet || submittedTimesheet;
+    const peopleData: PersonState[] = members.map(member => {
+      const exposure = createEmptyExposure();
 
-      if (existingTimesheet) {
-        const entriesMap = createEmptyEntries();
-
-        existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
-          if (entriesMap[entry.equipment_name]) {
-            entriesMap[entry.equipment_name] = {
-              ...entriesMap[entry.equipment_name],
-              ...entry,
-              total_hours: calculateEntryTotal(entry),
-            };
+      if (member.exposure_entries) {
+        member.exposure_entries.forEach((entry: HavsExposureEntry) => {
+          if (exposure[entry.equipment_name]) {
+            exposure[entry.equipment_name][entry.day_of_week as DayKey] = entry.minutes;
           }
         });
-
-        Object.keys(entriesMap).forEach(key => {
-          if (!entriesMap[key].id) {
-            entriesMap[key].timesheet_id = existingTimesheet.id;
-          }
-        });
-
-        return {
-          id: existingTimesheet.id,
-          employee_name: existingTimesheet.employee_name,
-          week_ending: existingTimesheet.week_ending,
-          comments: existingTimesheet.comments || '',
-          actions: existingTimesheet.actions || '',
-          supervisor_name: existingTimesheet.supervisor_name || '',
-          entries: entriesMap,
-          status: existingTimesheet.status,
-          total_hours: calculateWeeklyTotal(entriesMap),
-        };
-      } else {
-        const { data: newTimesheet, error: insertError } = await supabase
-          .from('havs_timesheets')
-          .insert({
-            employee_id: personId,
-            employee_name: operative.full_name,
-            week_ending: weekEnding,
-            comments: '',
-            actions: '',
-            supervisor_name: '',
-            total_hours: 0,
-            status: 'draft',
-          })
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error(`Error creating draft timesheet for ${operative.full_name}:`, insertError);
-          return {
-            employee_name: operative.full_name,
-            week_ending: weekEnding,
-            comments: '',
-            actions: '',
-            supervisor_name: '',
-            entries: createEmptyEntries(),
-            status: 'draft',
-            total_hours: 0,
-          };
-        }
-
-        return {
-          id: newTimesheet.id,
-          employee_name: newTimesheet.employee_name,
-          week_ending: newTimesheet.week_ending,
-          comments: newTimesheet.comments || '',
-          actions: newTimesheet.actions || '',
-          supervisor_name: newTimesheet.supervisor_name || '',
-          entries: createEmptyEntries(),
-          status: newTimesheet.status,
-          total_hours: 0,
-        };
       }
-    } catch (error) {
-      console.error(`Failed to load timesheet for ${operative.full_name}:`, error);
+
       return {
-        employee_name: operative.full_name,
-        week_ending: weekEnding,
-        comments: '',
-        actions: '',
-        supervisor_name: '',
-        entries: createEmptyEntries(),
-        status: 'draft',
-        total_hours: 0,
+        member,
+        displayName: member.manual_name || selectedEmployee.full_name,
+        personType: member.person_type as 'ganger' | 'operative',
+        exposure,
+        totalMinutes: calculatePersonTotal(exposure),
+        comments: member.comments || '',
+        actions: member.actions || '',
       };
+    });
+
+    setPeopleState(peopleData);
+    setLastSaved(new Date());
+    setHasUnsavedChanges(false);
+  };
+
+  const syncGangMembersToState = async () => {
+    if (!havsWeek) return;
+
+    const gangerAsOperative: GangOperative = {
+      id: selectedEmployee.id,
+      full_name: selectedEmployee.full_name,
+      role: selectedEmployee.role,
+      is_manual: false,
+      employee_id: selectedEmployee.id,
+    };
+
+    const allExpectedPeople = [gangerAsOperative, ...gangMembers];
+
+    const newPeopleToAdd: PersonState[] = [];
+
+    for (const person of allExpectedPeople) {
+      const isGanger = person.id === selectedEmployee.id;
+      const existsInState = peopleState.some(p => {
+        if (isGanger) {
+          return p.personType === 'ganger';
+        }
+        if (person.is_manual) {
+          return p.member.manual_name === person.full_name && p.personType === 'operative';
+        }
+        return p.member.employee_id === person.employee_id && p.personType === 'operative';
+      });
+
+      if (!existsInState) {
+        const existingMember = await findOrCreateWeekMember(havsWeek.id, person, isGanger);
+
+        newPeopleToAdd.push({
+          member: existingMember,
+          displayName: person.full_name,
+          personType: isGanger ? 'ganger' : 'operative',
+          exposure: createEmptyExposure(),
+          totalMinutes: 0,
+          comments: '',
+          actions: '',
+        });
+      }
+    }
+
+    if (newPeopleToAdd.length > 0) {
+      setPeopleState(prev => {
+        const gangerFirst = [...newPeopleToAdd, ...prev].sort((a, b) => {
+          if (a.personType === 'ganger') return -1;
+          if (b.personType === 'ganger') return 1;
+          return 0;
+        });
+        return gangerFirst;
+      });
     }
   };
 
-  const loadAllTimesheets = async (weekEnding: string, operatives: GangOperative[]) => {
-    try {
-      const gangerAsOperative: GangOperative = {
-        id: selectedEmployee.id,
-        full_name: selectedEmployee.full_name,
-        role: selectedEmployee.role,
-        is_manual: false,
-        employee_id: selectedEmployee.id,
-      };
+  const findOrCreateWeekMember = async (
+    weekId: string,
+    person: GangOperative,
+    isGanger: boolean
+  ): Promise<HavsWeekMember> => {
+    const query = supabase
+      .from('havs_week_members')
+      .select('*')
+      .eq('havs_week_id', weekId)
+      .eq('person_type', isGanger ? 'ganger' : 'operative');
 
-      const allPeople = [gangerAsOperative, ...operatives];
-      const peopleData: PersonTimesheetData[] = [];
-
-      for (let i = 0; i < allPeople.length; i++) {
-        const person = allPeople[i];
-        const role = i === 0 ? 'Ganger' : 'Operative';
-        const timesheetData = await loadTimesheetForPerson(person, weekEnding);
-        peopleData.push({ operative: person, role, timesheetData });
-      }
-
-      setPeopleTimesheets(peopleData);
-
-      const mostRecentUpdate = peopleData
-        .map(p => p.timesheetData.id ? new Date() : null)
-        .filter(d => d !== null)
-        .sort((a, b) => (b?.getTime() || 0) - (a?.getTime() || 0))[0];
-
-      setLastSaved(mostRecentUpdate || null);
-      setHasUnsavedChanges(false);
-    } catch (error) {
-      console.error('Error loading timesheets:', error);
-      throw error;
+    if (person.is_manual) {
+      query.eq('manual_name', person.full_name);
+    } else {
+      query.eq('employee_id', person.employee_id!);
     }
+
+    const { data: existing } = await query.maybeSingle();
+
+    if (existing) {
+      return existing;
+    }
+
+    const { data: newMember, error } = await supabase
+      .from('havs_week_members')
+      .insert({
+        havs_week_id: weekId,
+        person_type: isGanger ? 'ganger' : 'operative',
+        employee_id: person.is_manual ? null : person.employee_id,
+        manual_name: person.is_manual ? person.full_name : null,
+        role: person.role,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return newMember;
   };
 
   const handleWeekSelect = (weekEnding: string) => {
@@ -367,145 +385,33 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setShowWeekSelector(false);
   };
 
-  const updateHours = (personIndex: number, equipmentName: string, day: DayKey, value: number) => {
+  const updateMinutes = (personIndex: number, equipmentName: string, day: DayKey, value: number) => {
     const safeValue = Math.max(0, Math.round(value));
 
-    setPeopleTimesheets(prev => {
+    setPeopleState(prev => {
       const updated = [...prev];
       const person = updated[personIndex];
-      const updatedEntries = { ...person.timesheetData.entries };
-      const entry = updatedEntries[equipmentName];
 
-      if (entry) {
-        const updatedEntry = {
-          ...entry,
-          [`${day}_hours`]: safeValue,
-        };
-        updatedEntry.total_hours = calculateEntryTotal(updatedEntry as HavsTimesheetEntry);
-        updatedEntries[equipmentName] = updatedEntry as HavsTimesheetEntry;
-      }
+      person.exposure[equipmentName][day] = safeValue;
+      person.totalMinutes = calculatePersonTotal(person.exposure);
 
-      updated[personIndex] = {
-        ...person,
-        timesheetData: {
-          ...person.timesheetData,
-          entries: updatedEntries,
-          total_hours: calculateWeeklyTotal(updatedEntries),
-        },
-      };
-
+      updated[personIndex] = { ...person };
       return updated;
     });
 
     setHasUnsavedChanges(true);
   };
 
-  const updateField = (personIndex: number, field: 'comments' | 'actions' | 'supervisor_name', value: string) => {
-    setPeopleTimesheets(prev => {
+  const updateField = (personIndex: number, field: 'comments' | 'actions', value: string) => {
+    setPeopleState(prev => {
       const updated = [...prev];
       updated[personIndex] = {
         ...updated[personIndex],
-        timesheetData: {
-          ...updated[personIndex].timesheetData,
-          [field]: value,
-        },
+        [field]: value,
       };
       return updated;
     });
     setHasUnsavedChanges(true);
-  };
-
-  const saveTimesheetForPerson = async (personData: PersonTimesheetData) => {
-    const { operative, timesheetData } = personData;
-    const now = new Date().toISOString();
-    let timesheetId = timesheetData.id;
-    const personId = operative.is_manual ? operative.id : operative.employee_id!;
-
-    if (timesheetId) {
-      const { error } = await supabase
-        .from('havs_timesheets')
-        .update({
-          employee_name: timesheetData.employee_name,
-          comments: timesheetData.comments,
-          actions: timesheetData.actions,
-          supervisor_name: timesheetData.supervisor_name,
-          total_hours: timesheetData.total_hours,
-          updated_at: now,
-        })
-        .eq('id', timesheetId);
-
-      if (error) throw error;
-    } else {
-      const { data: newTimesheet, error } = await supabase
-        .from('havs_timesheets')
-        .insert({
-          employee_id: personId,
-          employee_name: timesheetData.employee_name,
-          week_ending: timesheetData.week_ending,
-          comments: timesheetData.comments,
-          actions: timesheetData.actions,
-          supervisor_name: timesheetData.supervisor_name,
-          total_hours: timesheetData.total_hours,
-          status: 'draft',
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      timesheetId = newTimesheet.id;
-    }
-
-    const updatedEntries = { ...timesheetData.entries };
-
-    for (const entry of Object.values(timesheetData.entries)) {
-      const entryData = {
-        monday_hours: entry.monday_hours,
-        tuesday_hours: entry.tuesday_hours,
-        wednesday_hours: entry.wednesday_hours,
-        thursday_hours: entry.thursday_hours,
-        friday_hours: entry.friday_hours,
-        saturday_hours: entry.saturday_hours,
-        sunday_hours: entry.sunday_hours,
-        total_hours: entry.total_hours,
-        updated_at: now,
-      };
-
-      if (entry.id) {
-        const { error } = await supabase
-          .from('havs_timesheet_entries')
-          .update(entryData)
-          .eq('id', entry.id);
-
-        if (error) throw error;
-      } else {
-        const { data: newEntry, error } = await supabase
-          .from('havs_timesheet_entries')
-          .insert({
-            timesheet_id: timesheetId,
-            equipment_name: entry.equipment_name,
-            equipment_category: entry.equipment_category,
-            ...entryData,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        updatedEntries[entry.equipment_name] = {
-          ...updatedEntries[entry.equipment_name],
-          id: newEntry.id,
-          timesheet_id: timesheetId,
-        };
-      }
-    }
-
-    return {
-      ...personData,
-      timesheetData: {
-        ...timesheetData,
-        id: timesheetId,
-        entries: updatedEntries,
-      },
-    };
   };
 
   const handleSave = async () => {
@@ -513,14 +419,70 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setSaveError(null);
 
     try {
-      const updatedPeople: PersonTimesheetData[] = [];
+      for (const personState of peopleState) {
+        await supabase
+          .from('havs_week_members')
+          .update({
+            comments: personState.comments,
+            actions: personState.actions,
+          })
+          .eq('id', personState.member.id);
 
-      for (const personData of peopleTimesheets) {
-        const updated = await saveTimesheetForPerson(personData);
-        updatedPeople.push(updated);
+        const entriesToUpsert: Array<Omit<HavsExposureEntry, 'id' | 'created_at' | 'updated_at'>> = [];
+
+        Object.entries(personState.exposure).forEach(([equipmentName, days]) => {
+          const equipment = EQUIPMENT_ITEMS.find(e => e.name === equipmentName);
+          if (!equipment) return;
+
+          Object.entries(days).forEach(([day, minutes]) => {
+            if (minutes > 0) {
+              entriesToUpsert.push({
+                havs_week_member_id: personState.member.id,
+                equipment_name: equipmentName,
+                equipment_category: equipment.category,
+                day_of_week: day as DayKey,
+                minutes,
+              });
+            }
+          });
+        });
+
+        const { data: existingEntries } = await supabase
+          .from('havs_exposure_entries')
+          .select('*')
+          .eq('havs_week_member_id', personState.member.id);
+
+        const existingMap = new Map(
+          existingEntries?.map(e => [`${e.equipment_name}:${e.day_of_week}`, e]) || []
+        );
+
+        for (const entry of entriesToUpsert) {
+          const key = `${entry.equipment_name}:${entry.day_of_week}`;
+          const existing = existingMap.get(key);
+
+          if (existing) {
+            await supabase
+              .from('havs_exposure_entries')
+              .update({ minutes: entry.minutes })
+              .eq('id', existing.id);
+          } else {
+            await supabase
+              .from('havs_exposure_entries')
+              .insert(entry);
+          }
+        }
+
+        const currentKeys = new Set(entriesToUpsert.map(e => `${e.equipment_name}:${e.day_of_week}`));
+        for (const [key, existing] of existingMap) {
+          if (!currentKeys.has(key)) {
+            await supabase
+              .from('havs_exposure_entries')
+              .delete()
+              .eq('id', existing.id);
+          }
+        }
       }
 
-      setPeopleTimesheets(updatedPeople);
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
     } catch (error) {
@@ -532,7 +494,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const handleSubmitClick = () => {
-    const anyZeroExposure = peopleTimesheets.some(p => p.timesheetData.total_hours === 0);
+    const anyZeroExposure = peopleState.some(p => p.totalMinutes === 0);
     if (anyZeroExposure) {
       alert('All gang members must have exposure time before submitting.');
       return;
@@ -553,26 +515,18 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         await handleSave();
       }
 
-      for (const personData of peopleTimesheets) {
-        if (personData.timesheetData.id && personData.timesheetData.status === 'draft') {
-          const { error } = await supabase
-            .from('havs_timesheets')
-            .update({
-              status: 'submitted',
-              submitted_at: new Date().toISOString(),
-            })
-            .eq('id', personData.timesheetData.id);
+      if (havsWeek) {
+        await supabase
+          .from('havs_weeks')
+          .update({
+            status: 'submitted',
+            submitted_at: new Date().toISOString(),
+          })
+          .eq('id', havsWeek.id);
 
-          if (error) throw error;
-        }
+        setHavsWeek(prev => prev ? { ...prev, status: 'submitted' } : null);
       }
 
-      setPeopleTimesheets(prev =>
-        prev.map(p => ({
-          ...p,
-          timesheetData: { ...p.timesheetData, status: 'submitted' },
-        }))
-      );
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error submitting:', error);
@@ -582,8 +536,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const allSubmitted = peopleTimesheets.length > 0 && peopleTimesheets.every(p => p.timesheetData.status === 'submitted');
-  const anySubmitted = peopleTimesheets.some(p => p.timesheetData.status === 'submitted');
+  const isSubmitted = havsWeek?.status === 'submitted';
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
     if (!acc[item.category]) {
@@ -669,10 +622,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   <span>{saveError}</span>
                 </div>
               )}
-              {allSubmitted && (
+              {isSubmitted && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-md">
                   <Shield className="h-4 w-4 text-emerald-600" />
-                  <span className="text-sm font-medium text-emerald-700">All Submitted</span>
+                  <span className="text-sm font-medium text-emerald-700">Submitted</span>
                 </div>
               )}
             </div>
@@ -685,23 +638,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
               <button
                 type="button"
-                onClick={() => !anySubmitted && setShowWeekSelector(true)}
-                disabled={anySubmitted}
-                className={`text-sm font-medium ${anySubmitted ? 'text-slate-500' : 'text-blue-600 hover:text-blue-700'}`}
+                onClick={() => !isSubmitted && setShowWeekSelector(true)}
+                disabled={isSubmitted}
+                className={`text-sm font-medium ${isSubmitted ? 'text-slate-500' : 'text-blue-600 hover:text-blue-700'}`}
               >
                 {new Date(selectedWeek).toLocaleDateString('en-GB', {
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric'
                 })}
-                {!anySubmitted && <span className="ml-1 text-xs">(change)</span>}
+                {!isSubmitted && <span className="ml-1 text-xs">(change)</span>}
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {!allSubmitted && (
+      {!isSubmitted && (
         <GangMemberSelector
           gangerId={selectedEmployee.id}
           weekEnding={selectedWeek}
@@ -710,30 +663,58 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         />
       )}
 
-      {peopleTimesheets.map((personData, personIndex) => {
-        const { operative, role, timesheetData } = personData;
-        const isPersonReadOnly = timesheetData.status === 'submitted';
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-semibold text-blue-900">HAVS Gang Status (Live Data)</h3>
+            <div className="mt-2 space-y-2">
+              {peopleState.map((person, idx) => (
+                <div key={idx} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-slate-900">{person.displayName}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      person.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                    }`}>
+                      {person.personType === 'ganger' ? 'Ganger' : 'Operative'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-amber-600">{person.totalMinutes} min</span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${
+                      person.totalMinutes === 0 ? 'bg-slate-200 text-slate-600' : 'bg-emerald-100 text-emerald-700'
+                    }`}>
+                      {person.totalMinutes === 0 ? 'Not Started' : 'In Progress'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
 
+      {peopleState.map((personState, personIndex) => {
         return (
-          <div key={operative.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div key={personState.member.id} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
             <div className="px-6 py-3 bg-slate-800 border-b border-slate-700">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-3">
                     <h2 className="text-sm font-semibold text-white uppercase tracking-wide">
-                      {operative.full_name}
+                      {personState.displayName}
                     </h2>
-                    {operative.is_manual && (
+                    {personState.member.manual_name && (
                       <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white">
                         Manual
                       </span>
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded ${
-                      role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                      personState.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                     }`}>
-                      {role}
+                      {personState.personType === 'ganger' ? 'Ganger' : 'Operative'}
                     </span>
-                    {isPersonReadOnly && (
+                    {isSubmitted && (
                       <span className="text-xs px-2 py-0.5 rounded bg-emerald-500 text-white flex items-center gap-1">
                         <Shield className="h-3 w-3" />
                         Submitted
@@ -741,9 +722,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-slate-300 mt-1">
-                    Total: {timesheetData.total_hours} minutes
-                    {timesheetData.total_hours > 0 && (
-                      <span> ({(timesheetData.total_hours / 60).toFixed(1)}h)</span>
+                    Total: {personState.totalMinutes} minutes
+                    {personState.totalMinutes > 0 && (
+                      <span> ({(personState.totalMinutes / 60).toFixed(1)}h)</span>
                     )}
                   </p>
                 </div>
@@ -788,8 +769,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                       </tr>
 
                       {items.map((item, idx) => {
-                        const entry = timesheetData.entries[item.name];
-                        const rowTotal = entry?.total_hours || 0;
+                        const equipmentData = personState.exposure[item.name];
+                        const rowTotal = equipmentData
+                          ? Object.values(equipmentData).reduce((sum, val) => sum + val, 0)
+                          : 0;
 
                         return (
                           <tr
@@ -800,8 +783,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                               {item.name}
                             </td>
                             {DAYS.map((day) => {
-                              const fieldKey = `${day.key}_hours` as keyof HavsTimesheetEntry;
-                              const currentValue = entry ? (entry[fieldKey] as number) || 0 : 0;
+                              const currentValue = equipmentData ? equipmentData[day.key] : 0;
 
                               return (
                                 <td key={day.key} className="px-1 py-1 border-b border-slate-200">
@@ -812,15 +794,15 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                                     onChange={(e) => {
                                       const raw = e.target.value.replace(/[^0-9]/g, '');
                                       const num = raw === '' ? 0 : parseInt(raw, 10);
-                                      updateHours(personIndex, item.name, day.key, num);
+                                      updateMinutes(personIndex, item.name, day.key, num);
                                     }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'ArrowUp') {
                                         e.preventDefault();
-                                        updateHours(personIndex, item.name, day.key, currentValue + 1);
+                                        updateMinutes(personIndex, item.name, day.key, currentValue + 1);
                                       } else if (e.key === 'ArrowDown') {
                                         e.preventDefault();
-                                        updateHours(personIndex, item.name, day.key, Math.max(0, currentValue - 1));
+                                        updateMinutes(personIndex, item.name, day.key, Math.max(0, currentValue - 1));
                                       } else if (e.key === 'Enter') {
                                         e.preventDefault();
                                         (e.target as HTMLInputElement).blur();
@@ -828,9 +810,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                                     }}
                                     onFocus={(e) => e.target.select()}
                                     placeholder="0"
-                                    disabled={isPersonReadOnly}
+                                    disabled={isSubmitted}
                                     className={`w-full px-2 py-2 text-center text-sm border border-slate-200 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
-                                      isPersonReadOnly
+                                      isSubmitted
                                         ? 'bg-slate-100 text-slate-500 cursor-not-allowed'
                                         : 'bg-white hover:border-slate-300'
                                     }`}
@@ -855,9 +837,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                       Weekly Total
                     </td>
                     {DAYS.map((day) => {
-                      const fieldKey = `${day.key}_hours` as keyof HavsTimesheetEntry;
-                      const dayTotal = Object.values(timesheetData.entries).reduce((sum, entry) => {
-                        return sum + ((entry[fieldKey] as number) || 0);
+                      const dayTotal = Object.values(personState.exposure).reduce((sum, equipmentDays) => {
+                        return sum + equipmentDays[day.key];
                       }, 0);
                       return (
                         <td key={day.key} className="px-2 py-3 text-center text-sm font-semibold text-slate-300">
@@ -866,7 +847,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                       );
                     })}
                     <td className="px-4 py-3 text-center text-base font-bold text-amber-400 bg-slate-900">
-                      {timesheetData.total_hours}
+                      {personState.totalMinutes}
                     </td>
                   </tr>
                 </tfoot>
@@ -877,24 +858,24 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-2">Comments</label>
                 <textarea
-                  value={timesheetData.comments}
+                  value={personState.comments}
                   onChange={(e) => updateField(personIndex, 'comments', e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={3}
                   placeholder="Equipment usage notes, conditions, etc."
-                  disabled={isPersonReadOnly}
+                  disabled={isSubmitted}
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-2">Actions Required</label>
                 <textarea
-                  value={timesheetData.actions}
+                  value={personState.actions}
                   onChange={(e) => updateField(personIndex, 'actions', e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   rows={3}
                   placeholder="Record any actions taken or required..."
-                  disabled={isPersonReadOnly}
+                  disabled={isSubmitted}
                 />
               </div>
             </div>
@@ -902,7 +883,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         );
       })}
 
-      {!allSubmitted && (
+      {!isSubmitted && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-lg p-6">
             <div className="flex items-center gap-3 mb-4">
@@ -931,14 +912,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 </>
               )}
             </button>
-            <div className="mt-3 space-y-2">
-              {peopleTimesheets.map((p) => (
-                <div key={p.operative.id} className="flex items-center justify-between text-xs">
-                  <span className="text-slate-600">{p.operative.full_name}:</span>
-                  <span className="font-semibold text-amber-600">{p.timesheetData.total_hours} min</span>
-                </div>
-              ))}
-            </div>
           </div>
 
           <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
@@ -964,7 +937,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               ) : (
                 <>
                   <Send className="h-4 w-4" />
-                  Submit {peopleTimesheets.length === 1 ? '' : `All ${peopleTimesheets.length} People`} for Compliance Review
+                  Submit {peopleState.length === 1 ? '' : `All ${peopleState.length} People`} for Compliance Review
                 </>
               )}
             </button>
@@ -1034,7 +1007,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             <div className="p-6">
               <div className="mb-6">
                 <p className="text-sm text-slate-700 mb-4">
-                  You are about to submit HAVs exposure records for {peopleTimesheets.length} {peopleTimesheets.length === 1 ? 'person' : 'people'} for compliance review.
+                  You are about to submit HAVs exposure records for {peopleState.length} {peopleState.length === 1 ? 'person' : 'people'} for compliance review.
                 </p>
 
                 <div className="bg-red-50 border-2 border-red-300 rounded-md p-4 space-y-3">
@@ -1056,32 +1029,32 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               <div className="bg-slate-50 rounded-md p-4 mb-6 max-h-64 overflow-y-auto">
                 <p className="text-xs text-slate-500 uppercase tracking-wide mb-3">Submission Summary</p>
                 <div className="space-y-3">
-                  {peopleTimesheets.map((personData) => (
-                    <div key={personData.operative.id} className="pb-3 border-b border-slate-200 last:border-0">
+                  {peopleState.map((personState) => (
+                    <div key={personState.member.id} className="pb-3 border-b border-slate-200 last:border-0">
                       <div className="flex items-center gap-2 mb-2">
-                        <p className="font-medium text-slate-900">{personData.operative.full_name}</p>
-                        {personData.operative.is_manual && (
+                        <p className="font-medium text-slate-900">{personState.displayName}</p>
+                        {personState.member.manual_name && (
                           <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
                             Manual
                           </span>
                         )}
                         <span className={`text-xs px-2 py-0.5 rounded ${
-                          personData.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                          personState.personType === 'ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
                         }`}>
-                          {personData.role}
+                          {personState.personType === 'ganger' ? 'Ganger' : 'Operative'}
                         </span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
                           <p className="text-slate-500">Week Ending</p>
                           <p className="font-medium text-slate-900">
-                            {new Date(personData.timesheetData.week_ending).toLocaleDateString('en-GB')}
+                            {new Date(selectedWeek).toLocaleDateString('en-GB')}
                           </p>
                         </div>
                         <div>
                           <p className="text-slate-500">Exposure</p>
                           <p className="font-medium text-amber-600">
-                            {personData.timesheetData.total_hours} min
+                            {personState.totalMinutes} min
                           </p>
                         </div>
                       </div>
