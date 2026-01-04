@@ -131,14 +131,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   }, []);
 
   useEffect(() => {
-    loadGangMembership(selectedWeek);
+    initializeWeekData(selectedWeek);
   }, [selectedEmployee.id, selectedWeek]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      loadAllTimesheets(selectedWeek);
-    }
-  }, [selectedEmployee.id, selectedWeek, gangMembers]);
 
   const generateAvailableWeeks = () => {
     const weeks: string[] = [];
@@ -154,7 +148,22 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setAvailableWeeks(weeks);
   };
 
-  const loadGangMembership = async (weekEnding: string) => {
+  const initializeWeekData = async (weekEnding: string) => {
+    setIsLoading(true);
+    setSaveError(null);
+
+    try {
+      const operatives = await loadGangMembership(weekEnding);
+      await loadAllTimesheets(weekEnding, operatives);
+    } catch (error) {
+      console.error('Error initializing week data:', error);
+      setSaveError('Failed to load data. Please refresh the page.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadGangMembership = async (weekEnding: string): Promise<GangOperative[]> => {
     try {
       const { data, error } = await supabase
         .from('gang_membership')
@@ -196,62 +205,110 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       }
 
       setGangMembers(operatives);
+      return operatives;
     } catch (error) {
       console.error('Error loading gang membership:', error);
       setGangMembers([]);
+      return [];
     }
   };
 
   const loadTimesheetForPerson = async (operative: GangOperative, weekEnding: string): Promise<TimesheetData> => {
     const personId = operative.is_manual ? operative.id : operative.employee_id!;
 
-    const { data: timesheets, error } = await supabase
-      .from('havs_timesheets')
-      .select(`
-        *,
-        havs_entries:havs_timesheet_entries(*)
-      `)
-      .eq('employee_id', personId)
-      .eq('week_ending', weekEnding)
-      .order('updated_at', { ascending: false });
+    try {
+      const { data: timesheets, error } = await supabase
+        .from('havs_timesheets')
+        .select(`
+          *,
+          havs_entries:havs_timesheet_entries(*)
+        `)
+        .eq('employee_id', personId)
+        .eq('week_ending', weekEnding)
+        .order('updated_at', { ascending: false });
 
-    if (error) throw error;
+      if (error) {
+        console.error(`Error loading timesheet for ${operative.full_name}:`, error);
+      }
 
-    const draftTimesheet = timesheets?.find(t => t.status === 'draft');
-    const submittedTimesheet = timesheets?.find(t => t.status === 'submitted');
-    const existingTimesheet = draftTimesheet || submittedTimesheet;
+      const draftTimesheet = timesheets?.find(t => t.status === 'draft');
+      const submittedTimesheet = timesheets?.find(t => t.status === 'submitted');
+      const existingTimesheet = draftTimesheet || submittedTimesheet;
 
-    if (existingTimesheet) {
-      const entriesMap = createEmptyEntries();
+      if (existingTimesheet) {
+        const entriesMap = createEmptyEntries();
 
-      existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
-        if (entriesMap[entry.equipment_name]) {
-          entriesMap[entry.equipment_name] = {
-            ...entriesMap[entry.equipment_name],
-            ...entry,
-            total_hours: calculateEntryTotal(entry),
+        existingTimesheet.havs_entries?.forEach((entry: HavsTimesheetEntry) => {
+          if (entriesMap[entry.equipment_name]) {
+            entriesMap[entry.equipment_name] = {
+              ...entriesMap[entry.equipment_name],
+              ...entry,
+              total_hours: calculateEntryTotal(entry),
+            };
+          }
+        });
+
+        Object.keys(entriesMap).forEach(key => {
+          if (!entriesMap[key].id) {
+            entriesMap[key].timesheet_id = existingTimesheet.id;
+          }
+        });
+
+        return {
+          id: existingTimesheet.id,
+          employee_name: existingTimesheet.employee_name,
+          week_ending: existingTimesheet.week_ending,
+          comments: existingTimesheet.comments || '',
+          actions: existingTimesheet.actions || '',
+          supervisor_name: existingTimesheet.supervisor_name || '',
+          entries: entriesMap,
+          status: existingTimesheet.status,
+          total_hours: calculateWeeklyTotal(entriesMap),
+        };
+      } else {
+        const { data: newTimesheet, error: insertError } = await supabase
+          .from('havs_timesheets')
+          .insert({
+            employee_id: personId,
+            employee_name: operative.full_name,
+            week_ending: weekEnding,
+            comments: '',
+            actions: '',
+            supervisor_name: '',
+            total_hours: 0,
+            status: 'draft',
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error(`Error creating draft timesheet for ${operative.full_name}:`, insertError);
+          return {
+            employee_name: operative.full_name,
+            week_ending: weekEnding,
+            comments: '',
+            actions: '',
+            supervisor_name: '',
+            entries: createEmptyEntries(),
+            status: 'draft',
+            total_hours: 0,
           };
         }
-      });
 
-      Object.keys(entriesMap).forEach(key => {
-        if (!entriesMap[key].id) {
-          entriesMap[key].timesheet_id = existingTimesheet.id;
-        }
-      });
-
-      return {
-        id: existingTimesheet.id,
-        employee_name: existingTimesheet.employee_name,
-        week_ending: existingTimesheet.week_ending,
-        comments: existingTimesheet.comments || '',
-        actions: existingTimesheet.actions || '',
-        supervisor_name: existingTimesheet.supervisor_name || '',
-        entries: entriesMap,
-        status: existingTimesheet.status,
-        total_hours: calculateWeeklyTotal(entriesMap),
-      };
-    } else {
+        return {
+          id: newTimesheet.id,
+          employee_name: newTimesheet.employee_name,
+          week_ending: newTimesheet.week_ending,
+          comments: newTimesheet.comments || '',
+          actions: newTimesheet.actions || '',
+          supervisor_name: newTimesheet.supervisor_name || '',
+          entries: createEmptyEntries(),
+          status: newTimesheet.status,
+          total_hours: 0,
+        };
+      }
+    } catch (error) {
+      console.error(`Failed to load timesheet for ${operative.full_name}:`, error);
       return {
         employee_name: operative.full_name,
         week_ending: weekEnding,
@@ -265,10 +322,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const loadAllTimesheets = async (weekEnding: string) => {
-    setIsLoading(true);
-    setSaveError(null);
-
+  const loadAllTimesheets = async (weekEnding: string, operatives: GangOperative[]) => {
     try {
       const gangerAsOperative: GangOperative = {
         id: selectedEmployee.id,
@@ -278,7 +332,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         employee_id: selectedEmployee.id,
       };
 
-      const allPeople = [gangerAsOperative, ...gangMembers];
+      const allPeople = [gangerAsOperative, ...operatives];
       const peopleData: PersonTimesheetData[] = [];
 
       for (let i = 0; i < allPeople.length; i++) {
@@ -299,9 +353,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       setHasUnsavedChanges(false);
     } catch (error) {
       console.error('Error loading timesheets:', error);
-      setSaveError('Failed to load timesheets');
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
   };
 
@@ -543,10 +595,33 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-3 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-          <p className="text-sm text-slate-500">Loading timesheet...</p>
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="bg-white border border-slate-200 rounded-lg">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={onBack}
+                className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
+                  <HardHat className="h-6 w-6 text-amber-600" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-slate-900">HAVs Exposure Record</h1>
+                  <p className="text-xs text-slate-500">Loading gang and timesheet data...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-3 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+              <p className="text-sm text-slate-500">Preparing timesheet...</p>
+            </div>
+          </div>
         </div>
       </div>
     );
