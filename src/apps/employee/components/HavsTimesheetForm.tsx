@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
 import { supabase, Employee, HavsTimesheetEntry, getWeekEndDate } from '../../../lib/supabase';
 
@@ -57,6 +57,15 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const timesheetDataRef = useRef(timesheetData);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialLoadRef = useRef(true);
+  const loadedWeekRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    timesheetDataRef.current = timesheetData;
+  }, [timesheetData]);
+
   const isCurrentWeekSubmitted = timesheetData.status === 'submitted';
 
   useEffect(() => {
@@ -64,18 +73,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   }, []);
 
   useEffect(() => {
-    loadExistingTimesheet();
+    const weekEnding = timesheetData.week_ending;
+    if (loadedWeekRef.current !== weekEnding || isInitialLoadRef.current) {
+      loadedWeekRef.current = weekEnding;
+      isInitialLoadRef.current = false;
+      loadExistingTimesheet();
+    }
   }, [selectedEmployee.id, timesheetData.week_ending]);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      if (timesheetData.status === 'draft') {
+      if (timesheetDataRef.current.status === 'draft') {
         autoSave();
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [timesheetData]);
+  }, []);
 
   const generateAvailableWeeks = () => {
     const weeks = [];
@@ -198,7 +212,18 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const updateHours = (equipmentName: string, day: string, hours: number) => {
+  const debouncedAutoSave = useCallback(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      if (timesheetDataRef.current.status === 'draft') {
+        autoSave();
+      }
+    }, 1500);
+  }, []);
+
+  const updateHours = useCallback((equipmentName: string, day: string, hours: number) => {
     setTimesheetData(prev => {
       const updatedEntries = { ...prev.entries };
       const entry = updatedEntries[equipmentName];
@@ -221,7 +246,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         updatedEntries[equipmentName] = updatedEntry;
       }
 
-      const totalHours = Object.values(updatedEntries).reduce((sum, entry) => sum + entry.total_hours, 0);
+      const totalHours = Object.values(updatedEntries).reduce((sum, e) => sum + e.total_hours, 0);
 
       return {
         ...prev,
@@ -230,22 +255,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       };
     });
 
-    setTimeout(() => {
-      if (timesheetData.status === 'draft') {
-        autoSave();
-      }
-    }, 1000);
-  };
+    debouncedAutoSave();
+  }, [debouncedAutoSave]);
 
-  const updateField = (field: keyof TimesheetData, value: string) => {
+  const updateField = useCallback((field: keyof TimesheetData, value: string) => {
     setTimesheetData(prev => ({ ...prev, [field]: value }));
-
-    setTimeout(() => {
-      if (timesheetData.status === 'draft') {
-        autoSave();
-      }
-    }, 2000);
-  };
+    debouncedAutoSave();
+  }, [debouncedAutoSave]);
 
   const autoSave = async () => {
     if (saving || submitting) return;
@@ -265,18 +281,19 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const saveTimesheet = async () => {
-    let timesheetId = timesheetData.id;
+    const currentData = timesheetDataRef.current;
+    let timesheetId = currentData.id;
 
     if (timesheetId) {
       const { error } = await supabase
         .from('havs_timesheets')
         .update({
-          employee_name: timesheetData.employee_name,
-          week_ending: timesheetData.week_ending,
-          comments: timesheetData.comments,
-          actions: timesheetData.actions,
-          supervisor_name: timesheetData.supervisor_name,
-          total_hours: timesheetData.total_hours,
+          employee_name: currentData.employee_name,
+          week_ending: currentData.week_ending,
+          comments: currentData.comments,
+          actions: currentData.actions,
+          supervisor_name: currentData.supervisor_name,
+          total_hours: currentData.total_hours,
           updated_at: new Date().toISOString(),
         })
         .eq('id', timesheetId);
@@ -287,12 +304,12 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         .from('havs_timesheets')
         .insert({
           employee_id: selectedEmployee.id,
-          employee_name: timesheetData.employee_name,
-          week_ending: timesheetData.week_ending,
-          comments: timesheetData.comments,
-          actions: timesheetData.actions,
-          supervisor_name: timesheetData.supervisor_name,
-          total_hours: timesheetData.total_hours,
+          employee_name: currentData.employee_name,
+          week_ending: currentData.week_ending,
+          comments: currentData.comments,
+          actions: currentData.actions,
+          supervisor_name: currentData.supervisor_name,
+          total_hours: currentData.total_hours,
         })
         .select()
         .single();
@@ -303,7 +320,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       setTimesheetData(prev => ({ ...prev, id: timesheetId }));
     }
 
-    for (const entry of Object.values(timesheetData.entries)) {
+    const entriesToSave = Object.values(currentData.entries);
+    for (const entry of entriesToSave) {
       if (entry.id) {
         const { error } = await supabase
           .from('havs_timesheet_entries')
@@ -346,7 +364,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           ...prev,
           entries: {
             ...prev.entries,
-            [entry.equipment_name]: { ...entry, id: newEntry.id }
+            [entry.equipment_name]: { ...prev.entries[entry.equipment_name], id: newEntry.id }
           }
         }));
       }
