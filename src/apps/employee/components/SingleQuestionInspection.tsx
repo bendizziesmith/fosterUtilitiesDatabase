@@ -31,16 +31,16 @@ interface FormData {
 }
 
 const DEFAULT_CHECKLIST_ITEMS = [
-  'Tyres and wheels',
-  'Brakes',
-  'Steering',
-  'Lights and indicators',
-  'Horn',
-  'Mirrors',
-  'Windscreen and windows',
-  'Seat belts',
-  'First aid kit',
-  'Fire extinguisher',
+  'All van wheels, tyres, mirrors, windscreen and lights',
+  'No damage, dents, scrapes, cracks or defects',
+  'All internal instruments, E-Management light',
+  'Digger & trailer – wheels, tracks, jockey wheel & electrics',
+  'Pecker & buckets, quick hitch, hoses & couplers',
+  'Cutting tools – Stihl saw, floor saw & dust suppression',
+  'Trench rammer',
+  'Cable locator & genny',
+  'Petrol breaker, fuel cans & spill kit',
+  'All PPE – Fire extinguisher 2kg, first aid kit, eye wash & RAMS',
 ];
 
 export const SingleQuestionInspection: React.FC<SingleQuestionInspectionProps> = ({

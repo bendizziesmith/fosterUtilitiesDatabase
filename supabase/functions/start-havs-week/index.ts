@@ -81,6 +81,32 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    const { data: userProfile } = await supabase
+      .from('user_profiles')
+      .select('employee_id, role')
+      .eq('id', user.id)
+      .single();
+
+    if (!userProfile) {
+      return new Response(
+        JSON.stringify({ error: 'User profile not found' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    if (userProfile.employee_id !== ganger_id) {
+      return new Response(
+        JSON.stringify({ error: 'You can only create HAVS weeks for yourself' }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
     const { data: existingWeek } = await supabase
       .from('havs_weeks')
       .select('id')
@@ -107,6 +133,7 @@ Deno.serve(async (req: Request) => {
         ganger_id,
         week_ending,
         status: 'draft',
+        created_by: user.id,
       })
       .select()
       .single();

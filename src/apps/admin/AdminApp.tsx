@@ -143,11 +143,11 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/inspection-details' && selectedInspection) {
-      return 'Daily Vehicle Check Details';
+      return 'Daily Vehicle & Plant Check Details';
     }
     switch (path) {
       case '/inspections':
-        return 'Daily Vehicle Checks';
+        return 'Daily Vehicle & Plant Checks';
       case '/management':
         return 'Management Hub';
       case '/employees':
@@ -171,7 +171,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     }
     switch (path) {
       case '/inspections':
-        return 'Vehicle Inspection Management';
+        return 'Vehicle & Plant Inspection Management';
       case '/management':
         return 'Staff & Fleet Overview';
       case '/employees':

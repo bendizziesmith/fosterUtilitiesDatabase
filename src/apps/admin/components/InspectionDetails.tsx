@@ -87,7 +87,7 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
       });
     };
 
-    addItemRows(vehicleItems, 'Vehicle Check');
+    addItemRows(vehicleItems, 'Vehicle & Plant Check');
     if (hasPlantItems) {
       addItemRows(plantItems, 'Additional Plant');
     }
@@ -250,7 +250,7 @@ export const InspectionDetails: React.FC<InspectionDetailsProps> = ({ inspection
             </div>
             <div>
               <h1 className="text-lg font-semibold text-slate-900">
-                Vehicle Inspection Record
+                Vehicle & Plant Inspection Record
               </h1>
               <p className={`text-sm font-medium ${
                 inspection.has_defects ? 'text-red-600' : 'text-emerald-600'

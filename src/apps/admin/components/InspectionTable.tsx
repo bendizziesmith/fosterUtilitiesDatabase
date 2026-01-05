@@ -407,7 +407,7 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
         <div className="px-6 py-5 border-b border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">Daily Vehicle Checks</h1>
+              <h1 className="text-xl font-semibold text-slate-900">Daily Vehicle & Plant Checks</h1>
               <p className="text-sm text-slate-500 mt-1">
                 {today.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </p>
@@ -924,7 +924,7 @@ export const InspectionTable: React.FC<InspectionTableProps> = ({
               </div>
 
               <h3 className="text-lg font-semibold text-slate-900 text-center mb-2">
-                Delete Vehicle Check
+                Delete Vehicle & Plant Check
               </h3>
 
               <p className="text-sm text-slate-600 text-center mb-6">

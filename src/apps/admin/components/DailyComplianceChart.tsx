@@ -63,7 +63,7 @@ export const DailyComplianceChart: React.FC<DailyComplianceChartProps> = ({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Calendar className="h-5 w-5 text-blue-600" />
-          <h3 className="text-xl font-bold text-slate-900">Daily Vehicle Check Compliance</h3>
+          <h3 className="text-xl font-bold text-slate-900">Daily Vehicle & Plant Check Compliance</h3>
         </div>
         <div className="flex items-center space-x-3">
           <div className="text-sm text-slate-500">
