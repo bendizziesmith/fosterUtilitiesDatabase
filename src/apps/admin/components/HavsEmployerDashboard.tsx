@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Users, Clock, CheckCircle, AlertCircle, RefreshCw, FileText, Eye } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { HavsWeekDetail } from './HavsWeekDetail';
+import { HavsWeeklyComplianceTable } from './HavsWeeklyComplianceTable';
 
 interface WeekOverview {
   week_id: string;
@@ -31,9 +32,10 @@ export const HavsEmployerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
+  const [activeWeekEnding, setActiveWeekEnding] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<FilterState>({
-    weekEnding: 'all',
+    weekEnding: '',
     status: 'all',
     ganger: 'all',
   });
@@ -42,12 +44,28 @@ export const HavsEmployerDashboard: React.FC = () => {
   const [availableGangers, setAvailableGangers] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
-    loadWeeks();
+    initializeDashboard();
   }, []);
 
   useEffect(() => {
     applyFilters();
   }, [weeks, filters]);
+
+  const initializeDashboard = async () => {
+    try {
+      const { data: activeWeek, error: weekError } = await supabase.rpc('get_active_havs_week');
+
+      if (weekError) throw weekError;
+
+      setActiveWeekEnding(activeWeek);
+      setFilters(prev => ({ ...prev, weekEnding: activeWeek }));
+
+      await loadWeeks();
+    } catch (error) {
+      console.error('Error initializing dashboard:', error);
+      await loadWeeks();
+    }
+  };
 
   const loadWeeks = async () => {
     try {
@@ -80,7 +98,7 @@ export const HavsEmployerDashboard: React.FC = () => {
   const applyFilters = () => {
     let filtered = [...weeks];
 
-    if (filters.weekEnding !== 'all') {
+    if (filters.weekEnding && filters.weekEnding !== 'all') {
       filtered = filtered.filter((w) => w.week_ending === filters.weekEnding);
     }
 
@@ -143,7 +161,18 @@ export const HavsEmployerDashboard: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">HAVS Compliance Dashboard</h2>
-          <p className="text-sm text-slate-600 mt-1">Legal health & safety exposure records</p>
+          <p className="text-sm text-slate-600 mt-1">
+            Legal health & safety exposure records
+            {activeWeekEnding && (
+              <span className="ml-2 font-medium text-blue-600">
+                • Active Week: {new Date(activeWeekEnding).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </span>
+            )}
+          </p>
         </div>
         <button
           onClick={handleRefresh}
@@ -154,6 +183,17 @@ export const HavsEmployerDashboard: React.FC = () => {
           Refresh
         </button>
       </div>
+
+      {filters.weekEnding && (
+        <HavsWeeklyComplianceTable
+          weekEnding={filters.weekEnding}
+          onViewDetails={(employeeId, havsWeekId) => {
+            if (havsWeekId) {
+              setSelectedWeekId(havsWeekId);
+            }
+          }}
+        />
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-lg p-4">
@@ -210,7 +250,8 @@ export const HavsEmployerDashboard: React.FC = () => {
       <div className="bg-white border border-slate-200 rounded-lg p-4">
         <div className="flex items-center gap-3 mb-4">
           <FileText className="h-5 w-5 text-slate-600" />
-          <h3 className="font-semibold text-slate-900">Filters</h3>
+          <h3 className="font-semibold text-slate-900">Historical Lookup & Filters</h3>
+          <span className="text-xs text-slate-500">(Active week shown by default)</span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
@@ -220,12 +261,13 @@ export const HavsEmployerDashboard: React.FC = () => {
               onChange={(e) => setFilters({ ...filters, weekEnding: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">All Weeks</option>
               {availableWeeks.map((week) => (
                 <option key={week} value={week}>
                   {new Date(week).toLocaleDateString('en-GB')}
+                  {week === activeWeekEnding && ' (Active Week)'}
                 </option>
               ))}
+              <option value="all">View All Weeks (Historical)</option>
             </select>
           </div>
 
@@ -261,6 +303,14 @@ export const HavsEmployerDashboard: React.FC = () => {
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+            Gang Submissions (Ganger-Level Overview)
+          </h3>
+          <p className="text-xs text-slate-600 mt-1">
+            Individual gang submissions by gangers. For per-employee compliance, see table above.
+          </p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
