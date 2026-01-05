@@ -48,7 +48,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
       // 2) Fetch user profile to determine the role
       //    user_profiles includes role + (optionally) a linked employee
-      const { data: profile, error: profileError } = await supabase
+      let { data: profile, error: profileError } = await supabase
         .from('user_profiles')
         .select(
           `
@@ -57,14 +57,48 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         `
         )
         .eq('id', authData.user.id)
-        .single();
+        .maybeSingle();
 
-      // If there is no profile row, we can’t determine role → block access
-      if (profileError || !profile) {
-        // You can keep this friendly; it’s not leaking secrets
-        throw new Error(
-          'Your account is not fully set up. Please contact your administrator.'
-        );
+      // If no profile exists, try to create one automatically
+      if (!profile) {
+        // Try to find a matching employee by email
+        const { data: matchingEmployee } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('email', authData.user.email)
+          .maybeSingle();
+
+        // Create the profile
+        const { error: insertError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: authData.user.id,
+            employee_id: matchingEmployee?.id || null,
+            role: matchingEmployee ? 'employee' : 'admin',
+          });
+
+        if (insertError) {
+          console.error('Failed to create profile:', insertError);
+          throw new Error('Failed to set up your account. Please try again.');
+        }
+
+        // Re-fetch the profile
+        const { data: newProfile } = await supabase
+          .from('user_profiles')
+          .select(
+            `
+            *,
+            employee:employees(*)
+          `
+          )
+          .eq('id', authData.user.id)
+          .single();
+
+        profile = newProfile;
+      }
+
+      if (!profile) {
+        throw new Error('Failed to set up your account. Please try again.');
       }
 
       // 3) Send the user to the correct app based on role
