@@ -103,7 +103,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   useEffect(() => {
     const initializeForm = async () => {
-      const weeks = await getViewableWeeks(8);
+      const weeks = await getViewableWeeks(2);
       setAvailableWeeks(weeks);
       const currentWeek = await getEffectiveWeekEnding();
       setSelectedWeek(currentWeek);
@@ -165,7 +165,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         exposure_entries:havs_exposure_entries(*)
       `)
       .eq('havs_week_id', weekId)
-      .order('person_type', { ascending: false })
+      .order('person_type', { ascending: true })
       .order('created_at', { ascending: true });
 
     if (error) {
@@ -379,10 +379,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         });
 
         if (error) {
-          throw error;
+          console.error('RPC error:', error);
+          throw new Error(error.message || 'Failed to submit');
         }
 
-        if (data && !data.success) {
+        if (data && data.success === false) {
           alert(`Submission failed: ${data.error}`);
           return;
         }
@@ -395,21 +396,21 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         } : null);
 
         const memberCount = data?.member_count || peopleState.length;
-        const totalMinutes = data?.total_minutes || 0;
+        const totalMinutes = data?.total_minutes || peopleState.reduce((sum, p) => sum + p.totalMinutes, 0);
         const totalHours = Math.floor(totalMinutes / 60);
         const remainingMinutes = totalMinutes % 60;
 
         if (isFirstSubmit) {
-          alert(`✅ HAVS Submitted Successfully!\n\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure\n\nThis record is now available for employer review. You can still edit if needed; changes create a new revision for audit.`);
+          alert(`HAVS Submitted Successfully!\n\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure\n\nThis record is now available for employer review.`);
         } else {
-          alert(`✅ Revision Created Successfully!\n\nRevision #${(havsWeek.revision_number || 0) + 1}\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure\n\nChanges saved with new audit revision.`);
+          alert(`Revision Created Successfully!\n\nRevision #${(havsWeek.revision_number || 0) + 1}\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure`);
         }
       }
 
       setHasUnsavedChanges(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting:', error);
-      alert('Failed to submit. Please try again.');
+      alert(`Failed to submit: ${error.message || 'Unknown error'}`);
     } finally {
       setSubmitting(false);
     }
