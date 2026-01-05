@@ -8,8 +8,7 @@ import { DailyComplianceChart } from './components/DailyComplianceChart';
 import { ManagementHub } from './components/ManagementHub';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import VehicleManagement from './components/VehicleManagement';
-import { HavsTimesheetsTable } from './components/HavsTimesheetsTable';
-import { HavsComplianceTable } from './components/HavsComplianceTable';
+import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -277,12 +276,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         />
         <Route
           path="/havs-timesheets"
-          element={
-            <div className="space-y-6">
-              <HavsComplianceTable employees={employees} />
-              <HavsTimesheetsTable employees={employees} />
-            </div>
-          }
+          element={<HavsEmployerDashboard />}
         />
       </Routes>
     </Layout>

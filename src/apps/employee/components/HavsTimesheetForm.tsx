@@ -421,15 +421,18 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       if (havsWeek) {
         const isFirstSubmit = havsWeek.status === 'draft';
 
-        await supabase
-          .from('havs_weeks')
-          .update({
-            status: 'submitted',
-            submitted_at: new Date().toISOString(),
-          })
-          .eq('id', havsWeek.id);
+        const { data, error } = await supabase.rpc('submit_havs_week', {
+          week_id_param: havsWeek.id
+        });
 
-        await supabase.rpc('create_havs_revision', { week_id: havsWeek.id });
+        if (error) {
+          throw error;
+        }
+
+        if (data && !data.success) {
+          alert(`Submission failed: ${data.error}`);
+          return;
+        }
 
         setHavsWeek(prev => prev ? {
           ...prev,
@@ -438,10 +441,15 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           revision_number: (prev.revision_number || 0) + 1
         } : null);
 
+        const memberCount = data?.member_count || peopleState.length;
+        const totalMinutes = data?.total_minutes || 0;
+        const totalHours = Math.floor(totalMinutes / 60);
+        const remainingMinutes = totalMinutes % 60;
+
         if (isFirstSubmit) {
-          alert('Submitted successfully! This record is now available for employer review. You can still edit it later if needed, and changes will create a new revision for audit.');
+          alert(`✅ HAVS Submitted Successfully!\n\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure\n\nThis record is now available for employer review. You can still edit if needed; changes create a new revision for audit.`);
         } else {
-          alert('Revision created successfully! Your changes have been saved and a new revision has been created for audit.');
+          alert(`✅ Revision Created Successfully!\n\nRevision #${(havsWeek.revision_number || 0) + 1}\n${memberCount} gang members\n${totalHours}h ${remainingMinutes}m total exposure\n\nChanges saved with new audit revision.`);
         }
       }
 
