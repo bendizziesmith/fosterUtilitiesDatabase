@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Plus } from 'lucide-react';
+import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Plus, Calendar } from 'lucide-react';
 import { supabase, Employee, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
 import { StartNewWeekModal } from './StartNewWeekModal';
@@ -681,36 +681,45 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-b border-slate-200">
+        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Active Week Ending</p>
-              <button
-                type="button"
-                onClick={() => setShowWeekSelector(true)}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700"
-              >
-                {selectedWeek && new Date(selectedWeek).toLocaleDateString('en-GB', {
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric'
-                })}
-                <span className="ml-1 text-xs">(view other weeks)</span>
-              </button>
-              {havsWeek && havsWeek.revision_number && havsWeek.revision_number > 0 && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Revision #{havsWeek.revision_number} {havsWeek.status === 'submitted' && '(audited)'}
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-100 rounded-xl">
+                <Calendar className="h-6 w-6 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Current Week</p>
+                <p className="text-lg font-bold text-slate-900">
+                  {selectedWeek && new Date(selectedWeek).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
                 </p>
-              )}
-              {peopleState.length > 0 && (
-                <p className="text-xs text-emerald-600 font-medium mt-1">
-                  All values start at zero for this week
-                </p>
-              )}
-              <p className="text-xs text-slate-500 mt-1">
-                Submissions on Mon/Tue apply to previous week
-              </p>
+                {havsWeek && havsWeek.revision_number && havsWeek.revision_number > 0 && (
+                  <p className="text-xs text-amber-600 font-medium mt-0.5">
+                    Revision #{havsWeek.revision_number} {havsWeek.status === 'submitted' && '(audited)'}
+                  </p>
+                )}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowWeekSelector(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors"
+            >
+              <FileText className="h-4 w-4 text-slate-600" />
+              <span className="text-sm font-medium text-slate-700">View Other Weeks</span>
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-4 text-xs">
+            <span className="text-slate-500">Submissions on Mon/Tue apply to previous week</span>
+            {isSubmitted && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded font-medium">
+                <CheckCircle className="h-3 w-3" />
+                Submitted
+              </span>
+            )}
           </div>
         </div>
       </div>

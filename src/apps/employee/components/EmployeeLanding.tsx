@@ -172,6 +172,12 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         });
       }
 
+      statusList.sort((a, b) => {
+        if (a.role === 'Ganger' && b.role !== 'Ganger') return -1;
+        if (a.role !== 'Ganger' && b.role === 'Ganger') return 1;
+        return 0;
+      });
+
       setGangHavsStatus(statusList);
       return havsWeek.status === 'submitted';
     } catch (error) {
@@ -343,79 +349,115 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg">
-        <div className="px-6 py-4 border-b border-slate-200">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <HardHat className="h-5 w-5 text-amber-600" />
-              <h2 className="text-sm font-semibold text-slate-900">HAVs Gang Status</h2>
-              <span className="text-xs text-slate-500">(Live Data)</span>
-            </div>
-            {gangHavsStatus.length > 1 && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                <Users className="h-3.5 w-3.5" />
-                <span>{gangHavsStatus.length} members</span>
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500 rounded-lg">
+                <HardHat className="h-5 w-5 text-white" />
               </div>
-            )}
+              <div>
+                <h2 className="text-base font-semibold text-white">HAVS Gang Status</h2>
+                <p className="text-xs text-slate-300">Live exposure data</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              {gangHavsStatus.length > 0 && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-600 px-2.5 py-1 rounded">
+                  <Users className="h-3.5 w-3.5" />
+                  <span>{gangHavsStatus.length} members</span>
+                </div>
+              )}
+              {weekEnding && (
+                <div className="text-right">
+                  <p className="text-xs text-slate-400">Week Ending</p>
+                  <p className="text-sm font-medium text-white">
+                    {new Date(weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-          {weekEnding && (
-            <p className="text-xs text-slate-500 mt-2">
-              Week ending: {new Date(weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-            </p>
-          )}
         </div>
 
-        <div className="px-6 py-4">
+        <div className="p-4">
           {gangHavsStatus.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-4">Loading gang status...</p>
+            <div className="text-center py-8">
+              <div className="w-12 h-12 mx-auto mb-3 bg-slate-100 rounded-full flex items-center justify-center">
+                <HardHat className="h-6 w-6 text-slate-400" />
+              </div>
+              <p className="text-sm text-slate-500">No HAVS data for this week</p>
+              <button
+                onClick={() => onTaskSelect('havs')}
+                className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Start HAVS Timesheet
+              </button>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {gangHavsStatus.map((member) => (
-                <div key={member.operative.id} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-md">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <p className="text-sm font-medium text-slate-900">{member.operative.full_name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        member.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
-                      }`}>
-                        {member.role}
+                <div
+                  key={member.operative.id}
+                  className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
+                    member.role === 'Ganger'
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      member.role === 'Ganger' ? 'bg-blue-500' : 'bg-slate-300'
+                    }`}>
+                      <span className="text-sm font-bold text-white">
+                        {member.operative.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                       </span>
-                      {member.operative.is_manual && (
-                        <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
-                          Manual
-                        </span>
-                      )}
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-600">
-                      <span>
-                        {member.totalMinutes} min
-                        {member.totalMinutes > 0 && ` (${(member.totalMinutes / 60).toFixed(1)}h)`}
-                      </span>
-                      {member.updatedAt && (
-                        <span>
-                          Updated: {new Date(member.updatedAt).toLocaleString('en-GB', {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{member.operative.full_name}</p>
+                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                          member.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
+                        }`}>
+                          {member.role}
                         </span>
-                      )}
+                        {member.operative.is_manual && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
+                            Manual
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
+                        <span className="font-medium text-slate-700">
+                          {member.totalMinutes} min
+                          {member.totalMinutes > 0 && ` (${(member.totalMinutes / 60).toFixed(1)}h)`}
+                        </span>
+                        {member.updatedAt && (
+                          <span>
+                            Updated: {new Date(member.updatedAt).toLocaleString('en-GB', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div>
                     {member.status === 'submitted' ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 px-2 py-1 bg-emerald-50 rounded">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 px-3 py-1.5 bg-emerald-100 border border-emerald-200 rounded-full">
                         <CheckCircle className="h-3.5 w-3.5" />
                         Submitted
                       </span>
                     ) : member.status === 'draft' ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 px-2 py-1 bg-amber-50 rounded">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 px-3 py-1.5 bg-amber-100 border border-amber-200 rounded-full">
                         <Clock className="h-3.5 w-3.5" />
                         In Progress
                       </span>
                     ) : (
-                      <span className="text-xs text-slate-400 px-2 py-1">Not Started</span>
+                      <span className="text-xs text-slate-400 px-3 py-1.5 bg-slate-100 rounded-full">Not Started</span>
                     )}
                   </div>
                 </div>
@@ -423,14 +465,28 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
             </div>
           )}
 
-          {!compliance.currentWeekHavs && gangHavsStatus.length > 0 && (
+          {gangHavsStatus.length > 0 && (
             <div className="mt-4 pt-4 border-t border-slate-200">
               <button
                 onClick={() => onTaskSelect('havs')}
-                className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
               >
-                {gangHavsStatus.some(m => m.status === 'draft') ? 'Continue HAVs Timesheet' : 'Start HAVs Timesheet'}
-                <ChevronRight className="h-4 w-4" />
+                {compliance.currentWeekHavs ? (
+                  <>
+                    <CheckCircle className="h-4 w-4" />
+                    View Submitted Timesheet
+                  </>
+                ) : gangHavsStatus.some(m => m.status === 'draft') ? (
+                  <>
+                    Continue HAVs Timesheet
+                    <ChevronRight className="h-4 w-4" />
+                  </>
+                ) : (
+                  <>
+                    Start HAVs Timesheet
+                    <ChevronRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </div>
           )}
