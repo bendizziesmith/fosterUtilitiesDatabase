@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   Calendar,
   Users,
-  Clock,
   CheckCircle,
   AlertCircle,
   RefreshCw,
@@ -10,7 +9,9 @@ import {
   ChevronLeft,
   ChevronRight,
   FileCheck,
-  FileX
+  FileX,
+  X,
+  Download
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { HavsWeekDetail } from './HavsWeekDetail';
@@ -49,6 +50,7 @@ export const HavsEmployerDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
+  const [selectedGangerId, setSelectedGangerId] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const getWeeksInMonth = (date: Date): WeekDate[] => {
@@ -56,45 +58,36 @@ export const HavsEmployerDashboard: React.FC = () => {
     const year = date.getFullYear();
     const month = date.getMonth();
 
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    let current = new Date(firstDay);
-    const dayOfWeek = current.getDay();
+    const firstOfMonth = new Date(year, month, 1);
+    let firstSunday = new Date(firstOfMonth);
+    const dayOfWeek = firstOfMonth.getDay();
     if (dayOfWeek !== 0) {
-      current.setDate(current.getDate() + (7 - dayOfWeek));
+      firstSunday.setDate(firstOfMonth.getDate() + (7 - dayOfWeek));
     }
 
-    if (current > lastDay) {
-      current = new Date(firstDay);
-      current.setDate(current.getDate() - dayOfWeek);
-      if (current.getMonth() !== month) {
-        current.setDate(current.getDate() + 7);
+    if (firstSunday.getMonth() !== month) {
+      firstSunday = new Date(year, month + 1, 0);
+      while (firstSunday.getDay() !== 0) {
+        firstSunday.setDate(firstSunday.getDate() - 1);
       }
     }
 
-    const startDate = new Date(year, month, 1);
-    startDate.setDate(startDate.getDate() - startDate.getDay());
+    let currentSunday = new Date(firstSunday);
+    while (currentSunday.getMonth() === month || weeks.length === 0) {
+      const dateStr = `${currentSunday.getFullYear()}-${String(currentSunday.getMonth() + 1).padStart(2, '0')}-${String(currentSunday.getDate()).padStart(2, '0')}`;
 
-    for (let i = 0; i < 5; i++) {
-      const weekEnd = new Date(startDate);
-      weekEnd.setDate(startDate.getDate() + (i * 7) + 7);
+      weeks.push({
+        date: dateStr,
+        label: currentSunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+        shortLabel: currentSunday.getDate().toString()
+      });
 
-      if (weekEnd.getMonth() === month || (i === 0 && weekEnd.getDate() <= 7)) {
-        const dateStr = weekEnd.toISOString().split('T')[0];
-        weeks.push({
-          date: dateStr,
-          label: weekEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
-          shortLabel: weekEnd.getDate().toString()
-        });
-      }
+      currentSunday.setDate(currentSunday.getDate() + 7);
+
+      if (weeks.length >= 5) break;
     }
 
-    const uniqueWeeks = weeks.filter((w, i, arr) =>
-      arr.findIndex(x => x.date === w.date) === i
-    );
-
-    return uniqueWeeks.slice(0, 5);
+    return weeks;
   };
 
   const monthWeeks = getWeeksInMonth(currentMonth);
@@ -210,7 +203,7 @@ export const HavsEmployerDashboard: React.FC = () => {
   const stats = {
     totalSubmitted: weeks.filter(w => w.week_status === 'submitted').length,
     totalDraft: weeks.filter(w => w.week_status === 'draft').length,
-    totalMinutes: weeks.reduce((sum, w) => sum + Number(w.total_gang_minutes), 0),
+    totalGangers: gangers.length,
     totalMembers: weeks.reduce((sum, w) => sum + Number(w.total_members), 0)
   };
 
@@ -295,13 +288,11 @@ export const HavsEmployerDashboard: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-slate-500">Total Exposure</p>
-              <p className="text-3xl font-bold text-slate-900 mt-1">
-                {Math.floor(stats.totalMinutes / 60)}h {stats.totalMinutes % 60}m
-              </p>
+              <p className="text-sm font-medium text-slate-500">Active Gangers</p>
+              <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalGangers}</p>
             </div>
             <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
-              <Clock className="w-6 h-6 text-slate-600" />
+              <Users className="w-6 h-6 text-slate-600" />
             </div>
           </div>
         </div>
@@ -432,15 +423,11 @@ export const HavsEmployerDashboard: React.FC = () => {
                       ))}
                       <td className="px-4 py-4 text-center">
                         <button
-                          onClick={() => {
-                            const latestWeek = gangerWeeks[0];
-                            if (latestWeek) setSelectedWeekId(latestWeek.week_id);
-                          }}
-                          disabled={gangerWeeks.length === 0}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          onClick={() => setSelectedGangerId(ganger.id)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
                         >
                           <Eye className="w-4 h-4" />
-                          View
+                          History
                         </button>
                       </td>
                     </tr>
@@ -520,6 +507,160 @@ export const HavsEmployerDashboard: React.FC = () => {
       {selectedWeekId && (
         <HavsWeekDetail weekId={selectedWeekId} onClose={() => setSelectedWeekId(null)} />
       )}
+
+      {selectedGangerId && (() => {
+        const ganger = gangers.find(g => g.id === selectedGangerId);
+        const gangerWeeks = weeks.filter(w => w.ganger_id === selectedGangerId);
+
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {ganger?.full_name} - HAVS History
+                  </h3>
+                  <p className="text-sm text-slate-500">All submitted and draft HAVS records</p>
+                </div>
+                <button
+                  onClick={() => setSelectedGangerId(null)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-400" />
+                </button>
+              </div>
+
+              <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
+                {gangerWeeks.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <p className="text-slate-500">No HAVS records found for this ganger</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {gangerWeeks.map((week) => {
+                      const hours = Math.floor(Number(week.total_gang_minutes) / 60);
+                      const mins = Number(week.total_gang_minutes) % 60;
+
+                      return (
+                        <div
+                          key={week.week_id}
+                          className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                              week.week_status === 'submitted' ? 'bg-emerald-100' : 'bg-amber-100'
+                            }`}>
+                              {week.week_status === 'submitted'
+                                ? <CheckCircle className="w-5 h-5 text-emerald-600" />
+                                : <AlertCircle className="w-5 h-5 text-amber-600" />
+                              }
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900">
+                                Week ending {new Date(week.week_ending).toLocaleDateString('en-GB', {
+                                  day: 'numeric',
+                                  month: 'long',
+                                  year: 'numeric'
+                                })}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {week.total_members} members
+                                {week.week_submitted_at && (
+                                  <span> - Submitted {new Date(week.week_submitted_at).toLocaleDateString('en-GB')}</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-slate-900">{hours}h {mins}m</p>
+                              <p className="text-xs text-slate-500">exposure</p>
+                            </div>
+                            <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                              week.week_status === 'submitted'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-amber-100 text-amber-700'
+                            }`}>
+                              {week.week_status === 'submitted' ? 'Submitted' : 'Draft'}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setSelectedGangerId(null);
+                                setSelectedWeekId(week.week_id);
+                              }}
+                              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="View details"
+                            >
+                              <Eye className="w-4 h-4 text-slate-500" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const { data, error } = await supabase.rpc('get_havs_csv_export', {
+                                    week_id_param: week.week_id,
+                                  });
+                                  if (error) throw error;
+                                  if (!data || data.length === 0) {
+                                    alert('No data to export');
+                                    return;
+                                  }
+                                  const headers = ['Week Ending', 'Ganger', 'Member Name', 'Member Type', 'Source', 'Role', 'Equipment', 'Category', 'Day', 'Minutes', 'Total Member Minutes', 'Status', 'Submitted At'];
+                                  const csvRows = [
+                                    headers.join(','),
+                                    ...data.map((row: any) => [
+                                      row.week_ending,
+                                      `"${row.ganger_name}"`,
+                                      `"${row.member_name}"`,
+                                      row.member_type,
+                                      row.member_source,
+                                      `"${row.role}"`,
+                                      `"${row.equipment_name || ''}"`,
+                                      row.equipment_category || '',
+                                      row.day_of_week || '',
+                                      row.minutes || 0,
+                                      row.total_member_minutes || 0,
+                                      row.status,
+                                      row.submitted_at || '',
+                                    ].join(','))
+                                  ];
+                                  const csvContent = csvRows.join('\n');
+                                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                                  const url = URL.createObjectURL(blob);
+                                  const link = document.createElement('a');
+                                  link.href = url;
+                                  link.download = `HAVS_${week.week_ending}_${ganger?.full_name?.replace(/\s+/g, '_')}.csv`;
+                                  link.click();
+                                  URL.revokeObjectURL(url);
+                                } catch (err) {
+                                  console.error('Export error:', err);
+                                  alert('Failed to export CSV');
+                                }
+                              }}
+                              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                              title="Download CSV"
+                            >
+                              <Download className="w-4 h-4 text-slate-500" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+                <button
+                  onClick={() => setSelectedGangerId(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
