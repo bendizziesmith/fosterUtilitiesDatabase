@@ -53,7 +53,15 @@ export const HavsEmployerDashboard: React.FC = () => {
 
   const initializeDashboard = async () => {
     try {
-      const { data: activeWeek, error: weekError } = await supabase.rpc('get_active_havs_week');
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const day = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${year}-${month}-${day}`;
+
+      const { data: activeWeek, error: weekError } = await supabase.rpc('get_havs_week_ending', {
+        reference_date: todayStr
+      });
 
       if (weekError) throw weekError;
 

@@ -139,18 +139,30 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   }, [selectedEmployee.id, selectedWeek]);
 
-  const generateAvailableWeeks = () => {
-    const weeks: string[] = [];
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  const generateAvailableWeeks = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_viewable_week_endings', {
+        p_count: 12
+      });
 
-    for (let i = 0; i < 8; i++) {
-      const sunday = new Date(today);
-      sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
-      weeks.push(formatLocalDate(sunday));
+      if (error) throw error;
+
+      const weeks = (data || []).map((row: { week_ending: string }) => row.week_ending);
+      setAvailableWeeks(weeks);
+    } catch (err) {
+      console.error('Error fetching viewable weeks:', err);
+      const weeks: string[] = [];
+      const today = new Date();
+      const dayOfWeek = today.getDay();
+      const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+
+      for (let i = 0; i < 8; i++) {
+        const sunday = new Date(today);
+        sunday.setDate(today.getDate() - daysUntilSunday - (7 * i));
+        weeks.push(formatLocalDate(sunday));
+      }
+      setAvailableWeeks(weeks.reverse());
     }
-    setAvailableWeeks(weeks);
   };
 
   const initializeWeekData = async (weekEnding: string) => {

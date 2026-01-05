@@ -1,71 +1,128 @@
-# HAVS Week Lifecycle Fix
+# HAVS Week Lifecycle and RLS Fix
 
-## Problem Solved
-Fixed critical data safety issue where changing weeks would reuse previous week data, violating legal health and safety compliance requirements.
+## Summary
 
-## Changes Implemented
+This migration fixes the critical HAVS week creation bugs and implements proper UK week ending with grace period rules.
 
-### 1. Backend Edge Function
-**File**: `supabase/functions/start-havs-week/index.ts`
+## Critical Bugs Fixed
 
-New secure endpoint for creating HAVS weeks:
-- Validates that week doesn't already exist (prevents duplicates)
-- Creates new week record with `status: 'draft'`
-- Creates ganger member entry
-- Optionally carries over gang members (people only, no data)
-- NEVER copies exposure data, totals, comments, or submission state
+### Bug A: "Cannot create new week" (RLS Error)
 
-### 2. Start New Week Modal
-**File**: `src/apps/employee/components/StartNewWeekModal.tsx`
+**Root Cause**: The INSERT policy checked `auth.uid() = created_by` but the user_profiles table might not have a row for the authenticated user, causing silent failures in subqueries.
 
-Complete modal workflow:
-- Week selector with grace period logic (Mon/Tue applies to previous week)
-- Shows next 2 upcoming Sundays and previous 2 weeks (read-only)
-- Gang member checkboxes with clear warning about data reset
-- Explicit audit warning that all values start at zero
-- Creates week via secure API call
+**Solution**:
+1. Created `handle_new_user()` trigger on `auth.users` to auto-create user_profiles on signup
+2. Created `ensure_user_profile()` fallback function for existing users
+3. Updated INSERT policy to check both `created_by` and `ganger_id` ownership
+4. Changed week creation to use database RPC instead of edge function
 
-### 3. HAVS Form Updates
-**File**: `src/apps/employee/components/HavsTimesheetForm.tsx`
+### Bug B: "User profile not found"
 
-Critical behavior changes:
-- Removed auto-creation logic (`loadOrCreateHavsWeek` → `loadHavsWeek`)
-- Added "Start New HAVS Week" button (primary action, top right)
-- Shows clear message when no week exists for selected date
-- Week selector now navigation-only with helper text
-- Loads new week immediately after creation
+**Root Cause**: Users authenticated via Supabase auth but their corresponding user_profiles row was missing.
 
-## Data Safety Guarantees
+**Solution**:
+1. Trigger automatically creates profile on auth.users INSERT
+2. Profile links to employee via email matching
+3. Fallback function `ensure_user_profile()` handles legacy users
 
-1. **One Record Per Week**: Each employee gets exactly one HAVS record per week
-2. **Immutable Snapshots**: Previous weeks remain unchanged for audit purposes
-3. **Zero Initial State**: All new weeks start with 0 exposure minutes
-4. **No Data Bleed**: Equipment data, comments, and totals never carry over
-5. **Explicit Creation**: Weeks only created through intentional user action
+## Week Ending Grace Period Rules
 
-## User Flow
+UK HAVS compliance requires submissions to be attributed correctly:
 
-### Creating a New Week
-1. Employee clicks "Start New HAVS Week" button
-2. Modal opens with:
-   - Week ending selector (defaults to previous Sunday with grace period)
-   - Optional gang member carry-over (people only, not data)
-   - Clear audit warning about zero values
-3. Employee confirms
-4. New week created via API
-5. Page reloads into new week with empty timesheets
+| Day | Week Ending Applied |
+|-----|---------------------|
+| Sunday | This Sunday |
+| Monday | Previous Sunday |
+| Tuesday | Previous Sunday |
+| Wednesday | Next Sunday |
+| Thursday | Next Sunday |
+| Friday | Next Sunday |
+| Saturday | Next Sunday |
 
-### Viewing Past Weeks
-1. Employee clicks week selector
-2. Modal shows available weeks for viewing
-3. Helper text directs to "Start New HAVS Week" for creation
-4. Selecting week navigates to that week (no data mutation)
+**Function**: `get_havs_week_ending(reference_date, timezone_name)`
 
-## Legal Compliance
+This function is used consistently across:
+- Employee hub current week display
+- Employee timesheet record page
+- Employer dashboard default filter
+- Submission logic
+- "Start New HAVS Week" default selection
 
-This fix ensures:
-- Each week is an independent legal record
-- No accidental data reuse between weeks
-- Clear audit trail of week creation
-- Prevents HSE compliance violations
-- Maintains data integrity for inspections
+## Database Changes
+
+### New Functions
+
+1. **`handle_new_user()`** - Trigger function for auth.users INSERT
+2. **`ensure_user_profile()`** - Fallback to create missing profiles
+3. **`get_havs_week_ending(date, text)`** - Week ending with grace period
+4. **`create_havs_week(date, uuid[])`** - Transactional week creation RPC
+5. **`get_viewable_week_endings(int)`** - Returns viewable weeks (past + current)
+6. **`get_startable_week_endings(uuid)`** - Returns weeks available for new week creation
+
+### RLS Policy Changes
+
+**havs_weeks INSERT policy** now checks:
+- `auth.uid() IS NOT NULL`
+- `created_by = auth.uid()`
+- `ganger_id IN (SELECT employee_id FROM user_profiles WHERE id = auth.uid())`
+
+**user_profiles policies** separated into:
+- SELECT: own profile + admins can view all
+- INSERT: own profile only
+- UPDATE: own profile only
+
+## Frontend Changes
+
+### StartNewWeekModal
+
+- Now uses `create_havs_week` RPC instead of edge function
+- Week options fetched from `get_startable_week_endings`
+- Disabled weeks shown for dates where week already exists
+- Only current + next 2 weeks available for selection
+
+### HavsTimesheetForm
+
+- "View Week" selector now uses `get_viewable_week_endings`
+- Shows only past weeks + current effective week
+- Cannot select future weeks (must use "Start New HAVS Week")
+- Grace period note displayed in UI
+
+### HavsEmployerDashboard
+
+- Default filter now uses `get_havs_week_ending` for effective week
+- Shows active week label in header
+- "All Weeks" moved to bottom of dropdown (not default)
+
+## Week Creation Flow
+
+1. User clicks "Start New HAVS Week"
+2. Modal shows available week endings (effective + next 2)
+3. User selects week and optionally carries over members
+4. Frontend calls `create_havs_week` RPC
+5. RPC:
+   - Validates user has profile with employee_id
+   - Checks no duplicate week exists
+   - Creates havs_week row atomically
+   - Creates ganger member row
+   - Copies selected member people (not data)
+   - Returns success with week data
+6. Frontend navigates to new week
+7. All exposure values start at 0
+
+## Data Integrity Rules
+
+1. **One active HAVS week per ganger per week_ending**
+2. **Historic weeks are immutable** (read-only after submission)
+3. **No data carries over** - Only people can be copied
+4. **All exposure values reset to 0** for new weeks
+5. **Audit trail maintained** via revisions table
+
+## Acceptance Tests
+
+- [x] New week creation works for authenticated ganger (no RLS error)
+- [x] No "User profile not found" for any existing or new user
+- [x] Employee cannot view/select future weeks in "View Week"
+- [x] Only way to move forward is "Start New HAVS Week"
+- [x] Starting a new week resets all minutes to 0 while optionally carrying over people
+- [x] Employer dashboard defaults to current effective week (not All Weeks)
+- [x] Build succeeds without errors
