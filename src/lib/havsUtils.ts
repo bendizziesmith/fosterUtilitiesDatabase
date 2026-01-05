@@ -1,5 +1,3 @@
-import { supabase } from './supabase';
-
 export function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -34,25 +32,8 @@ export function getEffectiveWeekEndingLocal(referenceDate: Date = new Date()): s
   return formatLocalDate(result);
 }
 
-export async function getEffectiveWeekEnding(referenceDate: Date = new Date()): Promise<string> {
-  try {
-    const { data, error } = await supabase.rpc('get_havs_week_ending', {
-      reference_date: formatLocalDate(referenceDate)
-    });
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting week ending from server:', error);
-    return getEffectiveWeekEndingLocal(referenceDate);
-  }
-}
-
-export function getSundayForDate(date: Date): Date {
-  const result = new Date(date);
-  const dayOfWeek = result.getDay();
-  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-  result.setDate(result.getDate() + daysUntilSunday);
-  return result;
+export async function getEffectiveWeekEnding(): Promise<string> {
+  return getEffectiveWeekEndingLocal(new Date());
 }
 
 export interface ViewableWeek {
@@ -62,9 +43,8 @@ export interface ViewableWeek {
 }
 
 export async function getViewableWeeks(count: number = 8): Promise<ViewableWeek[]> {
-  const effectiveWeek = await getEffectiveWeekEnding();
+  const effectiveWeek = getEffectiveWeekEndingLocal();
   const weeks: ViewableWeek[] = [];
-
   const effectiveDate = new Date(effectiveWeek + 'T00:00:00');
 
   for (let i = 0; i < count; i++) {
@@ -89,18 +69,10 @@ export interface StartableWeek {
   alreadyExists?: boolean;
 }
 
-export async function getStartableWeeks(gangerId: string): Promise<StartableWeek[]> {
-  const effectiveWeek = await getEffectiveWeekEnding();
+export async function getStartableWeeks(_gangerId: string): Promise<StartableWeek[]> {
+  const effectiveWeek = getEffectiveWeekEndingLocal();
   const weeks: StartableWeek[] = [];
-
   const effectiveDate = new Date(effectiveWeek + 'T00:00:00');
-
-  const { data: existingWeeks } = await supabase
-    .from('havs_weeks')
-    .select('week_ending')
-    .eq('ganger_id', gangerId);
-
-  const existingDates = new Set(existingWeeks?.map(w => w.week_ending) || []);
 
   for (let i = 0; i <= 2; i++) {
     const weekDate = new Date(effectiveDate);
@@ -110,20 +82,10 @@ export async function getStartableWeeks(gangerId: string): Promise<StartableWeek
     weeks.push({
       date: dateString,
       label: formatDisplayDate(dateString),
-      isDisabled: existingDates.has(dateString),
-      alreadyExists: existingDates.has(dateString),
+      isDisabled: false,
+      alreadyExists: false,
     });
   }
 
   return weeks;
-}
-
-export function isWeekInPast(weekEnding: string): boolean {
-  const effectiveWeek = getEffectiveWeekEndingLocal();
-  return weekEnding < effectiveWeek;
-}
-
-export function isWeekInFuture(weekEnding: string): boolean {
-  const effectiveWeek = getEffectiveWeekEndingLocal();
-  return weekEnding > effectiveWeek;
 }
