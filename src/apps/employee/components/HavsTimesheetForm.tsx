@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X } from 'lucide-react';
+import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Plus } from 'lucide-react';
 import { supabase, Employee, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
+import { StartNewWeekModal } from './StartNewWeekModal';
 
 interface HavsTimesheetFormProps {
   selectedEmployee: Employee;
@@ -108,6 +109,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 }) => {
   const [showWeekSelector, setShowWeekSelector] = useState(false);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
+  const [showStartNewWeekModal, setShowStartNewWeekModal] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [havsWeek, setHavsWeek] = useState<HavsWeek | null>(null);
@@ -120,6 +122,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [weekNotFound, setWeekNotFound] = useState(false);
 
   useEffect(() => {
     const initializeForm = async () => {
@@ -153,13 +156,21 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const initializeWeekData = async (weekEnding: string) => {
     setIsLoading(true);
     setSaveError(null);
+    setWeekNotFound(false);
 
     try {
-      const week = await loadOrCreateHavsWeek(weekEnding);
+      const week = await loadHavsWeek(weekEnding);
+
+      if (!week) {
+        setWeekNotFound(true);
+        setHavsWeek(null);
+        setAllMembers([]);
+        setPeopleState([]);
+        setIsLoading(false);
+        return;
+      }
+
       setHavsWeek(week);
-
-      await ensureGangerMemberExists(week.id);
-
       await loadAllMembersAndExposure(week.id);
     } catch (error) {
       console.error('Error initializing week data:', error);
@@ -169,7 +180,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const loadOrCreateHavsWeek = async (weekEnding: string): Promise<HavsWeek> => {
+  const loadHavsWeek = async (weekEnding: string): Promise<HavsWeek | null> => {
     const { data, error } = await supabase
       .from('havs_weeks')
       .select('*')
@@ -178,45 +189,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       .maybeSingle();
 
     if (error) throw error;
-
-    if (data) {
-      return data;
-    }
-
-    const { data: newWeek, error: insertError } = await supabase
-      .from('havs_weeks')
-      .insert({
-        ganger_id: selectedEmployee.id,
-        week_ending: weekEnding,
-        status: 'draft',
-      })
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
-    return newWeek;
-  };
-
-  const ensureGangerMemberExists = async (weekId: string) => {
-    const { data: existing } = await supabase
-      .from('havs_week_members')
-      .select('id')
-      .eq('havs_week_id', weekId)
-      .eq('person_type', 'ganger')
-      .eq('employee_id', selectedEmployee.id)
-      .maybeSingle();
-
-    if (!existing) {
-      await supabase
-        .from('havs_week_members')
-        .insert({
-          havs_week_id: weekId,
-          person_type: 'ganger',
-          employee_id: selectedEmployee.id,
-          manual_name: null,
-          role: selectedEmployee.role,
-        });
-    }
+    return data;
   };
 
   const loadAllMembersAndExposure = async (weekId: string) => {
@@ -484,6 +457,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
+  const handleWeekCreated = (weekEnding: string) => {
+    setShowStartNewWeekModal(false);
+    setSelectedWeek(weekEnding);
+  };
+
   const isSubmitted = havsWeek?.status === 'submitted';
 
   const groupedEquipment = EQUIPMENT_ITEMS.reduce((acc, item) => {
@@ -528,6 +506,137 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     );
   }
 
+  if (weekNotFound && selectedWeek) {
+    return (
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="bg-white border border-slate-200 rounded-lg">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={onBack}
+                  className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
+                    <HardHat className="h-6 w-6 text-amber-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-lg font-semibold text-slate-900">HAVs Exposure Record</h1>
+                    <p className="text-sm text-slate-500">Hand Arm Vibration Syndrome Timesheet - Gang Entry</p>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowStartNewWeekModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus size={18} />
+                Start New HAVS Week
+              </button>
+            </div>
+          </div>
+
+          <div className="px-6 py-4 border-b border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Selected Week</p>
+                <button
+                  type="button"
+                  onClick={() => setShowWeekSelector(true)}
+                  className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                >
+                  {new Date(selectedWeek).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric'
+                  })}
+                  <span className="ml-1 text-xs">(change)</span>
+                </button>
+                <p className="text-xs text-slate-500 mt-1">
+                  Use "Start New HAVS Week" to begin a new week
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center justify-center min-h-[400px] px-6 py-12">
+            <div className="max-w-md text-center space-y-4">
+              <div className="p-4 bg-blue-50 rounded-full inline-block">
+                <HardHat className="h-12 w-12 text-blue-600" />
+              </div>
+              <h2 className="text-xl font-semibold text-slate-900">No HAVS Week Found</h2>
+              <p className="text-slate-600">
+                No HAVS record exists for the selected week ending {new Date(selectedWeek).toLocaleDateString('en-GB')}.
+              </p>
+              <p className="text-sm text-slate-500">
+                Click "Start New HAVS Week" above to create a new week, or change the week to view existing records.
+              </p>
+              <button
+                onClick={() => setShowStartNewWeekModal(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus size={20} />
+                Start New HAVS Week
+              </button>
+            </div>
+          </div>
+        </div>
+        {showStartNewWeekModal && (
+          <StartNewWeekModal
+            gangerId={selectedEmployee.id}
+            currentWeekEnding={selectedWeek}
+            onClose={() => setShowStartNewWeekModal(false)}
+            onWeekCreated={handleWeekCreated}
+          />
+        )}
+        {showWeekSelector && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900">View Week</h3>
+                <button
+                  onClick={() => setShowWeekSelector(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-slate-600 mb-4">
+                  Select a week to view existing records. To start a new week, use "Start New HAVS Week" button.
+                </p>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {availableWeeks.map((week) => (
+                    <button
+                      key={week}
+                      onClick={() => handleWeekSelect(week)}
+                      className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {new Date(week).toLocaleDateString('en-GB', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        })}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Week ending: {new Date(week).toLocaleDateString('en-GB')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="bg-white border border-slate-200 rounded-lg">
@@ -551,7 +660,14 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowStartNewWeekModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus size={18} />
+                Start New HAVS Week
+              </button>
               {hasUnsavedChanges && (
                 <div className="flex items-center gap-2 text-sm text-amber-600">
                   <AlertTriangle className="h-4 w-4" />
@@ -583,7 +699,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         <div className="px-6 py-4 border-b border-slate-200">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Week Ending</p>
+              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Active Week Ending</p>
               <button
                 type="button"
                 onClick={() => setShowWeekSelector(true)}
@@ -594,11 +710,16 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   month: 'long',
                   year: 'numeric'
                 })}
-                <span className="ml-1 text-xs">(change)</span>
+                <span className="ml-1 text-xs">(view other weeks)</span>
               </button>
               {havsWeek && havsWeek.revision_number && havsWeek.revision_number > 0 && (
                 <p className="text-xs text-amber-600 mt-1">
                   Revision #{havsWeek.revision_number} {havsWeek.status === 'submitted' && '(audited)'}
+                </p>
+              )}
+              {peopleState.length > 0 && (
+                <p className="text-xs text-emerald-600 font-medium mt-1">
+                  All values start at zero for this week
                 </p>
               )}
               <p className="text-xs text-slate-500 mt-1">
@@ -910,7 +1031,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Select Week Ending</h3>
+              <h3 className="text-lg font-semibold text-slate-900">View Week</h3>
               <button
                 onClick={() => setShowWeekSelector(false)}
                 className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
@@ -919,8 +1040,11 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               </button>
             </div>
             <div className="p-4">
-              <p className="text-sm text-slate-600 mb-4">
-                Select the Sunday (week ending) for your HAVs timesheet:
+              <p className="text-sm text-slate-600 mb-2">
+                Select a week to view existing records.
+              </p>
+              <p className="text-sm text-blue-600 font-medium mb-4">
+                To start a new week, use "Start New HAVS Week" button.
               </p>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {availableWeeks.map((week) => (
@@ -946,6 +1070,15 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {showStartNewWeekModal && (
+        <StartNewWeekModal
+          gangerId={selectedEmployee.id}
+          currentWeekEnding={selectedWeek}
+          onClose={() => setShowStartNewWeekModal(false)}
+          onWeekCreated={handleWeekCreated}
+        />
       )}
 
       {showSubmitConfirmation && (
