@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export function formatLocalDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -40,24 +42,57 @@ export interface ViewableWeek {
   date: string;
   label: string;
   isCurrent: boolean;
+  hasData?: boolean;
+  status?: string;
 }
 
-export async function getViewableWeeks(count: number = 8): Promise<ViewableWeek[]> {
+export async function getViewableWeeks(recentCount: number = 2, gangerId?: string): Promise<ViewableWeek[]> {
   const effectiveWeek = getEffectiveWeekEndingLocal();
-  const weeks: ViewableWeek[] = [];
   const effectiveDate = new Date(effectiveWeek + 'T00:00:00');
+  const weekMap = new Map<string, ViewableWeek>();
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < recentCount; i++) {
     const weekDate = new Date(effectiveDate);
     weekDate.setDate(effectiveDate.getDate() - (7 * i));
     const dateString = formatLocalDate(weekDate);
 
-    weeks.push({
+    weekMap.set(dateString, {
       date: dateString,
       label: formatDisplayDate(dateString),
       isCurrent: i === 0,
+      hasData: false,
     });
   }
+
+  if (gangerId) {
+    const { data: existingWeeks } = await supabase
+      .from('havs_weeks')
+      .select('week_ending, status')
+      .eq('ganger_id', gangerId)
+      .order('week_ending', { ascending: false });
+
+    if (existingWeeks) {
+      existingWeeks.forEach(week => {
+        const dateStr = week.week_ending;
+        const existing = weekMap.get(dateStr);
+        if (existing) {
+          existing.hasData = true;
+          existing.status = week.status;
+        } else {
+          weekMap.set(dateStr, {
+            date: dateStr,
+            label: formatDisplayDate(dateStr),
+            isCurrent: dateStr === effectiveWeek,
+            hasData: true,
+            status: week.status,
+          });
+        }
+      });
+    }
+  }
+
+  const weeks = Array.from(weekMap.values());
+  weeks.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return weeks;
 }

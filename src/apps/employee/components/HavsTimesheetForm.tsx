@@ -103,13 +103,13 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   useEffect(() => {
     const initializeForm = async () => {
-      const weeks = await getViewableWeeks(2);
+      const weeks = await getViewableWeeks(2, selectedEmployee.id);
       setAvailableWeeks(weeks);
       const currentWeek = await getEffectiveWeekEnding();
       setSelectedWeek(currentWeek);
     };
     initializeForm();
-  }, []);
+  }, [selectedEmployee.id]);
 
   useEffect(() => {
     if (selectedWeek) {
@@ -422,8 +422,10 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const handleWeekCreated = (weekEnding: string) => {
+  const handleWeekCreated = async (weekEnding: string) => {
     setShowStartNewWeekModal(false);
+    const updatedWeeks = await getViewableWeeks(2, selectedEmployee.id);
+    setAvailableWeeks(updatedWeeks);
     setSelectedWeek(weekEnding);
   };
 
@@ -570,28 +572,44 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 </button>
               </div>
               <div className="p-4">
-                <p className="text-sm text-slate-600 mb-4">
-                  Select a week to view existing records. To start a new week, use "Start New HAVS Week" button.
+                <p className="text-sm text-slate-600 mb-2">
+                  Select a week to view or edit records.
                 </p>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
+                <p className="text-sm text-blue-600 font-medium mb-4">
+                  To start a new week, use "Start New HAVS Week" button.
+                </p>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
                   {availableWeeks.map((week) => (
                     <button
                       key={week.date}
                       onClick={() => handleWeekSelect(week.date)}
                       className={`w-full px-4 py-3 text-left border rounded-md transition-colors ${
-                        week.isCurrent
-                          ? 'border-blue-400 bg-blue-50'
-                          : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                        week.hasData
+                          ? week.status === 'submitted'
+                            ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100'
+                            : 'border-amber-400 bg-amber-50 hover:bg-amber-100'
+                          : week.isCurrent
+                            ? 'border-blue-400 bg-blue-50'
+                            : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium text-slate-900">{week.label}</p>
-                        {week.isCurrent && (
-                          <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {week.hasData && week.status === 'submitted' && (
+                            <span className="text-xs px-2 py-0.5 bg-emerald-600 text-white rounded">Submitted</span>
+                          )}
+                          {week.hasData && week.status === 'draft' && (
+                            <span className="text-xs px-2 py-0.5 bg-amber-600 text-white rounded">Draft</span>
+                          )}
+                          {week.isCurrent && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-slate-500">
                         Week ending: {new Date(week.date).toLocaleDateString('en-GB')}
+                        {!week.hasData && ' - No record'}
                       </p>
                     </button>
                   ))}
@@ -1008,30 +1026,43 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
             </div>
             <div className="p-4">
               <p className="text-sm text-slate-600 mb-2">
-                Select a week to view existing records.
+                Select a week to view or edit records.
               </p>
               <p className="text-sm text-blue-600 font-medium mb-4">
                 To start a new week, use "Start New HAVS Week" button.
               </p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-80 overflow-y-auto">
                 {availableWeeks.map((week) => (
                   <button
                     key={week.date}
                     onClick={() => handleWeekSelect(week.date)}
                     className={`w-full px-4 py-3 text-left border rounded-md transition-colors ${
-                      week.isCurrent
-                        ? 'border-blue-400 bg-blue-50'
-                        : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                      week.hasData
+                        ? week.status === 'submitted'
+                          ? 'border-emerald-400 bg-emerald-50 hover:bg-emerald-100'
+                          : 'border-amber-400 bg-amber-50 hover:bg-amber-100'
+                        : week.isCurrent
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-slate-900">{week.label}</p>
-                      {week.isCurrent && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {week.hasData && week.status === 'submitted' && (
+                          <span className="text-xs px-2 py-0.5 bg-emerald-600 text-white rounded">Submitted</span>
+                        )}
+                        {week.hasData && week.status === 'draft' && (
+                          <span className="text-xs px-2 py-0.5 bg-amber-600 text-white rounded">Draft</span>
+                        )}
+                        {week.isCurrent && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
+                        )}
+                      </div>
                     </div>
                     <p className="text-xs text-slate-500">
                       Week ending: {new Date(week.date).toLocaleDateString('en-GB')}
+                      {!week.hasData && ' - No record'}
                     </p>
                   </button>
                 ))}
