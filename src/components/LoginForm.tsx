@@ -59,46 +59,37 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         .eq('id', authData.user.id)
         .maybeSingle();
 
-      // If no profile exists, try to create one automatically
+      // If no profile found, create one
       if (!profile) {
-        // Try to find a matching employee by email
         const { data: matchingEmployee } = await supabase
           .from('employees')
           .select('*')
           .eq('email', authData.user.email)
           .maybeSingle();
 
-        // Create the profile
-        const { error: insertError } = await supabase
+        const { error: upsertError } = await supabase
           .from('user_profiles')
-          .insert({
+          .upsert({
             id: authData.user.id,
             employee_id: matchingEmployee?.id || null,
             role: matchingEmployee ? 'employee' : 'admin',
-          });
+          }, { onConflict: 'id' });
 
-        if (insertError) {
-          console.error('Failed to create profile:', insertError);
-          throw new Error('Failed to set up your account. Please try again.');
+        if (upsertError) {
+          console.error('Profile upsert error:', upsertError);
         }
 
-        // Re-fetch the profile
         const { data: newProfile } = await supabase
           .from('user_profiles')
-          .select(
-            `
-            *,
-            employee:employees(*)
-          `
-          )
+          .select(`*, employee:employees(*)`)
           .eq('id', authData.user.id)
-          .single();
+          .maybeSingle();
 
         profile = newProfile;
       }
 
       if (!profile) {
-        throw new Error('Failed to set up your account. Please try again.');
+        throw new Error('Unable to load your profile. Please try again.');
       }
 
       // 3) Send the user to the correct app based on role
