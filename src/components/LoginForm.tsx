@@ -42,67 +42,22 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
       });
 
       if (authError || !authData?.user) {
-        // Keep this message generic for security
         throw new Error('Invalid email or password.');
       }
 
-      // 2) Fetch user profile to determine the role
-      //    user_profiles includes role + (optionally) a linked employee
-      let { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select(
-          `
-          *,
-          employee:employees(*)
-        `
-        )
-        .eq('id', authData.user.id)
-        .maybeSingle();
+      const user = authData.user;
+      const role = user.app_metadata?.role || user.user_metadata?.role || 'employee';
 
-      // If no profile found, create one
-      if (!profile) {
-        const { data: matchingEmployee } = await supabase
+      if (role === 'admin') {
+        onLoginSuccess('admin');
+      } else {
+        const { data: employee } = await supabase
           .from('employees')
           .select('*')
-          .eq('email', authData.user.email)
+          .eq('email', user.email)
           .maybeSingle();
 
-        const { error: upsertError } = await supabase
-          .from('user_profiles')
-          .upsert({
-            id: authData.user.id,
-            employee_id: matchingEmployee?.id || null,
-            role: matchingEmployee ? 'employee' : 'admin',
-          }, { onConflict: 'id' });
-
-        if (upsertError) {
-          console.error('Profile upsert error:', upsertError);
-        }
-
-        const { data: newProfile } = await supabase
-          .from('user_profiles')
-          .select(`*, employee:employees(*)`)
-          .eq('id', authData.user.id)
-          .maybeSingle();
-
-        profile = newProfile;
-      }
-
-      if (!profile) {
-        throw new Error('Unable to load your profile. Please try again.');
-      }
-
-      // 3) Send the user to the correct app based on role
-      if (profile.role === 'admin') {
-        onLoginSuccess('admin'); // No employee data for admin
-      } else if (profile.role === 'employee') {
-        // Some apps attach the employee data here
-        onLoginSuccess('employee', profile.employee ?? null);
-      } else {
-        // Unknown role fallback
-        throw new Error(
-          'Your role is not recognized. Please contact your administrator.'
-        );
+        onLoginSuccess('employee', employee);
       }
     } catch (err: any) {
       setError(err?.message || 'Login failed. Please try again.');
