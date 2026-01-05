@@ -301,7 +301,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
                 </div>
                 {getStatusBadge(compliance.todayVehicleCheck, 'high')}
               </div>
-              <p className="text-sm font-medium text-slate-900">Daily Vehicle Check</p>
+              <p className="text-sm font-medium text-slate-900">Daily Vehicle & Plant Check</p>
               <p className="text-xs text-slate-500 mt-0.5">Required each working day</p>
             </div>
 
@@ -464,7 +464,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
               )
             )}
           </div>
-          <h3 className="text-base font-semibold text-slate-900 mb-1">Daily Vehicle Check</h3>
+          <h3 className="text-base font-semibold text-slate-900 mb-1">Daily Vehicle & Plant Check</h3>
           <p className="text-sm text-slate-500 mb-3">Safety inspection for vehicles and equipment</p>
           <div className="flex items-center justify-between">
             <span className={`text-xs font-medium ${

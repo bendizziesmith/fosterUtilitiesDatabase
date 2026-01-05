@@ -279,7 +279,7 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
     switch (currentStep) {
       case 'vehicle': return 'Vehicle Selection';
       case 'odometer': return 'Odometer Reading';
-      case 'checklist': return 'Daily Vehicle Check';
+      case 'checklist': return 'Daily Vehicle & Plant Check';
       case 'additional': return 'Additional Plant Requirements';
       default: return '';
     }
@@ -517,7 +517,7 @@ export const VehicleInspectionWorkflow: React.FC<VehicleInspectionWorkflowProps>
         {currentStep === 'checklist' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-slate-900">Daily Vehicle Check (Items 1-10)</h2>
+              <h2 className="text-xl font-semibold text-slate-900">Daily Vehicle & Plant Check (Items 1-10)</h2>
               <div className="text-sm text-slate-500">
                 {formData.inspectionItems.filter(item => item.status !== null).length} of {formData.inspectionItems.length} completed
               </div>

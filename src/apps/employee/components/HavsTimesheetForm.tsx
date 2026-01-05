@@ -58,13 +58,22 @@ function formatLocalDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function getCurrentWeekSunday(): string {
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-  const sunday = new Date(today);
-  sunday.setDate(today.getDate() + daysUntilSunday);
-  return formatLocalDate(sunday);
+async function getCurrentWeekEndingWithGracePeriod(): Promise<string> {
+  try {
+    const { data, error } = await supabase.rpc('get_havs_week_ending', {
+      reference_date: formatLocalDate(new Date())
+    });
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error getting week ending:', error);
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() + daysUntilSunday);
+    return formatLocalDate(sunday);
+  }
 }
 
 function createEmptyExposure(): PersonExposureData {
@@ -100,7 +109,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showWeekSelector, setShowWeekSelector] = useState(false);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekSunday());
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [havsWeek, setHavsWeek] = useState<HavsWeek | null>(null);
   const [allMembers, setAllMembers] = useState<HavsWeekMember[]>([]);
   const [peopleState, setPeopleState] = useState<PersonState[]>([]);
@@ -113,11 +122,18 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    generateAvailableWeeks();
+    const initializeForm = async () => {
+      await generateAvailableWeeks();
+      const currentWeek = await getCurrentWeekEndingWithGracePeriod();
+      setSelectedWeek(currentWeek);
+    };
+    initializeForm();
   }, []);
 
   useEffect(() => {
-    initializeWeekData(selectedWeek);
+    if (selectedWeek) {
+      initializeWeekData(selectedWeek);
+    }
   }, [selectedEmployee.id, selectedWeek]);
 
   const generateAvailableWeeks = () => {
@@ -573,7 +589,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 onClick={() => setShowWeekSelector(true)}
                 className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
-                {new Date(selectedWeek).toLocaleDateString('en-GB', {
+                {selectedWeek && new Date(selectedWeek).toLocaleDateString('en-GB', {
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric'
@@ -585,6 +601,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                   Revision #{havsWeek.revision_number} {havsWeek.status === 'submitted' && '(audited)'}
                 </p>
               )}
+              <p className="text-xs text-slate-500 mt-1">
+                Submissions on Mon/Tue apply to previous week
+              </p>
             </div>
           </div>
         </div>

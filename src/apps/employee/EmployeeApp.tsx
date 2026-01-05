@@ -123,7 +123,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
         case 'landing':
           return `Home`;
         case 'inspection':
-          return 'Daily Vehicle Check';
+          return 'Daily Vehicle & Plant Check';
         case 'havs':
           return 'HAVs Timesheet';
         default:
@@ -139,7 +139,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
         case 'landing':
           return selectedEmployee.role + (selectedEmployee.assigned_vehicle ? ` • Assigned: ${selectedEmployee.assigned_vehicle.registration_number}` : '');
         case 'inspection':
-          return 'Daily Vehicle Check Form';
+          return 'Daily Vehicle & Plant Check Form';
         case 'havs':
           return 'Hand Arm Vibration Syndrome Exposure Record';
         default:
