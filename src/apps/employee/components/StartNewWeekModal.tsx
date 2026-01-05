@@ -51,40 +51,26 @@ async function getCurrentWeekEndingWithGracePeriod(): Promise<string> {
   }
 }
 
-async function fetchStartableWeeks(gangerId: string): Promise<WeekOption[]> {
-  try {
-    const { data, error } = await supabase.rpc('get_startable_week_endings', {
-      p_ganger_id: gangerId
+function generateWeekOptions(): WeekOption[] {
+  const options: WeekOption[] = [];
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+
+  for (let i = -2; i <= 2; i++) {
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
+    const dateString = formatLocalDate(sunday);
+
+    options.push({
+      date: dateString,
+      label: formatDisplayDate(dateString),
+      isDisabled: i < 0,
+      isPrevious: i < 0,
     });
-
-    if (error) throw error;
-
-    return (data || []).map((row: { week_ending: string; already_exists: boolean }) => ({
-      date: row.week_ending,
-      label: formatDisplayDate(row.week_ending),
-      isDisabled: row.already_exists,
-      isPrevious: false,
-    }));
-  } catch (error) {
-    console.error('Error fetching startable weeks:', error);
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-    const options: WeekOption[] = [];
-
-    for (let i = 0; i <= 2; i++) {
-      const sunday = new Date(today);
-      sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
-      const dateString = formatLocalDate(sunday);
-      options.push({
-        date: dateString,
-        label: formatDisplayDate(dateString),
-        isDisabled: false,
-        isPrevious: false,
-      });
-    }
-    return options;
   }
+
+  return options;
 }
 
 export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
@@ -103,16 +89,11 @@ export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
 
   useEffect(() => {
     const initialize = async () => {
-      const options = await fetchStartableWeeks(gangerId);
+      const options = generateWeekOptions();
       setWeekOptions(options);
 
-      const enabledOptions = options.filter(o => !o.isDisabled);
-      if (enabledOptions.length > 0) {
-        setSelectedWeekEnding(enabledOptions[0].date);
-      } else {
-        const defaultWeek = await getCurrentWeekEndingWithGracePeriod();
-        setSelectedWeekEnding(defaultWeek);
-      }
+      const defaultWeek = await getCurrentWeekEndingWithGracePeriod();
+      setSelectedWeekEnding(defaultWeek);
 
       await loadPreviousMembers();
     };
@@ -186,30 +167,39 @@ export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
     setError(null);
 
     try {
-      const { data: result, error: rpcError } = await supabase.rpc('create_havs_week', {
-        p_week_ending: selectedWeekEnding,
-        p_carry_over_member_ids: Array.from(selectedMemberIds),
-      });
-
-      if (rpcError) {
-        throw rpcError;
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        throw new Error('Not authenticated');
       }
 
-      if (!result.success) {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/start-havs-week`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sessionData.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ganger_id: gangerId,
+          week_ending: selectedWeekEnding,
+          carry_over_member_ids: Array.from(selectedMemberIds),
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          throw new Error('A HAVS week already exists for this date. Please select a different week ending.');
+        }
         throw new Error(result.error || 'Failed to create new week');
       }
 
       onWeekCreated(selectedWeekEnding);
     } catch (error) {
       console.error('Error creating week:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create new week';
-      if (errorMessage.includes('already exists')) {
-        setError('A HAVS week already exists for this date. Please select a different week ending.');
-      } else if (errorMessage.includes('not linked')) {
-        setError('Your account is not linked to an employee. Contact administrator.');
-      } else {
-        setError(errorMessage);
-      }
+      setError(error instanceof Error ? error.message : 'Failed to create new week');
     } finally {
       setIsCreating(false);
     }
