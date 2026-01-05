@@ -13,14 +13,6 @@ interface StartHavsWeekRequest {
   carry_over_member_ids?: string[];
 }
 
-interface PreviousMember {
-  id: string;
-  person_type: 'ganger' | 'operative';
-  employee_id: string | null;
-  manual_name: string | null;
-  role: string | null;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -51,13 +43,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+
+    const userClient = createClient(supabaseUrl, supabaseAnonKey);
+    const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: userError } = await userClient.auth.getUser(token);
 
     if (userError || !user) {
       return new Response(
@@ -81,15 +75,51 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: userProfile } = await supabase
+    let { data: userProfile } = await adminClient
       .from('user_profiles')
       .select('employee_id, role')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
     if (!userProfile) {
+      const { data: matchingEmployee } = await adminClient
+        .from('employees')
+        .select('id')
+        .eq('email', user.email)
+        .maybeSingle();
+
+      const { error: insertError } = await adminClient
+        .from('user_profiles')
+        .insert({
+          id: user.id,
+          employee_id: matchingEmployee?.id || null,
+          role: 'employee',
+          created_at: new Date().toISOString()
+        });
+
+      if (insertError) {
+        console.error('Failed to create user profile:', insertError);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initialize user profile. Please try again.' }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          }
+        );
+      }
+
+      const { data: newProfile } = await adminClient
+        .from('user_profiles')
+        .select('employee_id, role')
+        .eq('id', user.id)
+        .single();
+
+      userProfile = newProfile;
+    }
+
+    if (!userProfile || !userProfile.employee_id) {
       return new Response(
-        JSON.stringify({ error: 'User profile not found' }),
+        JSON.stringify({ error: 'User profile not linked to an employee. Contact administrator.' }),
         {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -107,7 +137,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: existingWeek } = await supabase
+    const { data: existingWeek } = await adminClient
       .from('havs_weeks')
       .select('id')
       .eq('ganger_id', ganger_id)
@@ -127,7 +157,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: newWeek, error: weekError } = await supabase
+    const { data: newWeek, error: weekError } = await adminClient
       .from('havs_weeks')
       .insert({
         ganger_id,
@@ -139,6 +169,7 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (weekError || !newWeek) {
+      console.error('Failed to create HAVS week:', weekError);
       return new Response(
         JSON.stringify({ error: `Failed to create HAVS week: ${weekError?.message}` }),
         {
@@ -148,13 +179,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { data: gangerEmployee } = await supabase
+    const { data: gangerEmployee } = await adminClient
       .from('employees')
       .select('role')
       .eq('id', ganger_id)
       .single();
 
-    const { error: gangerMemberError } = await supabase
+    const { error: gangerMemberError } = await adminClient
       .from('havs_week_members')
       .insert({
         havs_week_id: newWeek.id,
@@ -165,7 +196,7 @@ Deno.serve(async (req: Request) => {
       });
 
     if (gangerMemberError) {
-      await supabase.from('havs_weeks').delete().eq('id', newWeek.id);
+      await adminClient.from('havs_weeks').delete().eq('id', newWeek.id);
       return new Response(
         JSON.stringify({ error: `Failed to create ganger member: ${gangerMemberError.message}` }),
         {
@@ -176,7 +207,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (carry_over_member_ids.length > 0) {
-      const { data: previousMembers, error: prevMembersError } = await supabase
+      const { data: previousMembers, error: prevMembersError } = await adminClient
         .from('havs_week_members')
         .select('id, person_type, employee_id, manual_name, role')
         .in('id', carry_over_member_ids);
@@ -185,8 +216,8 @@ Deno.serve(async (req: Request) => {
         console.error('Error fetching previous members:', prevMembersError);
       } else if (previousMembers && previousMembers.length > 0) {
         const membersToInsert = previousMembers
-          .filter((m: PreviousMember) => m.person_type !== 'ganger')
-          .map((m: PreviousMember) => ({
+          .filter((m) => m.person_type !== 'ganger')
+          .map((m) => ({
             havs_week_id: newWeek.id,
             person_type: m.person_type,
             employee_id: m.employee_id,
@@ -195,7 +226,7 @@ Deno.serve(async (req: Request) => {
           }));
 
         if (membersToInsert.length > 0) {
-          const { error: insertMembersError } = await supabase
+          const { error: insertMembersError } = await adminClient
             .from('havs_week_members')
             .insert(membersToInsert);
 

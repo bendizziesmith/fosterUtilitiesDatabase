@@ -3,6 +3,7 @@ import { Save, Send, ArrowLeft, HardHat, Clock, CheckCircle, AlertTriangle, Shie
 import { supabase, Employee, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
 import { StartNewWeekModal } from './StartNewWeekModal';
+import { getEffectiveWeekEnding, formatLocalDate, getViewableWeeks, ViewableWeek } from '../../../lib/havsUtils';
 
 interface HavsTimesheetFormProps {
   selectedEmployee: Employee;
@@ -52,30 +53,6 @@ interface PersonState {
   actions: string;
 }
 
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-async function getCurrentWeekEndingWithGracePeriod(): Promise<string> {
-  try {
-    const { data, error } = await supabase.rpc('get_havs_week_ending', {
-      reference_date: formatLocalDate(new Date())
-    });
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting week ending:', error);
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() + daysUntilSunday);
-    return formatLocalDate(sunday);
-  }
-}
 
 function createEmptyExposure(): PersonExposureData {
   const exposure: PersonExposureData = {};
@@ -110,7 +87,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [showWeekSelector, setShowWeekSelector] = useState(false);
   const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
   const [showStartNewWeekModal, setShowStartNewWeekModal] = useState(false);
-  const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
+  const [availableWeeks, setAvailableWeeks] = useState<ViewableWeek[]>([]);
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null);
   const [havsWeek, setHavsWeek] = useState<HavsWeek | null>(null);
   const [allMembers, setAllMembers] = useState<HavsWeekMember[]>([]);
@@ -126,8 +103,9 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
 
   useEffect(() => {
     const initializeForm = async () => {
-      await generateAvailableWeeks();
-      const currentWeek = await getCurrentWeekEndingWithGracePeriod();
+      const weeks = await getViewableWeeks(8);
+      setAvailableWeeks(weeks);
+      const currentWeek = await getEffectiveWeekEnding();
       setSelectedWeek(currentWeek);
     };
     initializeForm();
@@ -138,20 +116,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       initializeWeekData(selectedWeek);
     }
   }, [selectedEmployee.id, selectedWeek]);
-
-  const generateAvailableWeeks = () => {
-    const weeks: string[] = [];
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-
-    for (let i = 0; i < 8; i++) {
-      const sunday = new Date(today);
-      sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
-      weeks.push(formatLocalDate(sunday));
-    }
-    setAvailableWeeks(weeks);
-  };
 
   const initializeWeekData = async (weekEnding: string) => {
     setIsLoading(true);
@@ -611,20 +575,22 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {availableWeeks.map((week) => (
                     <button
-                      key={week}
-                      onClick={() => handleWeekSelect(week)}
-                      className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                      key={week.date}
+                      onClick={() => handleWeekSelect(week.date)}
+                      className={`w-full px-4 py-3 text-left border rounded-md transition-colors ${
+                        week.isCurrent
+                          ? 'border-blue-400 bg-blue-50'
+                          : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
                     >
-                      <p className="text-sm font-medium text-slate-900">
-                        {new Date(week).toLocaleDateString('en-GB', {
-                          weekday: 'long',
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric'
-                        })}
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-slate-900">{week.label}</p>
+                        {week.isCurrent && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500">
-                        Week ending: {new Date(week).toLocaleDateString('en-GB')}
+                        Week ending: {new Date(week.date).toLocaleDateString('en-GB')}
                       </p>
                     </button>
                   ))}
@@ -1049,20 +1015,22 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {availableWeeks.map((week) => (
                   <button
-                    key={week}
-                    onClick={() => handleWeekSelect(week)}
-                    className="w-full px-4 py-3 text-left border border-slate-200 rounded-md hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                    key={week.date}
+                    onClick={() => handleWeekSelect(week.date)}
+                    className={`w-full px-4 py-3 text-left border rounded-md transition-colors ${
+                      week.isCurrent
+                        ? 'border-blue-400 bg-blue-50'
+                        : 'border-slate-200 hover:border-blue-400 hover:bg-blue-50'
+                    }`}
                   >
-                    <p className="text-sm font-medium text-slate-900">
-                      {new Date(week).toLocaleDateString('en-GB', {
-                        weekday: 'long',
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric'
-                      })}
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-slate-900">{week.label}</p>
+                      {week.isCurrent && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Current</span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500">
-                      Week ending: {new Date(week).toLocaleDateString('en-GB')}
+                      Week ending: {new Date(week.date).toLocaleDateString('en-GB')}
                     </p>
                   </button>
                 ))}

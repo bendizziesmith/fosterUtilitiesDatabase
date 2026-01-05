@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw, Users } from 'lucide-react';
 import { supabase, Employee, GangOperative } from '../../../lib/supabase';
+import { getEffectiveWeekEnding } from '../../../lib/havsUtils';
 
 interface EmployeeLandingProps {
   onTaskSelect: (task: 'inspection' | 'havs') => void;
@@ -48,13 +49,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     return { startISO: start.toISOString(), endISO: end.toISOString() };
   };
 
-  const getCurrentWeekEnding = () => {
-    const today = new Date();
-    const d = new Date(today);
-    const daysUntilSunday = (7 - d.getDay()) % 7;
-    d.setDate(d.getDate() + daysUntilSunday);
-    return d.toISOString().split('T')[0];
-  };
 
   const didSubmitVehicleCheckToday = async (employeeId: string): Promise<boolean> => {
     const { startISO, endISO } = getTodayRangeISO();
@@ -192,7 +186,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       setCompliance(prev => ({ ...prev, loading: true }));
 
       const employeeId = selectedEmployee.id;
-      const weekEndingStr = getCurrentWeekEnding();
+      const weekEndingStr = await getEffectiveWeekEnding();
       setWeekEnding(weekEndingStr);
 
       const todayDone = await didSubmitVehicleCheckToday(employeeId);

@@ -1,76 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertTriangle, Calendar, Users, Check } from 'lucide-react';
 import { supabase, HavsWeekMember } from '../../../lib/supabase';
+import { getEffectiveWeekEnding, getStartableWeeks, StartableWeek, formatDisplayDate } from '../../../lib/havsUtils';
 
 interface StartNewWeekModalProps {
   gangerId: string;
   currentWeekEnding: string | null;
   onClose: () => void;
   onWeekCreated: (weekEnding: string) => void;
-}
-
-interface WeekOption {
-  date: string;
-  label: string;
-  isDisabled: boolean;
-  isPrevious: boolean;
-}
-
-function formatLocalDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatDisplayDate(dateString: string): string {
-  const date = new Date(dateString + 'T00:00:00');
-  return date.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  });
-}
-
-async function getCurrentWeekEndingWithGracePeriod(): Promise<string> {
-  try {
-    const { data, error } = await supabase.rpc('get_havs_week_ending', {
-      reference_date: formatLocalDate(new Date())
-    });
-    if (error) throw error;
-    return data;
-  } catch (error) {
-    console.error('Error getting week ending:', error);
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() + daysUntilSunday);
-    return formatLocalDate(sunday);
-  }
-}
-
-function generateWeekOptions(): WeekOption[] {
-  const options: WeekOption[] = [];
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const daysUntilSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
-
-  for (let i = -2; i <= 2; i++) {
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() + daysUntilSunday + (7 * i));
-    const dateString = formatLocalDate(sunday);
-
-    options.push({
-      date: dateString,
-      label: formatDisplayDate(dateString),
-      isDisabled: i < 0,
-      isPrevious: i < 0,
-    });
-  }
-
-  return options;
 }
 
 export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
@@ -80,20 +17,24 @@ export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
   onWeekCreated,
 }) => {
   const [selectedWeekEnding, setSelectedWeekEnding] = useState<string>('');
-  const [weekOptions, setWeekOptions] = useState<WeekOption[]>([]);
+  const [weekOptions, setWeekOptions] = useState<StartableWeek[]>([]);
   const [previousMembers, setPreviousMembers] = useState<HavsWeekMember[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingMembers, setIsLoadingMembers] = useState(true);
+  const [isLoadingWeeks, setIsLoadingWeeks] = useState(true);
 
   useEffect(() => {
     const initialize = async () => {
-      const options = generateWeekOptions();
+      setIsLoadingWeeks(true);
+      const options = await getStartableWeeks(gangerId);
       setWeekOptions(options);
 
-      const defaultWeek = await getCurrentWeekEndingWithGracePeriod();
-      setSelectedWeekEnding(defaultWeek);
+      const defaultWeek = await getEffectiveWeekEnding();
+      const availableDefault = options.find(o => !o.isDisabled);
+      setSelectedWeekEnding(availableDefault?.date || defaultWeek);
+      setIsLoadingWeeks(false);
 
       await loadPreviousMembers();
     };
@@ -232,22 +173,28 @@ export const StartNewWeekModal: React.FC<StartNewWeekModalProps> = ({
               <Calendar size={18} />
               Select week ending
             </label>
-            <select
-              value={selectedWeekEnding}
-              onChange={(e) => setSelectedWeekEnding(e.target.value)}
-              disabled={isCreating}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-            >
-              {weekOptions.map((option) => (
-                <option
-                  key={option.date}
-                  value={option.date}
-                  disabled={option.isDisabled}
-                >
-                  {option.isPrevious ? '(Past) ' : ''}{option.label}
-                </option>
-              ))}
-            </select>
+            {isLoadingWeeks ? (
+              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                Loading available weeks...
+              </div>
+            ) : (
+              <select
+                value={selectedWeekEnding}
+                onChange={(e) => setSelectedWeekEnding(e.target.value)}
+                disabled={isCreating}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                {weekOptions.map((option) => (
+                  <option
+                    key={option.date}
+                    value={option.date}
+                    disabled={option.isDisabled}
+                  >
+                    {option.alreadyExists ? '(Already exists) ' : ''}{option.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <p className="mt-2 text-sm text-gray-600">
               Submissions made on Monday or Tuesday apply to the previous week.
             </p>
