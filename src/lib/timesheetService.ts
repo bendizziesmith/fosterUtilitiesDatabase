@@ -203,12 +203,9 @@ export async function upsertDayEntry(
   jobRowId: string,
   dayOfWeek: string,
   startTime: string | null,
-  finishTime: string | null,
-  officeDuration: string | null
+  finishTime: string | null
 ): Promise<TimesheetDayEntry> {
-  const hoursTotal = calculateDayHours(startTime, finishTime, officeDuration);
-
-  const pgInterval = officeDuration || '00:00:00';
+  const hoursTotal = calculateDayHours(startTime, finishTime);
 
   const { data, error } = await supabase
     .from('timesheet_day_entries')
@@ -218,7 +215,7 @@ export async function upsertDayEntry(
         day_of_week: dayOfWeek,
         start_time: startTime || null,
         finish_time: finishTime || null,
-        office_duration: pgInterval,
+        office_duration: '00:00:00',
         hours_total: Math.round(hoursTotal * 100) / 100,
         updated_at: new Date().toISOString(),
       },

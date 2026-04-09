@@ -370,13 +370,6 @@ function JobRowDetail({
     0
   );
 
-  const formatIntervalToTime = (interval: string | null | undefined): string => {
-    if (!interval) return '-';
-    const match = interval.match(/(\d{2}):(\d{2})/);
-    if (match) return `${match[1]}:${match[2]}`;
-    return '-';
-  };
-
   return (
     <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
       <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
@@ -407,9 +400,6 @@ function JobRowDetail({
               <th className="text-left text-xs font-medium text-slate-500 pb-2 px-2">
                 Finish
               </th>
-              <th className="text-left text-xs font-medium text-slate-500 pb-2 px-2">
-                Office
-              </th>
               <th className="text-right text-xs font-medium text-slate-500 pb-2 pl-2 w-14">
                 Hrs
               </th>
@@ -420,9 +410,7 @@ function JobRowDetail({
               const entry = dayEntries.find((e) => e.day_of_week === day);
               if (
                 !entry ||
-                (!entry.start_time &&
-                  !entry.finish_time &&
-                  !entry.office_duration)
+                (!entry.start_time && !entry.finish_time)
               )
                 return null;
 
@@ -438,9 +426,6 @@ function JobRowDetail({
                   </td>
                   <td className="py-2 px-2 text-xs text-slate-700 tabular-nums">
                     {entry.finish_time || '-'}
-                  </td>
-                  <td className="py-2 px-2 text-xs text-slate-700 tabular-nums">
-                    {formatIntervalToTime(entry.office_duration)}
                   </td>
                   <td className="py-2 pl-2 text-right text-xs font-medium text-slate-700 tabular-nums">
                     {entry.hours_total > 0

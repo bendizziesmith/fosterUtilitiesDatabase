@@ -30,19 +30,6 @@ export const DAY_LABELS_FULL: Record<DayOfWeek, string> = {
   sunday: 'Sunday',
 };
 
-export const OFFICE_EXTRA_OPTIONS = [
-  { value: '', label: 'None' },
-  { value: '00:15', label: '0:15' },
-  { value: '00:30', label: '0:30' },
-  { value: '00:45', label: '0:45' },
-  { value: '01:00', label: '1:00' },
-  { value: '01:30', label: '1:30' },
-  { value: '02:00', label: '2:00' },
-  { value: '02:30', label: '2:30' },
-  { value: '03:00', label: '3:00' },
-  { value: '04:00', label: '4:00' },
-];
-
 export function getWeekEndingSunday(date: Date = new Date()): string {
   const d = new Date(date);
   const day = d.getDay();
@@ -94,41 +81,20 @@ export function parseTimeToMinutes(time: string | null | undefined): number {
   return hours * 60 + minutes;
 }
 
-export function parseDurationToMinutes(duration: string | null | undefined): number {
-  if (!duration) return 0;
-  const cleaned = duration.replace(/[^0-9:]/g, '');
-  return parseTimeToMinutes(cleaned);
-}
-
 export function calculateDayHours(
   startTime: string | null | undefined,
-  finishTime: string | null | undefined,
-  officeDuration: string | null | undefined
+  finishTime: string | null | undefined
 ): number {
+  if (!startTime || !finishTime) return 0;
   const startMin = parseTimeToMinutes(startTime);
   const finishMin = parseTimeToMinutes(finishTime);
-  const officeMin = parseDurationToMinutes(officeDuration);
-
-  if (!startTime || !finishTime) return officeMin / 60;
-  if (finishMin <= startMin) return officeMin / 60;
-
-  return (finishMin - startMin + officeMin) / 60;
+  if (finishMin <= startMin) return 0;
+  return (finishMin - startMin) / 60;
 }
 
 export function formatHoursDecimal(hours: number): string {
   if (hours === 0) return '0';
   return hours.toFixed(1).replace(/\.0$/, '');
-}
-
-export function formatDurationDisplay(duration: string | null | undefined): string {
-  if (!duration) return '-';
-  const match = duration.match(/(\d{1,2}):(\d{2})/);
-  if (!match) return '-';
-  const h = parseInt(match[1], 10);
-  const m = parseInt(match[2], 10);
-  if (h === 0 && m === 0) return '-';
-  if (h === 0) return `0:${String(m).padStart(2, '0')}`;
-  return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 export function isSunday(dateStr: string): boolean {

@@ -109,7 +109,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   };
 
   const buildLocalEntries = (
-    dbEntries: { day_of_week: string; start_time: string | null; finish_time: string | null; office_duration: string | null; hours_total: number }[]
+    dbEntries: { day_of_week: string; start_time: string | null; finish_time: string | null; hours_total: number }[]
   ): LocalDayEntry[] => {
     return DAYS_OF_WEEK.map((day) => {
       const existing = dbEntries.find((e) => e.day_of_week === day);
@@ -118,7 +118,6 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           day_of_week: day,
           start_time: existing.start_time || '',
           finish_time: existing.finish_time || '',
-          office_duration: formatIntervalToTime(existing.office_duration),
           hours_total: existing.hours_total || 0,
         };
       }
@@ -126,17 +125,9 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
         day_of_week: day,
         start_time: '',
         finish_time: '',
-        office_duration: '',
         hours_total: 0,
       };
     });
-  };
-
-  const formatIntervalToTime = (interval: string | null | undefined): string => {
-    if (!interval) return '';
-    const match = interval.match(/(\d{2}):(\d{2})/);
-    if (match) return `${match[1]}:${match[2]}`;
-    return '';
   };
 
   const isEditable =
@@ -158,7 +149,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     (
       jobRowId: string,
       day: DayOfWeek,
-      field: 'start_time' | 'finish_time' | 'office_duration',
+      field: 'start_time' | 'finish_time',
       value: string
     ) => {
       setJobRows((prev) =>
@@ -169,8 +160,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
             const updated = { ...entry, [field]: value };
             updated.hours_total = calculateDayHours(
               updated.start_time || null,
-              updated.finish_time || null,
-              updated.office_duration || null
+              updated.finish_time || null
             );
             return updated;
           });
@@ -209,17 +199,12 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
         });
 
         for (const entry of row.localEntries) {
-          if (
-            entry.start_time ||
-            entry.finish_time ||
-            entry.office_duration
-          ) {
+          if (entry.start_time || entry.finish_time) {
             await upsertDayEntry(
               row.id,
               entry.day_of_week,
               entry.start_time || null,
-              entry.finish_time || null,
-              entry.office_duration || null
+              entry.finish_time || null
             );
           }
         }
@@ -267,109 +252,11 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     }
   };
 
-  const handleDuplicateRow = async (
-    sourceRow: TimesheetJobRow,
-    entries: LocalDayEntry[]
-  ) => {
-    if (!timesheet) return;
-    try {
-      const sortOrder = jobRows.length;
-      const newRow = await addJobRow(
-        timesheet.id,
-        sortOrder,
-        sourceRow.job_number,
-        sourceRow.job_address
-      );
-
-      for (const entry of entries) {
-        if (entry.start_time || entry.finish_time || entry.office_duration) {
-          await upsertDayEntry(
-            newRow.id,
-            entry.day_of_week,
-            entry.start_time || null,
-            entry.finish_time || null,
-            entry.office_duration || null
-          );
-        }
-      }
-
-      setJobRows((prev) => [
-        ...prev,
-        { ...newRow, localEntries: [...entries] },
-      ]);
-
-      const total = await recalculateWeeklyTotal(timesheet.id);
-      setWeeklyTotal(total);
-    } catch (err) {
-      console.error('Failed to duplicate row:', err);
-    }
-  };
-
-  const handleCopyMondayToWeek = useCallback(
-    (jobRowId: string) => {
-      setJobRows((prev) =>
-        prev.map((row) => {
-          if (row.id !== jobRowId) return row;
-          const mondayEntry = row.localEntries.find(
-            (e) => e.day_of_week === 'monday'
-          );
-          if (!mondayEntry?.start_time && !mondayEntry?.finish_time) return row;
-
-          const newEntries = row.localEntries.map((entry) => {
-            if (
-              entry.day_of_week === 'monday' ||
-              entry.day_of_week === 'saturday' ||
-              entry.day_of_week === 'sunday'
-            )
-              return entry;
-
-            const updated = {
-              ...entry,
-              start_time: mondayEntry.start_time,
-              finish_time: mondayEntry.finish_time,
-              office_duration: mondayEntry.office_duration,
-              hours_total: calculateDayHours(
-                mondayEntry.start_time || null,
-                mondayEntry.finish_time || null,
-                mondayEntry.office_duration || null
-              ),
-            };
-            return updated;
-          });
-          return { ...row, localEntries: newEntries };
-        })
-      );
-      scheduleSave();
-    },
-    []
-  );
-
-  const handleCopyJobDetails = async (sourceRow: TimesheetJobRow) => {
-    if (!timesheet) return;
-    try {
-      const sortOrder = jobRows.length;
-      const newRow = await addJobRow(
-        timesheet.id,
-        sortOrder,
-        sourceRow.job_number,
-        sourceRow.job_address
-      );
-      setJobRows((prev) => [
-        ...prev,
-        { ...newRow, localEntries: buildLocalEntries([]) },
-      ]);
-    } catch (err) {
-      console.error('Failed to copy job details:', err);
-    }
-  };
-
   const handleSubmit = async () => {
     if (!timesheet) return;
 
     const hasAnyData = jobRows.some((row) =>
-      row.localEntries.some(
-        (e) => e.start_time || e.finish_time || e.office_duration
-      )
+      row.localEntries.some((e) => e.start_time || e.finish_time)
     );
 
     if (!hasAnyData) {
@@ -552,9 +439,6 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
             onJobFieldChange={handleJobFieldChange}
             onDayEntryChange={handleDayEntryChange}
             onDeleteRow={handleDeleteJobRow}
-            onDuplicateRow={handleDuplicateRow}
-            onCopyJobDetails={handleCopyJobDetails}
-            onCopyMondayToWeek={handleCopyMondayToWeek}
             readOnly={!isEditable}
           />
         ))}
@@ -562,10 +446,10 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
         {isEditable && (
           <button
             onClick={handleAddJobRow}
-            className="w-full py-3 border-2 border-dashed border-slate-300 rounded-lg text-sm font-medium text-slate-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex items-center justify-center gap-2"
+            className="w-full py-3.5 border-2 border-dashed border-slate-300 rounded-xl text-sm font-medium text-slate-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex items-center justify-center gap-2"
           >
             <Plus className="h-4 w-4" />
-            Add Job Row
+            Add New Job
           </button>
         )}
       </div>
