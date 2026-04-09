@@ -7,13 +7,15 @@ import { HavsTimesheetForm } from './components/HavsTimesheetForm';
 import { supabase, Vehicle, ChecklistTemplate, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { EmployeeLanding } from './components/EmployeeLanding';
+import { TimesheetList } from './components/TimesheetList';
+import { TimesheetEditor } from './components/TimesheetEditor';
 
 interface EmployeeAppProps {
   onBack: () => void;
   currentEmployee: Employee | null;
 }
 
-type CurrentView = 'landing' | 'inspection' | 'havs';
+type CurrentView = 'landing' | 'inspection' | 'havs' | 'timesheet-list' | 'timesheet-editor';
 
 export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmployee }) => {
   const [currentView, setCurrentView] = useState<CurrentView>('landing');
@@ -26,6 +28,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
   
   const [inspectionSuccess, setInspectionSuccess] = useState(false);
   const [lastInspection, setLastInspection] = useState<{ vehicle: string; hasDefects: boolean } | null>(null);
+  const [timesheetWeekEnding, setTimesheetWeekEnding] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -94,7 +97,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
     }
   };
 
-  const handleTaskSelect = (task: 'inspection' | 'havs') => {
+  const handleTaskSelect = (task: 'inspection' | 'havs' | 'timesheet-list') => {
     setInspectionSuccess(false);
     setCurrentView(task);
   };
@@ -126,6 +129,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return 'Daily Vehicle & Plant Check';
         case 'havs':
           return 'HAVs Timesheet';
+        case 'timesheet-list':
+          return 'Weekly Timesheets';
+        case 'timesheet-editor':
+          return 'Weekly Timesheet';
         default:
           return `Home`;
       }
@@ -142,6 +149,10 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           return 'Daily Vehicle & Plant Check Form';
         case 'havs':
           return 'Hand Arm Vibration Syndrome Exposure Record';
+        case 'timesheet-list':
+          return 'Weekly work records';
+        case 'timesheet-editor':
+          return 'Edit weekly timesheet';
         default:
           return selectedEmployee.role;
       }
@@ -152,6 +163,8 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
   const handleBackNavigation = () => {
     if (currentView === 'landing') {
       onBack();
+    } else if (currentView === 'timesheet-editor') {
+      setCurrentView('timesheet-list');
     } else {
       setCurrentView('landing');
       setInspectionSuccess(false);
@@ -234,6 +247,27 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           <HavsTimesheetForm
             selectedEmployee={selectedEmployee}
             onBack={() => setCurrentView('landing')}
+          />
+        );
+
+      case 'timesheet-list':
+        return (
+          <TimesheetList
+            employee={selectedEmployee}
+            onOpenTimesheet={(weekEnding) => {
+              setTimesheetWeekEnding(weekEnding);
+              setCurrentView('timesheet-editor');
+            }}
+            onBack={() => setCurrentView('landing')}
+          />
+        );
+
+      case 'timesheet-editor':
+        return (
+          <TimesheetEditor
+            employee={selectedEmployee}
+            weekEnding={timesheetWeekEnding}
+            onBack={() => setCurrentView('timesheet-list')}
           />
         );
 

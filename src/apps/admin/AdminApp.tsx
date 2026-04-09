@@ -9,6 +9,8 @@ import { ManagementHub } from './components/ManagementHub';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
+import { TimesheetAdminList } from './components/TimesheetAdminList';
+import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -33,6 +35,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
   const [filteredInspections, setFilteredInspections] = useState<VehicleInspection[]>([]);
   const [selectedInspection, setSelectedInspection] = useState<VehicleInspection | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [selectedTimesheetId, setSelectedTimesheetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FilterState>({
     defectsOnly: false,
@@ -156,6 +159,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Vehicle Management';
       case '/havs-timesheets':
         return 'HAVs Timesheets';
+      case '/weekly-timesheets':
+        return 'Weekly Timesheets';
+      case '/weekly-timesheet-detail':
+        return 'Timesheet Detail';
       default:
         return 'Employer Dashboard';
     }
@@ -180,6 +187,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Fleet Vehicle Management';
       case '/havs-timesheets':
         return 'Hand Arm Vibration Syndrome Records';
+      case '/weekly-timesheets':
+        return 'Review and manage ganger timesheets';
+      case '/weekly-timesheet-detail':
+        return 'Timesheet review';
       default:
         return 'Management Overview';
     }
@@ -189,6 +200,9 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     const path = location.pathname;
     if (path === '/inspection-details') {
       handleBackToList();
+    } else if (path === '/weekly-timesheet-detail') {
+      setSelectedTimesheetId(null);
+      navigate('/weekly-timesheets');
     } else if (path === '/') {
       onBack();
     } else {
@@ -277,6 +291,35 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         <Route
           path="/havs-timesheets"
           element={<HavsEmployerDashboard />}
+        />
+        <Route
+          path="/weekly-timesheets"
+          element={
+            <TimesheetAdminList
+              onViewTimesheet={(id) => {
+                setSelectedTimesheetId(id);
+                navigate('/weekly-timesheet-detail');
+              }}
+            />
+          }
+        />
+        <Route
+          path="/weekly-timesheet-detail"
+          element={
+            selectedTimesheetId ? (
+              <TimesheetAdminDetail
+                timesheetId={selectedTimesheetId}
+                onBack={() => {
+                  setSelectedTimesheetId(null);
+                  navigate('/weekly-timesheets');
+                }}
+              />
+            ) : (
+              <div className="text-center py-12">
+                <p className="text-sm text-slate-500">No timesheet selected.</p>
+              </div>
+            )
+          }
         />
       </Routes>
     </Layout>

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw, Users } from 'lucide-react';
+import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw, Users, FileText } from 'lucide-react';
 import { supabase, Employee, GangOperative } from '../../../lib/supabase';
 import { getEffectiveWeekEnding } from '../../../lib/havsUtils';
 
 interface EmployeeLandingProps {
-  onTaskSelect: (task: 'inspection' | 'havs') => void;
+  onTaskSelect: (task: 'inspection' | 'havs' | 'timesheet-list') => void;
   selectedEmployee: Employee;
 }
 
@@ -558,6 +558,20 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
           </div>
         </button>
       </div>
+
+      <button
+        onClick={() => onTaskSelect('timesheet-list')}
+        className="w-full p-5 text-left rounded-lg border-2 border-teal-200 bg-white hover:border-teal-300 transition-all"
+      >
+        <div className="flex items-start justify-between mb-3">
+          <div className="p-2.5 rounded-lg bg-teal-50">
+            <FileText className="h-6 w-6 text-teal-600" />
+          </div>
+          <ChevronRight className="h-5 w-5 text-slate-400" />
+        </div>
+        <h3 className="text-base font-semibold text-slate-900 mb-1">Weekly Timesheet</h3>
+        <p className="text-sm text-slate-500">Weekly work record</p>
+      </button>
 
       <div className="bg-slate-50 border border-slate-200 rounded-lg px-6 py-4">
         <div className="flex items-start gap-3">

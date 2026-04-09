@@ -5,7 +5,8 @@ import {
   Users,
   ArrowRight,
   Shield,
-  Target
+  Target,
+  FileText,
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
 
@@ -80,6 +81,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onClick: () => navigate('/havs-timesheets')
     },
     {
+      title: 'Weekly Timesheets',
+      description: 'Review and manage ganger weekly work records',
+      icon: FileText,
+      color: 'from-teal-500 to-teal-600',
+      lightColor: 'bg-teal-50',
+      iconColor: 'text-teal-600',
+      stats: {
+        primary: 'Work',
+        secondary: 'Weekly records',
+        status: 'positive'
+      },
+      onClick: () => navigate('/weekly-timesheets')
+    },
+    {
       title: 'Management Hub',
       description: 'Manage staff and vehicles',
       icon: Users,
@@ -113,7 +128,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* Primary Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {primaryActions.map((action, index) => {
           const Icon = action.icon;
           
@@ -172,7 +187,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <button
             onClick={() => navigate('/management')}
             className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
@@ -198,6 +213,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <Shield className="h-8 w-8 text-orange-400 mb-3 group-hover:scale-110 transition-transform" />
             <div className="text-lg font-semibold mb-2">HAVs Records</div>
             <div className="text-sm text-slate-300">Vibration exposure tracking</div>
+          </button>
+
+          <button
+            onClick={() => navigate('/weekly-timesheets')}
+            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
+          >
+            <FileText className="h-8 w-8 text-teal-400 mb-3 group-hover:scale-110 transition-transform" />
+            <div className="text-lg font-semibold mb-2">Weekly Timesheets</div>
+            <div className="text-sm text-slate-300">Ganger work records</div>
           </button>
         </div>
       </div>
