@@ -139,6 +139,10 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
               hours_total: 0,
             };
 
+            if (readOnly && !entry.start_time && !entry.finish_time) {
+              return null;
+            }
+
             return (
               <DayRow
                 key={day}

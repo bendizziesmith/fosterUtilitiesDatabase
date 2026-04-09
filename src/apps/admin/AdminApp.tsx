@@ -11,6 +11,7 @@ import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
 import { TimesheetAdminList } from './components/TimesheetAdminList';
 import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
+import { TimesheetComplianceCard } from './components/TimesheetComplianceCard';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -295,12 +296,15 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         <Route
           path="/weekly-timesheets"
           element={
-            <TimesheetAdminList
-              onViewTimesheet={(id) => {
-                setSelectedTimesheetId(id);
-                navigate('/weekly-timesheet-detail');
-              }}
-            />
+            <div className="space-y-6">
+              <TimesheetComplianceCard />
+              <TimesheetAdminList
+                onViewTimesheet={(id) => {
+                  setSelectedTimesheetId(id);
+                  navigate('/weekly-timesheet-detail');
+                }}
+              />
+            </div>
           }
         />
         <Route
