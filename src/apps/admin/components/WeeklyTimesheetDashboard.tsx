@@ -6,7 +6,6 @@ import {
   FileText,
 } from 'lucide-react';
 import { TimesheetComplianceCard } from './TimesheetComplianceCard';
-import { TimesheetReportTable } from './TimesheetReportTable';
 import { TimesheetAdminList } from './TimesheetAdminList';
 import { formatWeekEnding } from '../../../lib/timesheetUtils';
 
@@ -41,30 +40,25 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
   const [weekEnding, setWeekEnding] = useState(getPreviousSunday());
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white border border-slate-200 rounded-xl px-6 py-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="space-y-5">
+      <div className="bg-white border border-slate-200 rounded-xl px-5 py-3.5">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <FileText className="h-5 w-5 text-teal-600" />
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">
-                Weekly Timesheet Overview
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Compliance, reporting and submitted timesheets
-              </p>
-            </div>
+            <h2 className="text-base font-bold text-slate-900">
+              Weekly Timesheets
+            </h2>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-50 rounded-lg px-3 py-2">
+          <div className="flex items-center gap-1 bg-slate-50 rounded-lg px-2 py-1.5">
             <button
               onClick={() => setWeekEnding(shiftWeek(weekEnding, -1))}
               className="p-1.5 hover:bg-slate-200 rounded-md transition-colors"
             >
               <ChevronLeft className="h-4 w-4 text-slate-600" />
             </button>
-            <div className="flex items-center gap-2 px-3">
-              <Calendar className="h-4 w-4 text-slate-400" />
+            <div className="flex items-center gap-2 px-2">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
               <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
                 WE {formatWeekEnding(weekEnding)}
               </span>
@@ -80,8 +74,6 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
       </div>
 
       <TimesheetComplianceCard weekEnding={weekEnding} />
-
-      <TimesheetReportTable weekEnding={weekEnding} />
 
       <TimesheetAdminList
         onViewTimesheet={onViewTimesheet}

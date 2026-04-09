@@ -5,7 +5,6 @@ import {
   Users,
   ArrowRight,
   Shield,
-  Target,
   FileText,
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
@@ -20,210 +19,122 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const navigate = useNavigate();
 
-  // Calculate statistics
   const totalInspections = inspections.length;
   const inspectionsWithDefects = inspections.filter(i => i.has_defects).length;
   const cleanInspections = totalInspections - inspectionsWithDefects;
 
-  // Recent activity (last 7 days)
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  
-  const recentInspections = inspections.filter(i => 
+  const recentInspections = inspections.filter(i =>
     new Date(i.submitted_at) >= sevenDaysAgo
   ).length;
 
-  // Today's activity
-  const today = new Date().toISOString().split('T')[0];
-  const todayInspections = inspections.filter(i => 
-    new Date(i.submitted_at).toISOString().split('T')[0] === today
-  ).length;
-
-  // Calculate inspections with fixed defects
-  const inspectionsWithFixedDefects = inspections.filter(inspection => {
-    if (!inspection.inspection_items || inspection.inspection_items.length === 0) return false;
-    
-    // Get inspections from the last 7 days for the same vehicle
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    // Check if this inspection has any items marked as defect_fixed
-    return inspection.inspection_items?.some(item => item.defect_fixed === true) || false;
-  }).length;
-
-  const primaryActions = [
-    {
-      title: 'Daily Vehicle & Plant Checks',
-      description: 'Monitor safety inspections and equipment compliance',
-      icon: ClipboardList,
-      color: 'from-blue-500 to-blue-600',
-      lightColor: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-      stats: {
-        primary: totalInspections,
-        secondary: `${recentInspections} this week`,
-        status: cleanInspections > inspectionsWithDefects ? 'positive' : 'warning'
-      },
-      onClick: () => navigate('/inspections')
-    },
-    {
-      title: 'HAVs Timesheets',
-      description: 'Monitor Hand Arm Vibration Syndrome exposure records',
-      icon: Shield,
-      color: 'from-orange-500 to-orange-600',
-      lightColor: 'bg-orange-50',
-      iconColor: 'text-orange-600',
-      stats: {
-        primary: 'Safety',
-        secondary: 'Exposure tracking',
-        status: 'positive'
-      },
-      onClick: () => navigate('/havs-timesheets')
-    },
-    {
-      title: 'Weekly Timesheets',
-      description: 'Review and manage ganger weekly work records',
-      icon: FileText,
-      color: 'from-teal-500 to-teal-600',
-      lightColor: 'bg-teal-50',
-      iconColor: 'text-teal-600',
-      stats: {
-        primary: 'Work',
-        secondary: 'Weekly records',
-        status: 'positive'
-      },
-      onClick: () => navigate('/weekly-timesheets')
-    },
-    {
-      title: 'Management Hub',
-      description: 'Manage staff and vehicles',
-      icon: Users,
-      color: 'from-slate-500 to-slate-600',
-      lightColor: 'bg-slate-50',
-      iconColor: 'text-slate-600',
-      stats: {
-        primary: 'System',
-        secondary: 'Management tools',
-        status: 'neutral'
-      },
-      onClick: () => navigate('/management')
-    }
-  ];
-
   return (
     <div className="space-y-8">
-      {/* Hero Section */}
-      <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-2xl p-8 border border-slate-200">
-        <div className="text-center max-w-3xl mx-auto">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-6">
-            <Shield className="h-8 w-8 text-blue-600" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <button
+          onClick={() => navigate('/weekly-timesheets')}
+          className="group relative bg-gradient-to-br from-teal-600 to-teal-700 rounded-2xl p-6 text-left text-white overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-teal-200/40 active:scale-[0.98]"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-10 translate-x-10" />
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/15 rounded-xl">
+                <FileText className="h-7 w-7" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Weekly Timesheets</h3>
+                <p className="text-sm text-teal-100 mt-0.5">Review submissions & compliance</p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-teal-200 group-hover:translate-x-1 transition-transform" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">
-            Employer Operations Dashboard
-          </h1>
-          <p className="text-lg text-slate-600 leading-relaxed">
-            Monitor daily safety compliance, review professional timesheets, and manage your workforce with comprehensive oversight tools.
-          </p>
-        </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/inspections')}
+          className="group relative bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 text-left text-white overflow-hidden transition-all duration-200 hover:shadow-lg hover:shadow-blue-200/40 active:scale-[0.98]"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-10 translate-x-10" />
+          <div className="relative flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/15 rounded-xl">
+                <ClipboardList className="h-7 w-7" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold">Vehicle Checks</h3>
+                <p className="text-sm text-blue-100 mt-0.5">Daily inspections & plant checks</p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-blue-200 group-hover:translate-x-1 transition-transform" />
+          </div>
+        </button>
       </div>
 
-      {/* Primary Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {primaryActions.map((action, index) => {
-          const Icon = action.icon;
-          
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {[
+          {
+            title: 'Daily Vehicle & Plant Checks',
+            description: 'Monitor safety inspections and equipment compliance',
+            icon: ClipboardList,
+            color: 'from-blue-500 to-blue-600',
+            iconBg: 'bg-blue-50',
+            iconColor: 'text-blue-600',
+            stat: totalInspections,
+            sub: `${recentInspections} this week`,
+            onClick: () => navigate('/inspections'),
+          },
+          {
+            title: 'HAVs Timesheets',
+            description: 'Hand Arm Vibration Syndrome exposure records',
+            icon: Shield,
+            color: 'from-orange-500 to-orange-600',
+            iconBg: 'bg-orange-50',
+            iconColor: 'text-orange-600',
+            stat: 'Safety',
+            sub: 'Exposure tracking',
+            onClick: () => navigate('/havs-timesheets'),
+          },
+          {
+            title: 'Management Hub',
+            description: 'Manage staff, vehicles and assignments',
+            icon: Users,
+            color: 'from-slate-500 to-slate-600',
+            iconBg: 'bg-slate-50',
+            iconColor: 'text-slate-600',
+            stat: 'System',
+            sub: 'Management tools',
+            onClick: () => navigate('/management'),
+          },
+        ].map((card, idx) => {
+          const Icon = card.icon;
           return (
             <div
-              key={index}
-              className="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-slate-200 hover:border-slate-300 cursor-pointer"
-              onClick={action.onClick}
+              key={idx}
+              onClick={card.onClick}
+              className="group bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all duration-200 cursor-pointer overflow-hidden"
             >
-              {/* Header with gradient */}
-              <div className={`bg-gradient-to-r ${action.color} p-6 text-white`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-white bg-opacity-20 rounded-xl group-hover:scale-110 transition-transform duration-200">
-                    <Icon className="h-8 w-8 text-white" />
+              <div className={`bg-gradient-to-r ${card.color} px-5 py-4 text-white`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/15 rounded-lg">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="font-bold">{card.title}</h3>
                   </div>
-                  <ArrowRight className="h-6 w-6 opacity-70 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200" />
+                  <ArrowRight className="h-4 w-4 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                 </div>
-                
-                <h3 className="text-xl font-bold mb-2 group-hover:text-opacity-90 transition-colors">
-                  {action.title}
-                </h3>
-                
-                <div className="flex items-center space-x-2 text-white text-opacity-90">
-                  <span className="text-2xl font-bold">{action.stats.primary}</span>
-                  <div className="text-sm opacity-75">{action.stats.secondary}</div>
+                <div className="flex items-baseline gap-2 mt-3">
+                  <span className="text-2xl font-bold">{card.stat}</span>
+                  <span className="text-sm opacity-75">{card.sub}</span>
                 </div>
               </div>
-
-              {/* Content */}
-              <div className="p-6">
-                <p className="text-slate-600 leading-relaxed mb-4">
-                  {action.description}
-                </p>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">
-                    Access Dashboard
-                  </span>
-                  <div className="w-8 h-8 bg-slate-100 group-hover:bg-slate-200 rounded-full flex items-center justify-center transition-colors duration-200">
-                    <ArrowRight className="h-4 w-4 text-slate-600" />
-                  </div>
-                </div>
+              <div className="px-5 py-3">
+                <p className="text-sm text-slate-600">{card.description}</p>
               </div>
             </div>
           );
         })}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-8 text-white">
-        <div className="text-center mb-8">
-          <Target className="h-12 w-12 text-blue-400 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold mb-2">System Management</h3>
-          <p className="text-slate-300">
-            Access comprehensive management tools for complete operational oversight
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <button
-            onClick={() => navigate('/management')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <Users className="h-8 w-8 text-blue-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Staff Management</div>
-            <div className="text-sm text-slate-300">Employees, vehicles & assignments</div>
-          </button>
-
-          <button
-            onClick={() => navigate('/inspections')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <ClipboardList className="h-8 w-8 text-green-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Safety Monitoring</div>
-            <div className="text-sm text-slate-300">Daily checks & compliance</div>
-          </button>
-
-          <button
-            onClick={() => navigate('/havs-timesheets')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <Shield className="h-8 w-8 text-orange-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">HAVs Records</div>
-            <div className="text-sm text-slate-300">Vibration exposure tracking</div>
-          </button>
-
-          <button
-            onClick={() => navigate('/weekly-timesheets')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <FileText className="h-8 w-8 text-teal-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Weekly Timesheets</div>
-            <div className="text-sm text-slate-300">Ganger work records</div>
-          </button>
-        </div>
       </div>
     </div>
   );
