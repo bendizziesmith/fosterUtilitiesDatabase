@@ -97,13 +97,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="space-y-8">
-      {/* Debug Label */}
-      <div className="text-center">
-        <p className="text-xs text-slate-500">
-          SUPABASE URL: {import.meta.env.VITE_SUPABASE_URL}
-        </p>
-      </div>
-
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-2xl p-8 border border-slate-200">
         <div className="text-center max-w-3xl mx-auto">

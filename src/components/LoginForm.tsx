@@ -69,20 +69,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Debug Label */}
-        <div className="mb-2 text-center">
-          <p className="text-xs text-slate-500">
-            SUPABASE URL: {import.meta.env.VITE_SUPABASE_URL}
-          </p>
-        </div>
-
-        {/* Test Branch Badge */}
-        <div className="mb-4 flex justify-center">
-          <span className="inline-block px-3 py-1 bg-orange-500 text-white text-xs font-bold rounded-full">
-            TEST BRANCH - TIMESHEET
-          </span>
-        </div>
-
         {/* Card */}
         <div className="bg-white shadow-xl rounded-2xl p-8 border border-slate-200">
           {/* Header */}
