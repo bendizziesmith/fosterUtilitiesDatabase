@@ -21,10 +21,12 @@ import {
 
 interface TimesheetAdminListProps {
   onViewTimesheet: (timesheetId: string) => void;
+  weekEnding?: string;
 }
 
 export const TimesheetAdminList: React.FC<TimesheetAdminListProps> = ({
   onViewTimesheet,
+  weekEnding,
 }) => {
   const [timesheets, setTimesheets] = useState<TimesheetWeek[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,7 +35,7 @@ export const TimesheetAdminList: React.FC<TimesheetAdminListProps> = ({
 
   useEffect(() => {
     loadTimesheets();
-  }, []);
+  }, [weekEnding]);
 
   const loadTimesheets = async () => {
     try {
@@ -48,6 +50,7 @@ export const TimesheetAdminList: React.FC<TimesheetAdminListProps> = ({
   };
 
   const filtered = timesheets.filter((t) => {
+    if (weekEnding && t.week_ending !== weekEnding) return false;
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();

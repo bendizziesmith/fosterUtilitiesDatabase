@@ -318,6 +318,36 @@ export async function loadAllSubmittedTimesheets(): Promise<TimesheetWeek[]> {
   return data || [];
 }
 
+export async function loadTimesheetsForWeek(
+  weekEnding: string
+): Promise<TimesheetWeek[]> {
+  const { data, error } = await supabase
+    .from('timesheet_weeks')
+    .select(`
+      *,
+      ganger:employees!ganger_employee_id(id, full_name, role),
+      job_rows:timesheet_job_rows(
+        *,
+        day_entries:timesheet_day_entries(*)
+      )
+    `)
+    .eq('week_ending', weekEnding)
+    .in('status', ['submitted', 'returned'])
+    .order('ganger_name_snapshot');
+
+  if (error) throw error;
+
+  (data || []).forEach((ts: TimesheetWeek) => {
+    if (ts.job_rows) {
+      ts.job_rows.sort(
+        (a: TimesheetJobRow, b: TimesheetJobRow) => a.sort_order - b.sort_order
+      );
+    }
+  });
+
+  return data || [];
+}
+
 export async function loadTimesheetDetail(
   timesheetId: string
 ): Promise<TimesheetWeek | null> {

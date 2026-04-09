@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
   CheckCircle,
   AlertTriangle,
   XCircle,
@@ -12,7 +9,6 @@ import {
   Car,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
-import { formatWeekEnding } from '../../../lib/timesheetUtils';
 
 interface ComplianceEmployee {
   id: string;
@@ -29,29 +25,22 @@ interface TimesheetRecord {
   submitted_at: string | null;
 }
 
-function getPreviousSunday(): string {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = day === 0 ? 7 : day;
-  const prevSunday = new Date(now);
-  prevSunday.setDate(now.getDate() - diff);
-  const y = prevSunday.getFullYear();
-  const m = String(prevSunday.getMonth() + 1).padStart(2, '0');
-  const d = String(prevSunday.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+export interface ComplianceCounts {
+  total: number;
+  submitted: number;
+  returned: number;
+  notSubmitted: number;
 }
 
-function getAdjacentSunday(dateStr: string, direction: number): string {
-  const date = new Date(dateStr + 'T00:00:00');
-  date.setDate(date.getDate() + 7 * direction);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+interface TimesheetComplianceCardProps {
+  weekEnding: string;
+  onCountsChange?: (counts: ComplianceCounts) => void;
 }
 
-export const TimesheetComplianceCard: React.FC = () => {
-  const [weekEnding, setWeekEnding] = useState(getPreviousSunday());
+export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = ({
+  weekEnding,
+  onCountsChange,
+}) => {
   const [employees, setEmployees] = useState<ComplianceEmployee[]>([]);
   const [timesheets, setTimesheets] = useState<TimesheetRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,49 +105,35 @@ export const TimesheetComplianceCard: React.FC = () => {
 
   const totalExpected = employees.length;
 
+  useEffect(() => {
+    if (!loading && onCountsChange) {
+      onCountsChange({
+        total: totalExpected,
+        submitted: submitted.length,
+        returned: returned.length,
+        notSubmitted: notSubmitted.length,
+      });
+    }
+  }, [loading, employees, timesheets]);
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <div className="px-6 py-5 border-b border-slate-200">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Weekly Timesheet Compliance
-            </h3>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Submission status for gangers and backup drivers
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+      <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-bold text-slate-900">
+            Submission Compliance
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Gangers and backup drivers
+          </p>
         </div>
-
-        <div className="flex items-center justify-between mt-4 bg-slate-50 rounded-lg px-4 py-2.5">
-          <button
-            onClick={() => setWeekEnding(getAdjacentSunday(weekEnding, -1))}
-            className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <ChevronLeft className="h-5 w-5 text-slate-600" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-slate-400" />
-            <span className="text-sm font-semibold text-slate-800">
-              Week Ending {formatWeekEnding(weekEnding)}
-            </span>
-          </div>
-          <button
-            onClick={() => setWeekEnding(getAdjacentSunday(weekEnding, 1))}
-            className="p-1.5 hover:bg-slate-200 rounded-lg transition-colors"
-          >
-            <ChevronRight className="h-5 w-5 text-slate-600" />
-          </button>
-        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
       </div>
 
       {loading ? (

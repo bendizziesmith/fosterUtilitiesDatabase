@@ -9,9 +9,9 @@ import { ManagementHub } from './components/ManagementHub';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
-import { TimesheetAdminList } from './components/TimesheetAdminList';
 import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
-import { TimesheetComplianceCard } from './components/TimesheetComplianceCard';
+import { WeeklyTimesheetDashboard } from './components/WeeklyTimesheetDashboard';
+import { TimesheetComplianceChart } from './components/TimesheetComplianceChart';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -240,6 +240,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
                 inspections={inspections}
                 employees={employees}
               />
+              <TimesheetComplianceChart />
               <AdminDashboard
                 inspections={inspections}
                 plantRecords={[]}
@@ -296,15 +297,12 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         <Route
           path="/weekly-timesheets"
           element={
-            <div className="space-y-6">
-              <TimesheetComplianceCard />
-              <TimesheetAdminList
-                onViewTimesheet={(id) => {
-                  setSelectedTimesheetId(id);
-                  navigate('/weekly-timesheet-detail');
-                }}
-              />
-            </div>
+            <WeeklyTimesheetDashboard
+              onViewTimesheet={(id) => {
+                setSelectedTimesheetId(id);
+                navigate('/weekly-timesheet-detail');
+              }}
+            />
           }
         />
         <Route
