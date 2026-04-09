@@ -305,6 +305,45 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     }
   };
 
+  const handleCopyMondayToWeek = useCallback(
+    (jobRowId: string) => {
+      setJobRows((prev) =>
+        prev.map((row) => {
+          if (row.id !== jobRowId) return row;
+          const mondayEntry = row.localEntries.find(
+            (e) => e.day_of_week === 'monday'
+          );
+          if (!mondayEntry?.start_time && !mondayEntry?.finish_time) return row;
+
+          const newEntries = row.localEntries.map((entry) => {
+            if (
+              entry.day_of_week === 'monday' ||
+              entry.day_of_week === 'saturday' ||
+              entry.day_of_week === 'sunday'
+            )
+              return entry;
+
+            const updated = {
+              ...entry,
+              start_time: mondayEntry.start_time,
+              finish_time: mondayEntry.finish_time,
+              office_duration: mondayEntry.office_duration,
+              hours_total: calculateDayHours(
+                mondayEntry.start_time || null,
+                mondayEntry.finish_time || null,
+                mondayEntry.office_duration || null
+              ),
+            };
+            return updated;
+          });
+          return { ...row, localEntries: newEntries };
+        })
+      );
+      scheduleSave();
+    },
+    []
+  );
+
   const handleCopyJobDetails = async (sourceRow: TimesheetJobRow) => {
     if (!timesheet) return;
     try {
@@ -515,6 +554,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
             onDeleteRow={handleDeleteJobRow}
             onDuplicateRow={handleDuplicateRow}
             onCopyJobDetails={handleCopyJobDetails}
+            onCopyMondayToWeek={handleCopyMondayToWeek}
             readOnly={!isEditable}
           />
         ))}
