@@ -134,3 +134,91 @@ export function getStatusInfo(status: string): TimesheetStatusInfo {
       };
   }
 }
+
+function escapeCSV(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+export function downloadTimesheetCSV(ts: {
+  week_ending: string;
+  ganger?: any;
+  ganger_name_snapshot?: string;
+  vehicle_registration_snapshot?: string | null;
+  labourer_1_name?: string | null;
+  labourer_2_name?: string | null;
+  weekly_total_hours: number;
+  job_rows?: Array<{
+    job_number: string;
+    job_address: string;
+    day_entries?: Array<{
+      day_of_week: string;
+      start_time: string | null;
+      finish_time: string | null;
+      hours_total: number;
+    }>;
+  }>;
+}): void {
+  const empName =
+    ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
+  const role = ts.ganger?.role || '';
+  const vehicle = ts.vehicle_registration_snapshot || '';
+  const lab1 = ts.labourer_1_name || '';
+  const lab2 = ts.labourer_2_name || '';
+
+  const headers = [
+    'Week Ending',
+    'Employee Name',
+    'Role',
+    'Vehicle',
+    'Labourer 1',
+    'Labourer 2',
+    'Job Number',
+    'Job Address / Location',
+    'Day of Week',
+    'Start',
+    'Finish',
+    'Hours',
+    'Weekly Total Hours',
+  ];
+
+  const rows: string[] = [headers.join(',')];
+
+  for (const jobRow of ts.job_rows || []) {
+    for (const day of DAYS_OF_WEEK) {
+      const entry = (jobRow.day_entries || []).find(
+        (e) => e.day_of_week === day
+      );
+      if (!entry || (!entry.start_time && !entry.finish_time)) continue;
+
+      rows.push(
+        [
+          escapeCSV(formatWeekEnding(ts.week_ending)),
+          escapeCSV(empName),
+          escapeCSV(role),
+          escapeCSV(vehicle),
+          escapeCSV(lab1),
+          escapeCSV(lab2),
+          escapeCSV(jobRow.job_number || ''),
+          escapeCSV(jobRow.job_address || ''),
+          escapeCSV(DAY_LABELS_FULL[day as DayOfWeek]),
+          escapeCSV(entry.start_time || ''),
+          escapeCSV(entry.finish_time || ''),
+          formatHoursDecimal(entry.hours_total || 0),
+          formatHoursDecimal(ts.weekly_total_hours),
+        ].join(',')
+      );
+    }
+  }
+
+  const safeName = empName.replace(/[^a-zA-Z0-9]/g, '_');
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `Timesheet_${safeName}_WE_${ts.week_ending}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}

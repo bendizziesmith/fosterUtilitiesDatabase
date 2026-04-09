@@ -6,7 +6,6 @@ import {
   FileText,
 } from 'lucide-react';
 import { TimesheetComplianceCard } from './TimesheetComplianceCard';
-import { TimesheetAdminList } from './TimesheetAdminList';
 import { formatWeekEnding } from '../../../lib/timesheetUtils';
 
 function getPreviousSunday(): string {
@@ -73,11 +72,9 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
         </div>
       </div>
 
-      <TimesheetComplianceCard weekEnding={weekEnding} />
-
-      <TimesheetAdminList
-        onViewTimesheet={onViewTimesheet}
+      <TimesheetComplianceCard
         weekEnding={weekEnding}
+        onViewTimesheet={onViewTimesheet}
       />
     </div>
   );

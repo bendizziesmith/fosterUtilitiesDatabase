@@ -7,8 +7,15 @@ import {
   RotateCcw,
   RefreshCw,
   Car,
+  Clock,
+  Eye,
+  Download,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import {
+  formatHoursDecimal,
+  downloadTimesheetCSV,
+} from '../../../lib/timesheetUtils';
 
 interface ComplianceEmployee {
   id: string;
@@ -20,9 +27,16 @@ interface ComplianceEmployee {
 interface TimesheetRecord {
   id: string;
   ganger_employee_id: string;
+  ganger_name_snapshot: string;
   status: string;
+  week_ending: string;
   weekly_total_hours: number;
   submitted_at: string | null;
+  vehicle_registration_snapshot: string | null;
+  labourer_1_name: string | null;
+  labourer_2_name: string | null;
+  job_rows?: any[];
+  ganger?: any;
 }
 
 export interface ComplianceCounts {
@@ -35,11 +49,13 @@ export interface ComplianceCounts {
 interface TimesheetComplianceCardProps {
   weekEnding: string;
   onCountsChange?: (counts: ComplianceCounts) => void;
+  onViewTimesheet?: (timesheetId: string) => void;
 }
 
 export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = ({
   weekEnding,
   onCountsChange,
+  onViewTimesheet,
 }) => {
   const [employees, setEmployees] = useState<ComplianceEmployee[]>([]);
   const [timesheets, setTimesheets] = useState<TimesheetRecord[]>([]);
@@ -62,7 +78,16 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
           .order('full_name'),
         supabase
           .from('timesheet_weeks')
-          .select('id, ganger_employee_id, status, weekly_total_hours, submitted_at')
+          .select(`
+            id, ganger_employee_id, ganger_name_snapshot, status, week_ending,
+            weekly_total_hours, submitted_at, vehicle_registration_snapshot,
+            labourer_1_name, labourer_2_name,
+            ganger:employees!ganger_employee_id(id, full_name, role),
+            job_rows:timesheet_job_rows(
+              *,
+              day_entries:timesheet_day_entries(*)
+            )
+          `)
           .eq('week_ending', weekEnding),
       ]);
 
@@ -115,6 +140,14 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
       });
     }
   }, [loading, employees, timesheets]);
+
+  const getInitials = (name: string) =>
+    name
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -173,6 +206,137 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
             />
           </div>
 
+          {submitted.length > 0 && (
+            <div className="border-t border-slate-200">
+              <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-emerald-500" />
+                  <span className="text-sm font-semibold text-emerald-800">
+                    Submitted ({submitted.length})
+                  </span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {submitted.map((emp) => {
+                  const ts = getTimesheetForEmployee(emp.id);
+                  return (
+                    <div
+                      key={emp.id}
+                      className="px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-emerald-700">
+                          {getInitials(emp.full_name)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {emp.full_name}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                          <span className="text-xs text-slate-500">{emp.role}</span>
+                          {emp.assigned_vehicle && (
+                            <span className="flex items-center gap-1 text-xs text-slate-400">
+                              <Car className="h-3 w-3" />
+                              {emp.assigned_vehicle}
+                            </span>
+                          )}
+                          {ts?.weekly_total_hours != null && (
+                            <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                              <Clock className="h-3 w-3" />
+                              {formatHoursDecimal(ts.weekly_total_hours)}h
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {ts && (
+                          <>
+                            <button
+                              onClick={() => downloadTimesheetCSV(ts)}
+                              title="Download CSV"
+                              className="p-2 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                            {onViewTimesheet && (
+                              <button
+                                onClick={() => onViewTimesheet(ts.id)}
+                                title="View Timesheet"
+                                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {returned.length > 0 && (
+            <div className="border-t border-slate-200">
+              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm font-semibold text-amber-800">
+                    Returned Timesheets ({returned.length})
+                  </span>
+                </div>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {returned.map((emp) => {
+                  const ts = getTimesheetForEmployee(emp.id);
+                  return (
+                    <div
+                      key={emp.id}
+                      className="px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-bold text-amber-700">
+                          {getInitials(emp.full_name)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-900 truncate">
+                          {emp.full_name}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                          <span className="text-xs text-slate-500">{emp.role}</span>
+                          {emp.assigned_vehicle && (
+                            <span className="flex items-center gap-1 text-xs text-slate-400">
+                              <Car className="h-3 w-3" />
+                              {emp.assigned_vehicle}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {ts && onViewTimesheet && (
+                          <button
+                            onClick={() => onViewTimesheet(ts.id)}
+                            title="View Timesheet"
+                            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        )}
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          <RotateCcw className="h-3 w-3" />
+                          Returned
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {notSubmitted.length > 0 && (
             <div className="border-t border-slate-200">
               <div className="px-5 py-3 bg-red-50 border-b border-red-100">
@@ -196,12 +360,7 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                       <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-bold text-red-700">
-                            {emp.full_name
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .toUpperCase()
-                              .slice(0, 2)}
+                            {getInitials(emp.full_name)}
                           </span>
                         </div>
                         <div>
@@ -237,118 +396,6 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                             Not submitted
                           </>
                         )}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {returned.length > 0 && (
-            <div className="border-t border-slate-200">
-              <div className="px-5 py-3 bg-amber-50 border-b border-amber-100">
-                <div className="flex items-center gap-2">
-                  <RotateCcw className="h-4 w-4 text-amber-500" />
-                  <span className="text-sm font-semibold text-amber-800">
-                    Returned Timesheets ({returned.length})
-                  </span>
-                </div>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {returned.map((emp) => (
-                  <div
-                    key={emp.id}
-                    className="px-5 py-3.5 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-amber-700">
-                          {emp.full_name
-                            .split(' ')
-                            .map((n) => n[0])
-                            .join('')
-                            .toUpperCase()
-                            .slice(0, 2)}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">
-                          {emp.full_name}
-                        </p>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-xs text-slate-500">{emp.role}</span>
-                          {emp.assigned_vehicle && (
-                            <span className="flex items-center gap-1 text-xs text-slate-400">
-                              <Car className="h-3 w-3" />
-                              {emp.assigned_vehicle}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                      <RotateCcw className="h-3 w-3" />
-                      Returned
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {submitted.length > 0 && (
-            <div className="border-t border-slate-200">
-              <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-emerald-500" />
-                  <span className="text-sm font-semibold text-emerald-800">
-                    Submitted ({submitted.length})
-                  </span>
-                </div>
-              </div>
-              <div className="divide-y divide-slate-100">
-                {submitted.map((emp) => {
-                  const ts = getTimesheetForEmployee(emp.id);
-                  return (
-                    <div
-                      key={emp.id}
-                      className="px-5 py-3.5 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-emerald-700">
-                            {emp.full_name
-                              .split(' ')
-                              .map((n) => n[0])
-                              .join('')
-                              .toUpperCase()
-                              .slice(0, 2)}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-900">
-                            {emp.full_name}
-                          </p>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            <span className="text-xs text-slate-500">{emp.role}</span>
-                            {emp.assigned_vehicle && (
-                              <span className="flex items-center gap-1 text-xs text-slate-400">
-                                <Car className="h-3 w-3" />
-                                {emp.assigned_vehicle}
-                              </span>
-                            )}
-                            {ts?.weekly_total_hours != null && (
-                              <span className="text-xs font-medium text-emerald-600">
-                                {ts.weekly_total_hours}h
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <CheckCircle className="h-3 w-3" />
-                        Submitted
                       </span>
                     </div>
                   );

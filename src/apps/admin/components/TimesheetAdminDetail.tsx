@@ -10,6 +10,7 @@ import {
   Users,
   CheckCircle,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import {
   TimesheetWeek,
@@ -23,6 +24,7 @@ import {
   formatWeekEnding,
   formatHoursDecimal,
   getStatusInfo,
+  downloadTimesheetCSV,
 } from '../../../lib/timesheetUtils';
 
 interface TimesheetAdminDetailProps {
@@ -262,8 +264,15 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
         </div>
       </div>
 
-      {timesheet.status === 'submitted' && (
-        <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => downloadTimesheetCSV(timesheet)}
+          className="flex items-center gap-2 px-5 py-2.5 border-2 border-teal-300 text-teal-700 rounded-lg font-medium text-sm hover:bg-teal-50 transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          Download CSV
+        </button>
+        {timesheet.status === 'submitted' && (
           <button
             onClick={() => setShowReturnModal(true)}
             className="flex items-center gap-2 px-5 py-2.5 border-2 border-red-300 text-red-700 rounded-lg font-medium text-sm hover:bg-red-50 transition-colors"
@@ -271,8 +280,8 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
             <RotateCcw className="h-4 w-4" />
             Return to Ganger
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {showReturnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
