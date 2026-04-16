@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, User, Car, Users } from 'lucide-react';
+import { Calendar, User, Car, Users, FileText } from 'lucide-react';
 import { TimesheetWeek } from '../../../../lib/timesheetService';
 import { formatWeekEnding, getRecentSundays } from '../../../../lib/timesheetUtils';
 
@@ -8,8 +8,10 @@ interface TimesheetHeaderProps {
   weekEnding: string;
   labourer1: string;
   labourer2: string;
+  weeklyNotes: string;
   onLabourer1Change: (value: string) => void;
   onLabourer2Change: (value: string) => void;
+  onWeeklyNotesChange: (value: string) => void;
   onWeekEndingChange: (value: string) => void;
   readOnly: boolean;
 }
@@ -19,8 +21,10 @@ export const TimesheetHeader: React.FC<TimesheetHeaderProps> = ({
   weekEnding,
   labourer1,
   labourer2,
+  weeklyNotes,
   onLabourer1Change,
   onLabourer2Change,
+  onWeeklyNotesChange,
   onWeekEndingChange,
   readOnly,
 }) => {
@@ -144,6 +148,28 @@ export const TimesheetHeader: React.FC<TimesheetHeaderProps> = ({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="border-t border-slate-200 pt-5">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            <FileText className="h-3.5 w-3.5" />
+            Weekly Notes
+          </label>
+          {readOnly ? (
+            weeklyNotes ? (
+              <p className="text-sm text-slate-700 whitespace-pre-wrap">{weeklyNotes}</p>
+            ) : (
+              <p className="text-sm text-slate-400 italic">No notes</p>
+            )
+          ) : (
+            <textarea
+              value={weeklyNotes}
+              onChange={(e) => onWeeklyNotesChange(e.target.value)}
+              placeholder="Add any notes for this week (optional)"
+              rows={3}
+              className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 resize-none"
+            />
+          )}
         </div>
       </div>
     </div>

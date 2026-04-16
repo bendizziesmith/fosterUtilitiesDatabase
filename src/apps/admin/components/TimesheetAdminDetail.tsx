@@ -264,6 +264,22 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
         </div>
       </div>
 
+      {timesheet.weekly_notes && (
+        <div className="bg-white border border-slate-200 rounded-lg p-5">
+          <div className="flex items-start gap-2.5">
+            <FileText className="h-4.5 w-4.5 text-slate-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                Weekly Notes
+              </p>
+              <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                {timesheet.weekly_notes}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <button
           onClick={() => downloadTimesheetCSV(timesheet)}

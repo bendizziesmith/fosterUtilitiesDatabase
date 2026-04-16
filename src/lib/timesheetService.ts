@@ -11,6 +11,7 @@ export interface TimesheetWeek {
   vehicle_registration_snapshot: string | null;
   labourer_1_name: string | null;
   labourer_2_name: string | null;
+  weekly_notes: string | null;
   weekly_total_hours: number;
   submitted_at: string | null;
   returned_at: string | null;
@@ -28,6 +29,8 @@ export interface TimesheetJobRow {
   sort_order: number;
   job_number: string;
   job_address: string;
+  default_start_time: string | null;
+  default_finish_time: string | null;
   created_at: string;
   updated_at: string;
   day_entries?: TimesheetDayEntry[];
@@ -147,6 +150,7 @@ export async function saveTimesheetHeader(
   updates: {
     labourer_1_name?: string | null;
     labourer_2_name?: string | null;
+    weekly_notes?: string | null;
   }
 ): Promise<void> {
   const { error } = await supabase
@@ -180,7 +184,13 @@ export async function addJobRow(
 
 export async function updateJobRow(
   jobRowId: string,
-  updates: { job_number?: string; job_address?: string; sort_order?: number }
+  updates: {
+    job_number?: string;
+    job_address?: string;
+    sort_order?: number;
+    default_start_time?: string | null;
+    default_finish_time?: string | null;
+  }
 ): Promise<void> {
   const { error } = await supabase
     .from('timesheet_job_rows')
@@ -195,6 +205,19 @@ export async function deleteJobRow(jobRowId: string): Promise<void> {
     .from('timesheet_job_rows')
     .delete()
     .eq('id', jobRowId);
+
+  if (error) throw error;
+}
+
+export async function deleteDayEntry(
+  jobRowId: string,
+  dayOfWeek: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('timesheet_day_entries')
+    .delete()
+    .eq('timesheet_job_row_id', jobRowId)
+    .eq('day_of_week', dayOfWeek);
 
   if (error) throw error;
 }

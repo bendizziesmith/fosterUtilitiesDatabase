@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Clock,
   RotateCcw,
+  FileText,
 } from 'lucide-react';
 import { Employee } from '../../../lib/supabase';
 import {
@@ -18,6 +19,7 @@ import {
   addJobRow,
   updateJobRow,
   deleteJobRow,
+  deleteDayEntry,
   upsertDayEntry,
   recalculateWeeklyTotal,
   submitTimesheet,
@@ -42,6 +44,8 @@ interface TimesheetEditorProps {
 
 interface LocalJobRow extends TimesheetJobRow {
   localEntries: LocalDayEntry[];
+  localDefaultStart: string;
+  localDefaultFinish: string;
 }
 
 export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
@@ -53,6 +57,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   const [jobRows, setJobRows] = useState<LocalJobRow[]>([]);
   const [labourer1, setLabourer1] = useState('');
   const [labourer2, setLabourer2] = useState('');
+  const [weeklyNotes, setWeeklyNotes] = useState('');
   const [weekEnding, setWeekEnding] = useState(initialWeekEnding);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -67,11 +72,13 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   const jobRowsRef = useRef(jobRows);
   const labourer1Ref = useRef(labourer1);
   const labourer2Ref = useRef(labourer2);
+  const weeklyNotesRef = useRef(weeklyNotes);
 
   useEffect(() => { timesheetRef.current = timesheet; }, [timesheet]);
   useEffect(() => { jobRowsRef.current = jobRows; }, [jobRows]);
   useEffect(() => { labourer1Ref.current = labourer1; }, [labourer1]);
   useEffect(() => { labourer2Ref.current = labourer2; }, [labourer2]);
+  useEffect(() => { weeklyNotesRef.current = weeklyNotes; }, [weeklyNotes]);
 
   useEffect(() => {
     loadTimesheet();
@@ -92,11 +99,14 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
       setTimesheet(sheet);
       setLabourer1(sheet.labourer_1_name || '');
       setLabourer2(sheet.labourer_2_name || '');
+      setWeeklyNotes(sheet.weekly_notes || '');
       setWeeklyTotal(sheet.weekly_total_hours || 0);
 
       const rows: LocalJobRow[] = (sheet.job_rows || []).map((row) => ({
         ...row,
         localEntries: buildLocalEntries(row.day_entries || []),
+        localDefaultStart: row.default_start_time || '',
+        localDefaultFinish: row.default_finish_time || '',
       }));
 
       setJobRows(rows);
@@ -134,11 +144,77 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     timesheet?.status === 'draft' || timesheet?.status === 'returned';
 
   const handleJobFieldChange = useCallback(
-    (jobRowId: string, field: 'job_number' | 'job_address', value: string) => {
+    (jobRowId: string, field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time', value: string) => {
       setJobRows((prev) =>
-        prev.map((row) =>
-          row.id === jobRowId ? { ...row, [field]: value } : row
-        )
+        prev.map((row) => {
+          if (row.id !== jobRowId) return row;
+
+          if (field === 'default_start_time') {
+            const updated = { ...row, localDefaultStart: value };
+            updated.localEntries = updated.localEntries.map((entry) => {
+              if (!entry.start_time && !entry.finish_time) return entry;
+              if (entry.start_time === row.localDefaultStart || !entry.start_time) {
+                const newEntry = { ...entry, start_time: value };
+                newEntry.hours_total = calculateDayHours(
+                  newEntry.start_time || null,
+                  newEntry.finish_time || null
+                );
+                return newEntry;
+              }
+              return entry;
+            });
+            return updated;
+          }
+
+          if (field === 'default_finish_time') {
+            const updated = { ...row, localDefaultFinish: value };
+            updated.localEntries = updated.localEntries.map((entry) => {
+              if (!entry.start_time && !entry.finish_time) return entry;
+              if (entry.finish_time === row.localDefaultFinish || !entry.finish_time) {
+                const newEntry = { ...entry, finish_time: value };
+                newEntry.hours_total = calculateDayHours(
+                  newEntry.start_time || null,
+                  newEntry.finish_time || null
+                );
+                return newEntry;
+              }
+              return entry;
+            });
+            return updated;
+          }
+
+          return { ...row, [field]: value };
+        })
+      );
+      scheduleSave();
+    },
+    []
+  );
+
+  const handleDayToggle = useCallback(
+    (jobRowId: string, day: DayOfWeek, selected: boolean) => {
+      setJobRows((prev) =>
+        prev.map((row) => {
+          if (row.id !== jobRowId) return row;
+          const newEntries = row.localEntries.map((entry) => {
+            if (entry.day_of_week !== day) return entry;
+            if (selected) {
+              const updated = {
+                ...entry,
+                start_time: row.localDefaultStart,
+                finish_time: row.localDefaultFinish,
+                hours_total: 0,
+              };
+              updated.hours_total = calculateDayHours(
+                updated.start_time || null,
+                updated.finish_time || null
+              );
+              return updated;
+            }
+            return { ...entry, start_time: '', finish_time: '', hours_total: 0 };
+          });
+          return { ...row, localEntries: newEntries };
+        })
       );
       scheduleSave();
     },
@@ -188,6 +264,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
       await saveTimesheetHeader(ts.id, {
         labourer_1_name: labourer1Ref.current || null,
         labourer_2_name: labourer2Ref.current || null,
+        weekly_notes: weeklyNotesRef.current || null,
       });
 
       const currentRows = jobRowsRef.current;
@@ -196,6 +273,8 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           job_number: row.job_number,
           job_address: row.job_address,
           sort_order: row.sort_order,
+          default_start_time: row.localDefaultStart || null,
+          default_finish_time: row.localDefaultFinish || null,
         });
 
         for (const entry of row.localEntries) {
@@ -206,6 +285,8 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
               entry.start_time || null,
               entry.finish_time || null
             );
+          } else {
+            await deleteDayEntry(row.id, entry.day_of_week);
           }
         }
       }
@@ -232,7 +313,12 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
       const newRow = await addJobRow(timesheet.id, sortOrder);
       setJobRows((prev) => [
         ...prev,
-        { ...newRow, localEntries: buildLocalEntries([]) },
+        {
+          ...newRow,
+          localEntries: buildLocalEntries([]),
+          localDefaultStart: '',
+          localDefaultFinish: '',
+        },
       ]);
     } catch (err) {
       console.error('Failed to add job row:', err);
@@ -417,12 +503,17 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
         weekEnding={weekEnding}
         labourer1={labourer1}
         labourer2={labourer2}
+        weeklyNotes={weeklyNotes}
         onLabourer1Change={(v) => {
           setLabourer1(v);
           scheduleSave();
         }}
         onLabourer2Change={(v) => {
           setLabourer2(v);
+          scheduleSave();
+        }}
+        onWeeklyNotesChange={(v) => {
+          setWeeklyNotes(v);
           scheduleSave();
         }}
         onWeekEndingChange={handleWeekEndingChange}
@@ -436,8 +527,11 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
             jobRow={row}
             index={index}
             localEntries={row.localEntries}
+            defaultStart={row.localDefaultStart}
+            defaultFinish={row.localDefaultFinish}
             onJobFieldChange={handleJobFieldChange}
             onDayEntryChange={handleDayEntryChange}
+            onDayToggle={handleDayToggle}
             onDeleteRow={handleDeleteJobRow}
             readOnly={!isEditable}
           />
@@ -473,6 +567,18 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           </span>
         </div>
       </div>
+
+      {!isEditable && weeklyNotes && (
+        <div className="bg-white border border-slate-200 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <FileText className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs font-medium text-slate-500 mb-1">Weekly Notes</p>
+              <p className="text-sm text-slate-700 whitespace-pre-wrap">{weeklyNotes}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isEditable && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 z-40">

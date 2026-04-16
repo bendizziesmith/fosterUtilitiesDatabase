@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import React from 'react';
+import { Trash2 } from 'lucide-react';
 import {
   DAYS_OF_WEEK,
-  DAY_LABELS_FULL,
+  DAY_LABELS,
   DayOfWeek,
   formatHoursDecimal,
 } from '../../../../lib/timesheetUtils';
@@ -19,9 +19,11 @@ interface JobRowCardProps {
   jobRow: TimesheetJobRow;
   index: number;
   localEntries: LocalDayEntry[];
+  defaultStart: string;
+  defaultFinish: string;
   onJobFieldChange: (
     jobRowId: string,
-    field: 'job_number' | 'job_address',
+    field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time',
     value: string
   ) => void;
   onDayEntryChange: (
@@ -30,6 +32,7 @@ interface JobRowCardProps {
     field: 'start_time' | 'finish_time',
     value: string
   ) => void;
+  onDayToggle: (jobRowId: string, day: DayOfWeek, selected: boolean) => void;
   onDeleteRow: (jobRowId: string) => void;
   readOnly: boolean;
 }
@@ -38,241 +41,233 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
   jobRow,
   index,
   localEntries,
+  defaultStart,
+  defaultFinish,
   onJobFieldChange,
   onDayEntryChange,
+  onDayToggle,
   onDeleteRow,
   readOnly,
 }) => {
-  const [expanded, setExpanded] = useState(true);
-
+  const selectedDays = localEntries.filter(
+    (e) => e.start_time || e.finish_time
+  );
   const rowTotal = localEntries.reduce((sum, e) => sum + e.hours_total, 0);
+
+  const isDaySelected = (day: DayOfWeek) => {
+    const entry = localEntries.find((e) => e.day_of_week === day);
+    return !!(entry && (entry.start_time || entry.finish_time));
+  };
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-      <div className="px-5 py-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs font-bold text-white bg-slate-500 rounded px-1.5 py-0.5">
-                {index + 1}
-              </span>
-              <span className="text-sm font-semibold text-slate-700">Job</span>
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-white bg-slate-500 rounded px-1.5 py-0.5">
+              {index + 1}
+            </span>
+            <span className="text-sm font-semibold text-slate-700">Job</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-teal-700 tabular-nums bg-teal-50 px-2.5 py-0.5 rounded">
+              {formatHoursDecimal(rowTotal)}h
+            </span>
+            {!readOnly && (
               <button
-                onClick={() => setExpanded(!expanded)}
-                className="ml-auto p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors"
+                onClick={() => onDeleteRow(jobRow.id)}
+                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
               >
-                {expanded ? (
-                  <ChevronUp className="h-5 w-5" />
-                ) : (
-                  <ChevronDown className="h-5 w-5" />
-                )}
+                <Trash2 className="h-4 w-4" />
               </button>
-            </div>
-
-            {readOnly ? (
-              <div className="space-y-1">
-                <p className="text-base font-semibold text-slate-900">
-                  {jobRow.job_number || 'No job number'}
-                </p>
-                <p className="text-sm text-slate-500">
-                  {jobRow.job_address || 'No address'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">
-                    Job Number
-                  </label>
-                  <input
-                    type="text"
-                    value={jobRow.job_number}
-                    onChange={(e) =>
-                      onJobFieldChange(jobRow.id, 'job_number', e.target.value)
-                    }
-                    placeholder="e.g. J-1234"
-                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">
-                    Job Address
-                  </label>
-                  <input
-                    type="text"
-                    value={jobRow.job_address}
-                    onChange={(e) =>
-                      onJobFieldChange(jobRow.id, 'job_address', e.target.value)
-                    }
-                    placeholder="e.g. 12 High Street, London"
-                    className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-                  />
-                </div>
-              </div>
             )}
           </div>
         </div>
 
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-200">
-          <div className="text-sm font-semibold text-teal-700 tabular-nums">
-            Job Total: {formatHoursDecimal(rowTotal)}h
+        {readOnly ? (
+          <div className="space-y-1">
+            <p className="text-base font-semibold text-slate-900">
+              {jobRow.job_number || 'No job number'}
+            </p>
+            <p className="text-sm text-slate-500">
+              {jobRow.job_address || 'No address'}
+            </p>
+            {(defaultStart || defaultFinish) && (
+              <p className="text-xs text-slate-400 mt-2">
+                Default hours: {defaultStart || '--:--'} - {defaultFinish || '--:--'}
+              </p>
+            )}
           </div>
-          {!readOnly && (
-            <button
-              onClick={() => onDeleteRow(jobRow.id)}
-              className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </button>
-          )}
-        </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  Job Number
+                </label>
+                <input
+                  type="text"
+                  value={jobRow.job_number}
+                  onChange={(e) =>
+                    onJobFieldChange(jobRow.id, 'job_number', e.target.value)
+                  }
+                  placeholder="e.g. J-1234"
+                  className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  Job Address
+                </label>
+                <input
+                  type="text"
+                  value={jobRow.job_address}
+                  onChange={(e) =>
+                    onJobFieldChange(jobRow.id, 'job_address', e.target.value)
+                  }
+                  placeholder="e.g. 12 High Street"
+                  className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  Default Start
+                </label>
+                <input
+                  type="time"
+                  value={defaultStart}
+                  onChange={(e) =>
+                    onJobFieldChange(jobRow.id, 'default_start_time', e.target.value)
+                  }
+                  className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  Default Finish
+                </label>
+                <input
+                  type="time"
+                  value={defaultFinish}
+                  onChange={(e) =>
+                    onJobFieldChange(jobRow.id, 'default_finish_time', e.target.value)
+                  }
+                  className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {expanded && (
+      {!readOnly && (
+        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50">
+          <label className="text-xs font-medium text-slate-500 mb-2 block">
+            Days Worked
+          </label>
+          <div className="flex gap-1.5">
+            {DAYS_OF_WEEK.map((day) => {
+              const selected = isDaySelected(day);
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => onDayToggle(jobRow.id, day, !selected)}
+                  className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                    selected
+                      ? 'bg-teal-600 text-white shadow-sm'
+                      : 'bg-white text-slate-500 border border-slate-200 hover:border-teal-300 hover:text-teal-600'
+                  }`}
+                >
+                  {DAY_LABELS[day]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {selectedDays.length > 0 && (
         <div className="divide-y divide-slate-100">
           {DAYS_OF_WEEK.map((day) => {
-            const entry = localEntries.find((e) => e.day_of_week === day) || {
-              day_of_week: day,
-              start_time: '',
-              finish_time: '',
-              hours_total: 0,
-            };
+            const entry = localEntries.find((e) => e.day_of_week === day);
+            if (!entry || (!entry.start_time && !entry.finish_time)) return null;
 
-            if (readOnly && !entry.start_time && !entry.finish_time) {
-              return null;
-            }
+            const isOverridden =
+              (entry.start_time && entry.start_time !== defaultStart) ||
+              (entry.finish_time && entry.finish_time !== defaultFinish);
 
             return (
-              <DayRow
+              <div
                 key={day}
-                day={day}
-                entry={entry}
-                jobRowId={jobRow.id}
-                onDayEntryChange={onDayEntryChange}
-                readOnly={readOnly}
-              />
+                className="px-5 py-3 flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-2 w-12 flex-shrink-0">
+                  <span className="text-sm font-bold text-slate-700">
+                    {DAY_LABELS[day]}
+                  </span>
+                </div>
+
+                {readOnly ? (
+                  <div className="flex items-center gap-4 flex-1">
+                    <span className="text-sm text-slate-700 tabular-nums">
+                      {entry.start_time || '-'}
+                    </span>
+                    <span className="text-xs text-slate-400">to</span>
+                    <span className="text-sm text-slate-700 tabular-nums">
+                      {entry.finish_time || '-'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-1">
+                    <input
+                      type="time"
+                      value={entry.start_time}
+                      onChange={(e) =>
+                        onDayEntryChange(jobRow.id, day, 'start_time', e.target.value)
+                      }
+                      className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
+                    />
+                    <span className="text-xs text-slate-400 flex-shrink-0">to</span>
+                    <input
+                      type="time"
+                      value={entry.finish_time}
+                      onChange={(e) =>
+                        onDayEntryChange(jobRow.id, day, 'finish_time', e.target.value)
+                      }
+                      className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {isOverridden && !readOnly && (
+                    <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                      edited
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-teal-700 tabular-nums w-12 text-right">
+                    {entry.hours_total > 0
+                      ? `${formatHoursDecimal(entry.hours_total)}h`
+                      : '-'}
+                  </span>
+                </div>
+              </div>
             );
           })}
+        </div>
+      )}
+
+      {selectedDays.length === 0 && !readOnly && (
+        <div className="px-5 py-6 text-center">
+          <p className="text-sm text-slate-400">
+            Select days above to add work hours
+          </p>
         </div>
       )}
     </div>
   );
 };
-
-function DayRow({
-  day,
-  entry,
-  jobRowId,
-  onDayEntryChange,
-  readOnly,
-}: {
-  day: DayOfWeek;
-  entry: LocalDayEntry;
-  jobRowId: string;
-  onDayEntryChange: JobRowCardProps['onDayEntryChange'];
-  readOnly: boolean;
-}) {
-  const hasData = entry.start_time || entry.finish_time;
-  const isWeekend = day === 'saturday' || day === 'sunday';
-
-  return (
-    <div
-      className={`px-5 py-3.5 ${
-        hasData ? 'bg-white' : isWeekend ? 'bg-slate-50/70' : 'bg-white'
-      }`}
-    >
-      <div className="flex items-center justify-between mb-2.5">
-        <span
-          className={`text-sm font-bold ${
-            isWeekend ? 'text-slate-400' : 'text-slate-700'
-          }`}
-        >
-          {DAY_LABELS_FULL[day]}
-        </span>
-        {entry.hours_total > 0 && (
-          <span className="text-sm font-bold text-teal-700 tabular-nums bg-teal-50 px-2.5 py-0.5 rounded">
-            {formatHoursDecimal(entry.hours_total)}h
-          </span>
-        )}
-      </div>
-
-      {readOnly ? (
-        <ReadOnlyDayFields entry={entry} />
-      ) : (
-        <EditableDayFields
-          entry={entry}
-          jobRowId={jobRowId}
-          day={day}
-          onDayEntryChange={onDayEntryChange}
-        />
-      )}
-    </div>
-  );
-}
-
-function ReadOnlyDayFields({ entry }: { entry: LocalDayEntry }) {
-  if (!entry.start_time && !entry.finish_time) {
-    return <p className="text-sm text-slate-300 italic">No entry</p>;
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <div>
-        <p className="text-xs text-slate-400 mb-0.5">Start</p>
-        <p className="text-sm font-medium text-slate-800 tabular-nums">
-          {entry.start_time || '-'}
-        </p>
-      </div>
-      <div>
-        <p className="text-xs text-slate-400 mb-0.5">Finish</p>
-        <p className="text-sm font-medium text-slate-800 tabular-nums">
-          {entry.finish_time || '-'}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function EditableDayFields({
-  entry,
-  jobRowId,
-  day,
-  onDayEntryChange,
-}: {
-  entry: LocalDayEntry;
-  jobRowId: string;
-  day: DayOfWeek;
-  onDayEntryChange: JobRowCardProps['onDayEntryChange'];
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label className="text-xs font-medium text-slate-500 mb-1 block">
-          Start
-        </label>
-        <input
-          type="time"
-          value={entry.start_time}
-          onChange={(e) =>
-            onDayEntryChange(jobRowId, day, 'start_time', e.target.value)
-          }
-          className="w-full px-3 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
-        />
-      </div>
-      <div>
-        <label className="text-xs font-medium text-slate-500 mb-1 block">
-          Finish
-        </label>
-        <input
-          type="time"
-          value={entry.finish_time}
-          onChange={(e) =>
-            onDayEntryChange(jobRowId, day, 'finish_time', e.target.value)
-          }
-          className="w-full px-3 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
-        />
-      </div>
-    </div>
-  );
-}
