@@ -5,6 +5,7 @@ import { InspectionForm } from './components/InspectionForm';
 import { SuccessMessage } from './components/SuccessMessage';
 import { HavsTimesheetForm } from './components/HavsTimesheetForm';
 import { supabase, Vehicle, ChecklistTemplate, Employee } from '../../lib/supabase';
+import { loadGangerTimesheets, createTimesheetWeek } from '../../lib/timesheetService';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { EmployeeLanding } from './components/EmployeeLanding';
 import { TimesheetList } from './components/TimesheetList';
@@ -100,6 +101,18 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
   const handleTaskSelect = (task: 'inspection' | 'havs' | 'timesheet-list') => {
     setInspectionSuccess(false);
     setCurrentView(task);
+  };
+
+  const handleOpenTimesheetDirect = async (weekEnding: string) => {
+    setTimesheetWeekEnding(weekEnding);
+    if (selectedEmployee) {
+      const all = await loadGangerTimesheets(selectedEmployee.id);
+      const exists = all.find((t) => t.week_ending === weekEnding);
+      if (!exists) {
+        await createTimesheetWeek(selectedEmployee, weekEnding);
+      }
+    }
+    setCurrentView('timesheet-editor');
   };
 
   const handleTabChange = (tab: TabType) => {
@@ -216,6 +229,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           <div className="max-w-4xl mx-auto">
             <EmployeeLanding
               onTaskSelect={handleTaskSelect}
+              onOpenTimesheetDirect={handleOpenTimesheetDirect}
               selectedEmployee={selectedEmployee}
             />
           </div>
@@ -276,6 +290,7 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
           <div className="max-w-4xl mx-auto">
             <EmployeeLanding
               onTaskSelect={handleTaskSelect}
+              onOpenTimesheetDirect={handleOpenTimesheetDirect}
               selectedEmployee={selectedEmployee}
             />
           </div>

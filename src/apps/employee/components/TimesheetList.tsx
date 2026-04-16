@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   FileText,
-  Plus,
   ChevronRight,
   Clock,
   Calendar,
@@ -113,11 +112,20 @@ export const TimesheetList: React.FC<TimesheetListProps> = ({
           </div>
 
           <div
-            className={`p-4 rounded-lg border-2 transition-all ${
+            role="button"
+            tabIndex={0}
+            onClick={handleCreateOrOpen}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleCreateOrOpen();
+              }
+            }}
+            className={`p-4 rounded-lg border-2 transition-all cursor-pointer group ${
               currentWeekSheet
-                ? 'border-slate-200 bg-white'
-                : 'border-dashed border-teal-300 bg-teal-50/50'
-            }`}
+                ? 'border-slate-200 bg-white hover:border-teal-300 hover:shadow-sm'
+                : 'border-dashed border-teal-300 bg-teal-50/50 hover:border-teal-400 hover:bg-teal-50'
+            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 active:bg-slate-50/50`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -142,31 +150,17 @@ export const TimesheetList: React.FC<TimesheetListProps> = ({
                     </div>
                   ) : (
                     <p className="text-xs text-slate-500 mt-1">
-                      No timesheet started yet
+                      Tap to start this week's timesheet
                     </p>
                   )}
                 </div>
               </div>
 
-              <button
-                onClick={handleCreateOrOpen}
-                disabled={creating}
-                className="flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-              >
-                {creating ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : currentWeekSheet ? (
-                  <>
-                    Open
-                    <ChevronRight className="h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Start
-                  </>
-                )}
-              </button>
+              {creating ? (
+                <div className="w-5 h-5 border-2 border-slate-300 border-t-teal-600 rounded-full animate-spin flex-shrink-0" />
+              ) : (
+                <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-teal-500 transition-colors flex-shrink-0" />
+              )}
             </div>
           </div>
         </div>

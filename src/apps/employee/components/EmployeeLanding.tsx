@@ -23,6 +23,7 @@ import { loadGangerTimesheets, TimesheetWeek } from '../../../lib/timesheetServi
 
 interface EmployeeLandingProps {
   onTaskSelect: (task: 'inspection' | 'havs' | 'timesheet-list') => void;
+  onOpenTimesheetDirect: (weekEnding: string) => void;
   selectedEmployee: Employee;
 }
 
@@ -42,6 +43,7 @@ interface GangMemberHavsStatus {
 
 export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
   onTaskSelect,
+  onOpenTimesheetDirect,
   selectedEmployee,
 }) => {
   const [compliance, setCompliance] = useState<ComplianceStatus>({
@@ -348,7 +350,7 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
         timesheet={currentTimesheet}
         loading={timesheetLoading}
         statusLabel={getTimesheetStatusLabel()}
-        onOpen={() => onTaskSelect('timesheet-list')}
+        onOpen={() => onOpenTimesheetDirect(currentWeekEndingSunday)}
       />
 
       <HavsGangStatus
