@@ -184,6 +184,11 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
     }
   };
 
+  const handleGoHome = () => {
+    setCurrentView('landing');
+    setInspectionSuccess(false);
+  };
+
   const renderCurrentView = () => {
     if (loading) {
       return <LoadingSpinner />;
@@ -300,11 +305,12 @@ export const EmployeeApp: React.FC<EmployeeAppProps> = ({ onBack, currentEmploye
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col">
-      <Layout 
-        title={getPageTitle()} 
-        subtitle={getPageSubtitle()} 
-        showBackButton 
+      <Layout
+        title={getPageTitle()}
+        subtitle={getPageSubtitle()}
+        showBackButton
         onBack={handleBackNavigation}
+        onHome={currentView !== 'landing' ? handleGoHome : undefined}
       >
         {renderCurrentView()}
       </Layout>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Car, ClipboardList, ArrowLeft, LogOut } from 'lucide-react';
+import { Car, ArrowLeft, LogOut, Home } from 'lucide-react';
 import { signOut } from '../lib/auth';
 
 interface LayoutProps {
@@ -9,15 +9,17 @@ interface LayoutProps {
   showBackButton?: boolean;
   showSignOutButton?: boolean;
   onBack?: () => void;
+  onHome?: () => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children, 
-  title, 
-  subtitle, 
-  showBackButton = false, 
+export const Layout: React.FC<LayoutProps> = ({
+  children,
+  title,
+  subtitle,
+  showBackButton = false,
   showSignOutButton = false,
-  onBack 
+  onBack,
+  onHome,
 }) => {
   const handleSignOut = async () => {
     try {
@@ -54,20 +56,31 @@ export const Layout: React.FC<LayoutProps> = ({
                 </div>
               </div>
             </div>
-            
-            {showSignOutButton && (
-              <button
-                onClick={handleSignOut}
-                className="flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="text-sm">Sign Out</span>
-              </button>
-            )}
+
+            <div className="flex items-center gap-2">
+              {onHome && (
+                <button
+                  onClick={onHome}
+                  className="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <Home className="h-4 w-4" />
+                  <span className="text-sm font-medium">Home</span>
+                </button>
+              )}
+              {showSignOutButton && (
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="text-sm">Sign Out</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {children}
       </main>

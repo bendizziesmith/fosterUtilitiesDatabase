@@ -1,5 +1,5 @@
-import React from 'react';
-import { Trash2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Trash2, AlertCircle } from 'lucide-react';
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
@@ -59,6 +59,18 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
     return !!(entry && (entry.start_time || entry.finish_time));
   };
 
+  const missingFields = useMemo(() => {
+    if (readOnly) return [];
+    const missing: string[] = [];
+    if (!jobRow.job_number?.trim()) missing.push('Job Number');
+    if (!jobRow.job_address?.trim()) missing.push('Job Address');
+    if (!defaultStart) missing.push('Start Time');
+    if (!defaultFinish) missing.push('Finish Time');
+    return missing;
+  }, [readOnly, jobRow.job_number, jobRow.job_address, defaultStart, defaultFinish]);
+
+  const daysLocked = missingFields.length > 0;
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
       <div className="px-5 py-4 border-b border-slate-100">
@@ -103,7 +115,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Job Number
+                  Job Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -112,12 +124,14 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
                     onJobFieldChange(jobRow.id, 'job_number', e.target.value)
                   }
                   placeholder="e.g. J-1234"
-                  className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                  className={`w-full px-4 py-3 text-base border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 ${
+                    !jobRow.job_number?.trim() ? 'border-slate-300' : 'border-slate-300'
+                  }`}
                 />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Job Address
+                  Job Address <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -134,7 +148,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Start Time
+                  Start Time <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="time"
@@ -147,7 +161,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Finish Time
+                  Finish Time <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="time"
@@ -164,29 +178,50 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
       </div>
 
       {!readOnly && (
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50">
+        <div className={`px-5 py-3 border-b border-slate-100 ${daysLocked ? 'bg-slate-50' : 'bg-slate-50/50'}`}>
           <label className="text-xs font-medium text-slate-500 mb-2 block">
             Days Worked
           </label>
-          <div className="flex gap-1.5">
-            {DAYS_OF_WEEK.map((day) => {
-              const selected = isDaySelected(day);
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  onClick={() => onDayToggle(jobRow.id, day, !selected)}
-                  className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-all ${
-                    selected
-                      ? 'bg-teal-600 text-white shadow-sm'
-                      : 'bg-white text-slate-500 border border-slate-200 hover:border-teal-300 hover:text-teal-600'
-                  }`}
-                >
-                  {DAY_LABELS[day]}
-                </button>
-              );
-            })}
-          </div>
+          {daysLocked ? (
+            <div className="py-2">
+              <div className="flex gap-1.5 mb-3 pointer-events-none">
+                {DAYS_OF_WEEK.map((day) => (
+                  <div
+                    key={day}
+                    className="flex-1 py-2.5 rounded-lg text-xs font-semibold text-center bg-slate-100 text-slate-300 border border-slate-200"
+                  >
+                    {DAY_LABELS[day]}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-start gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 text-red-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-red-500">
+                  Enter {missingFields.join(', ')} before selecting days
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              {DAYS_OF_WEEK.map((day) => {
+                const selected = isDaySelected(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => onDayToggle(jobRow.id, day, !selected)}
+                    className={`flex-1 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                      selected
+                        ? 'bg-teal-600 text-white shadow-sm'
+                        : 'bg-white text-slate-500 border border-slate-200 hover:border-teal-300 hover:text-teal-600'
+                    }`}
+                  >
+                    {DAY_LABELS[day]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -252,7 +287,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
         </div>
       )}
 
-      {selectedDays.length === 0 && !readOnly && (
+      {selectedDays.length === 0 && !readOnly && !daysLocked && (
         <div className="px-5 py-6 text-center">
           <p className="text-sm text-slate-400">
             Select days above to add work hours
