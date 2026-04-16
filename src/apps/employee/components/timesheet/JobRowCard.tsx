@@ -134,7 +134,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Default Start
+                  Start Time
                 </label>
                 <input
                   type="time"
@@ -147,7 +147,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-500 mb-1 block">
-                  Default Finish
+                  Finish Time
                 </label>
                 <input
                   type="time"
@@ -196,10 +196,6 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
             const entry = localEntries.find((e) => e.day_of_week === day);
             if (!entry || (!entry.start_time && !entry.finish_time)) return null;
 
-            const isOverridden =
-              (entry.start_time && entry.start_time !== defaultStart) ||
-              (entry.finish_time && entry.finish_time !== defaultFinish);
-
             return (
               <div
                 key={day}
@@ -243,13 +239,8 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {isOverridden && !readOnly && (
-                    <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
-                      edited
-                    </span>
-                  )}
-                  <span className="text-sm font-semibold text-teal-700 tabular-nums w-12 text-right">
+                <div className="flex-shrink-0">
+                  <span className="text-sm font-semibold text-teal-700 tabular-nums w-12 text-right block">
                     {entry.hours_total > 0
                       ? `${formatHoursDecimal(entry.hours_total)}h`
                       : '-'}
