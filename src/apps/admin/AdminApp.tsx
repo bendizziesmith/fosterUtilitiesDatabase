@@ -4,14 +4,13 @@ import { Layout } from '../../components/Layout';
 import { AdminDashboard } from './components/AdminDashboard';
 import { InspectionTable } from './components/InspectionTable';
 import { InspectionDetails } from './components/InspectionDetails';
-import { DailyComplianceChart } from './components/DailyComplianceChart';
+import { ComplianceSummaryCards } from './components/ComplianceSummaryCards';
 import { ManagementHub } from './components/ManagementHub';
 import { EmployeeManagement } from './components/EmployeeManagement';
 import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
 import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
 import { WeeklyTimesheetDashboard } from './components/WeeklyTimesheetDashboard';
-import { TimesheetComplianceChart } from './components/TimesheetComplianceChart';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -236,11 +235,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
           path="/"
           element={
             <div className="space-y-6">
-              <DailyComplianceChart
+              <ComplianceSummaryCards
                 inspections={inspections}
                 employees={employees}
               />
-              <TimesheetComplianceChart />
               <AdminDashboard
                 inspections={inspections}
                 plantRecords={[]}
