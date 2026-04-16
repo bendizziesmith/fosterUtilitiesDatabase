@@ -8,8 +8,8 @@ import {
   RefreshCw,
   Car,
   Clock,
-  Eye,
   Download,
+  ChevronRight,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import {
@@ -222,7 +222,16 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                   return (
                     <div
                       key={emp.id}
-                      className="px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => ts && onViewTimesheet?.(ts.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          ts && onViewTimesheet?.(ts.id);
+                        }
+                      }}
+                      className="px-5 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-emerald-50/60 focus-visible:bg-emerald-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 active:bg-emerald-50 transition-colors group"
                     >
                       <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
                         <span className="text-xs font-bold text-emerald-700">
@@ -230,7 +239,7 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">
+                        <p className="text-sm font-medium text-slate-900 truncate group-hover:text-emerald-900 transition-colors">
                           {emp.full_name}
                         </p>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
@@ -249,27 +258,21 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         {ts && (
-                          <>
-                            <button
-                              onClick={() => downloadTimesheetCSV(ts)}
-                              title="Download CSV"
-                              className="p-2 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 transition-colors"
-                            >
-                              <Download className="h-4 w-4" />
-                            </button>
-                            {onViewTimesheet && (
-                              <button
-                                onClick={() => onViewTimesheet(ts.id)}
-                                title="View Timesheet"
-                                className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                            )}
-                          </>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadTimesheetCSV(ts);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            title="Download CSV"
+                            className="p-2 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
                         )}
+                        <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-emerald-500 transition-colors" />
                       </div>
                     </div>
                   );
@@ -294,7 +297,16 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                   return (
                     <div
                       key={emp.id}
-                      className="px-5 py-3.5 flex items-center gap-3 hover:bg-slate-50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => ts && onViewTimesheet?.(ts.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          ts && onViewTimesheet?.(ts.id);
+                        }
+                      }}
+                      className="px-5 py-3.5 flex items-center gap-3 cursor-pointer hover:bg-amber-50/60 focus-visible:bg-amber-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400 active:bg-amber-50 transition-colors group"
                     >
                       <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
                         <span className="text-xs font-bold text-amber-700">
@@ -302,7 +314,7 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-900 truncate">
+                        <p className="text-sm font-medium text-slate-900 truncate group-hover:text-amber-900 transition-colors">
                           {emp.full_name}
                         </p>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
@@ -315,20 +327,12 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {ts && onViewTimesheet && (
-                          <button
-                            onClick={() => onViewTimesheet(ts.id)}
-                            title="View Timesheet"
-                            className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-                        )}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                           <RotateCcw className="h-3 w-3" />
                           Returned
                         </span>
+                        <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-amber-500 transition-colors" />
                       </div>
                     </div>
                   );
