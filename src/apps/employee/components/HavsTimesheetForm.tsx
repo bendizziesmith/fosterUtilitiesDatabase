@@ -306,11 +306,6 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   };
 
   const handleSubmitClick = () => {
-    const anyZeroExposure = peopleState.some(p => p.totalMinutes === 0);
-    if (anyZeroExposure) {
-      alert('All gang members must have exposure time before submitting.');
-      return;
-    }
     if (hasUnsavedChanges) {
       alert('Please save your changes before submitting.');
       return;
