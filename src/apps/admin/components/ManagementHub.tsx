@@ -47,16 +47,18 @@ export const ManagementHub: React.FC = () => {
               onClick={option.onClick}
               className="bg-white border border-slate-200 rounded-xl p-5 text-left hover:border-slate-300 hover:shadow-sm transition-all duration-200 group"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className={`p-2.5 ${option.iconBg} rounded-lg`}>
-                  <Icon className={`h-5 w-5 ${option.iconColor}`} />
+              <div className="flex flex-col items-center mb-4 pt-1">
+                <div className={`p-3 ${option.iconBg} rounded-xl`}>
+                  <Icon className={`h-6 w-6 ${option.iconColor}`} />
                 </div>
-                <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all mt-1" />
               </div>
 
-              <h2 className="text-sm font-semibold text-slate-900 mb-1">
-                {option.title}
-              </h2>
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  {option.title}
+                </h2>
+                <ArrowRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              </div>
               <p className="text-xs text-slate-500 mb-3 leading-relaxed">
                 {option.description}
               </p>
