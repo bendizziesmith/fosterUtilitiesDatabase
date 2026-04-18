@@ -5,7 +5,7 @@ import {
   Users,
   ArrowRight,
   Shield,
-  Target
+  FileText,
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
 
@@ -14,192 +14,91 @@ interface AdminDashboardProps {
   plantRecords: PlantRecord[];
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({
-  inspections,
-}) => {
+const navCards = [
+  {
+    title: 'Vehicle Checks',
+    subtitle: 'Daily inspections & plant checks',
+    icon: ClipboardList,
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    hoverBorder: 'hover:border-blue-300',
+    hoverShadow: 'hover:shadow-blue-100/50',
+    hoverArrow: 'group-hover:text-blue-500',
+    path: '/inspections',
+  },
+  {
+    title: 'Weekly Timesheets',
+    subtitle: 'Review submissions & compliance',
+    icon: FileText,
+    iconBg: 'bg-teal-50',
+    iconColor: 'text-teal-600',
+    hoverBorder: 'hover:border-teal-300',
+    hoverShadow: 'hover:shadow-teal-100/50',
+    hoverArrow: 'group-hover:text-teal-500',
+    path: '/weekly-timesheets',
+  },
+  {
+    title: 'HAVs Timesheets',
+    subtitle: 'Vibration exposure records',
+    icon: Shield,
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
+    hoverBorder: 'hover:border-amber-300',
+    hoverShadow: 'hover:shadow-amber-100/50',
+    hoverArrow: 'group-hover:text-amber-500',
+    path: '/havs-timesheets',
+  },
+  {
+    title: 'Management Hub',
+    subtitle: 'Staff, vehicles & assignments',
+    icon: Users,
+    iconBg: 'bg-slate-100',
+    iconColor: 'text-slate-600',
+    hoverBorder: 'hover:border-slate-300',
+    hoverShadow: 'hover:shadow-slate-100/50',
+    hoverArrow: 'group-hover:text-slate-500',
+    path: '/management',
+  },
+];
+
+export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const navigate = useNavigate();
 
-  // Calculate statistics
-  const totalInspections = inspections.length;
-  const inspectionsWithDefects = inspections.filter(i => i.has_defects).length;
-  const cleanInspections = totalInspections - inspectionsWithDefects;
-
-  // Recent activity (last 7 days)
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-  
-  const recentInspections = inspections.filter(i => 
-    new Date(i.submitted_at) >= sevenDaysAgo
-  ).length;
-
-  // Today's activity
-  const today = new Date().toISOString().split('T')[0];
-  const todayInspections = inspections.filter(i => 
-    new Date(i.submitted_at).toISOString().split('T')[0] === today
-  ).length;
-
-  // Calculate inspections with fixed defects
-  const inspectionsWithFixedDefects = inspections.filter(inspection => {
-    if (!inspection.inspection_items || inspection.inspection_items.length === 0) return false;
-    
-    // Get inspections from the last 7 days for the same vehicle
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-    // Check if this inspection has any items marked as defect_fixed
-    return inspection.inspection_items?.some(item => item.defect_fixed === true) || false;
-  }).length;
-
-  const primaryActions = [
-    {
-      title: 'Daily Vehicle & Plant Checks',
-      description: 'Monitor safety inspections and equipment compliance',
-      icon: ClipboardList,
-      color: 'from-blue-500 to-blue-600',
-      lightColor: 'bg-blue-50',
-      iconColor: 'text-blue-600',
-      stats: {
-        primary: totalInspections,
-        secondary: `${recentInspections} this week`,
-        status: cleanInspections > inspectionsWithDefects ? 'positive' : 'warning'
-      },
-      onClick: () => navigate('/inspections')
-    },
-    {
-      title: 'HAVs Timesheets',
-      description: 'Monitor Hand Arm Vibration Syndrome exposure records',
-      icon: Shield,
-      color: 'from-orange-500 to-orange-600',
-      lightColor: 'bg-orange-50',
-      iconColor: 'text-orange-600',
-      stats: {
-        primary: 'Safety',
-        secondary: 'Exposure tracking',
-        status: 'positive'
-      },
-      onClick: () => navigate('/havs-timesheets')
-    },
-    {
-      title: 'Management Hub',
-      description: 'Manage staff and vehicles',
-      icon: Users,
-      color: 'from-slate-500 to-slate-600',
-      lightColor: 'bg-slate-50',
-      iconColor: 'text-slate-600',
-      stats: {
-        primary: 'System',
-        secondary: 'Management tools',
-        status: 'neutral'
-      },
-      onClick: () => navigate('/management')
-    }
-  ];
-
   return (
-    <div className="space-y-8">
-      {/* Hero Section */}
-      <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-2xl p-8 border border-slate-200">
-        <div className="text-center max-w-3xl mx-auto">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-2xl mb-6">
-            <Shield className="h-8 w-8 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900 mb-4">
-            Employer Operations Dashboard
-          </h1>
-          <p className="text-lg text-slate-600 leading-relaxed">
-            Monitor daily safety compliance, review professional timesheets, and manage your workforce with comprehensive oversight tools.
-          </p>
-        </div>
-      </div>
-
-      {/* Primary Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {primaryActions.map((action, index) => {
-          const Icon = action.icon;
-          
+    <div>
+      <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+        Operations
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {navCards.map((card) => {
+          const Icon = card.icon;
           return (
-            <div
-              key={index}
-              className="group bg-white rounded-2xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-slate-200 hover:border-slate-300 cursor-pointer"
-              onClick={action.onClick}
+            <button
+              key={card.path}
+              onClick={() => navigate(card.path)}
+              className={`group bg-white border border-slate-200 rounded-xl p-4 text-left transition-all duration-200 ${card.hoverBorder} hover:shadow-md ${card.hoverShadow} active:scale-[0.98] cursor-pointer`}
             >
-              {/* Header with gradient */}
-              <div className={`bg-gradient-to-r ${action.color} p-6 text-white`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="p-3 bg-white bg-opacity-20 rounded-xl group-hover:scale-110 transition-transform duration-200">
-                    <Icon className="h-8 w-8 text-white" />
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 ${card.iconBg} rounded-lg`}>
+                    <Icon className={`h-4 w-4 ${card.iconColor}`} />
                   </div>
-                  <ArrowRight className="h-6 w-6 opacity-70 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200" />
-                </div>
-                
-                <h3 className="text-xl font-bold mb-2 group-hover:text-opacity-90 transition-colors">
-                  {action.title}
-                </h3>
-                
-                <div className="flex items-center space-x-2 text-white text-opacity-90">
-                  <span className="text-2xl font-bold">{action.stats.primary}</span>
-                  <div className="text-sm opacity-75">{action.stats.secondary}</div>
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="p-6">
-                <p className="text-slate-600 leading-relaxed mb-4">
-                  {action.description}
-                </p>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">
-                    Access Dashboard
-                  </span>
-                  <div className="w-8 h-8 bg-slate-100 group-hover:bg-slate-200 rounded-full flex items-center justify-center transition-colors duration-200">
-                    <ArrowRight className="h-4 w-4 text-slate-600" />
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      {card.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {card.subtitle}
+                    </p>
                   </div>
                 </div>
+                <ArrowRight
+                  className={`h-4 w-4 text-slate-300 ${card.hoverArrow} group-hover:translate-x-0.5 transition-all`}
+                />
               </div>
-            </div>
+            </button>
           );
         })}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-8 text-white">
-        <div className="text-center mb-8">
-          <Target className="h-12 w-12 text-blue-400 mx-auto mb-4" />
-          <h3 className="text-2xl font-bold mb-2">System Management</h3>
-          <p className="text-slate-300">
-            Access comprehensive management tools for complete operational oversight
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <button
-            onClick={() => navigate('/management')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <Users className="h-8 w-8 text-blue-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Staff Management</div>
-            <div className="text-sm text-slate-300">Employees, vehicles & assignments</div>
-          </button>
-
-          <button
-            onClick={() => navigate('/inspections')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <ClipboardList className="h-8 w-8 text-green-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">Safety Monitoring</div>
-            <div className="text-sm text-slate-300">Daily checks & compliance</div>
-          </button>
-
-          <button
-            onClick={() => navigate('/havs-timesheets')}
-            className="bg-white bg-opacity-10 hover:bg-opacity-20 rounded-xl p-6 transition-all duration-200 text-left group"
-          >
-            <Shield className="h-8 w-8 text-orange-400 mb-3 group-hover:scale-110 transition-transform" />
-            <div className="text-lg font-semibold mb-2">HAVs Records</div>
-            <div className="text-sm text-slate-300">Vibration exposure tracking</div>
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -1,10 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { ClipboardList, HardHat, CheckCircle, Calendar, AlertTriangle, User, Clock, Shield, ChevronRight, RefreshCw, Users } from 'lucide-react';
+import {
+  ClipboardList,
+  HardHat,
+  CheckCircle,
+  AlertTriangle,
+  Clock,
+  RefreshCw,
+  Users,
+  FileText,
+  Briefcase,
+  ChevronRight,
+} from 'lucide-react';
 import { supabase, Employee, GangOperative } from '../../../lib/supabase';
 import { getEffectiveWeekEnding } from '../../../lib/havsUtils';
+import {
+  getWeekEndingSunday,
+  formatWeekEnding,
+  formatHoursDecimal,
+  getStatusInfo,
+} from '../../../lib/timesheetUtils';
+import { loadGangerTimesheets, TimesheetWeek } from '../../../lib/timesheetService';
 
 interface EmployeeLandingProps {
-  onTaskSelect: (task: 'inspection' | 'havs') => void;
+  onTaskSelect: (task: 'inspection' | 'havs' | 'timesheet-list') => void;
+  onOpenTimesheetDirect: (weekEnding: string) => void;
   selectedEmployee: Employee;
 }
 
@@ -24,7 +43,8 @@ interface GangMemberHavsStatus {
 
 export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
   onTaskSelect,
-  selectedEmployee
+  onOpenTimesheetDirect,
+  selectedEmployee,
 }) => {
   const [compliance, setCompliance] = useState<ComplianceStatus>({
     todayVehicleCheck: false,
@@ -35,10 +55,13 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
   const [gangHavsStatus, setGangHavsStatus] = useState<GangMemberHavsStatus[]>([]);
   const [weekEnding, setWeekEnding] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [currentTimesheet, setCurrentTimesheet] = useState<TimesheetWeek | null>(null);
+  const [timesheetLoading, setTimesheetLoading] = useState(true);
 
   useEffect(() => {
     if (!selectedEmployee?.id) return;
     checkComplianceStatus();
+    loadTimesheetStatus();
   }, [selectedEmployee?.id]);
 
   const getTodayRangeISO = () => {
@@ -48,7 +71,6 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     end.setDate(start.getDate() + 1);
     return { startISO: start.toISOString(), endISO: end.toISOString() };
   };
-
 
   const didSubmitVehicleCheckToday = async (employeeId: string): Promise<boolean> => {
     const { startISO, endISO } = getTodayRangeISO();
@@ -187,9 +209,23 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
     }
   };
 
+  const loadTimesheetStatus = async () => {
+    try {
+      setTimesheetLoading(true);
+      const currentWeekEnding = getWeekEndingSunday();
+      const all = await loadGangerTimesheets(selectedEmployee.id);
+      const current = all.find((t) => t.week_ending === currentWeekEnding) || null;
+      setCurrentTimesheet(current);
+    } catch (err) {
+      console.error('Failed to load timesheet status:', err);
+    } finally {
+      setTimesheetLoading(false);
+    }
+  };
+
   const checkComplianceStatus = async () => {
     try {
-      setCompliance(prev => ({ ...prev, loading: true }));
+      setCompliance((prev) => ({ ...prev, loading: true }));
 
       const employeeId = selectedEmployee.id;
       const weekEndingStr = await getEffectiveWeekEnding();
@@ -205,372 +241,416 @@ export const EmployeeLanding: React.FC<EmployeeLandingProps> = ({
       });
     } catch (error) {
       console.error('Error checking compliance status:', error);
-      setCompliance(prev => ({ ...prev, loading: false }));
+      setCompliance((prev) => ({ ...prev, loading: false }));
     }
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await checkComplianceStatus();
+    await Promise.all([checkComplianceStatus(), loadTimesheetStatus()]);
     setRefreshing(false);
   };
 
-  const getStatusBadge = (isCompleted: boolean, urgency: string) => {
-    if (compliance.loading) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-slate-500 bg-slate-100 rounded">
-          <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin" />
-          Checking
-        </span>
-      );
-    }
+  const currentWeekEndingSunday = getWeekEndingSunday();
 
-    if (isCompleted) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded">
-          <CheckCircle className="h-3.5 w-3.5" />
-          Complete
-        </span>
-      );
+  const getTimesheetStatusLabel = () => {
+    if (!currentTimesheet) return 'Not started';
+    switch (currentTimesheet.status) {
+      case 'submitted':
+        return 'Submitted';
+      case 'returned':
+        return 'Returned';
+      default:
+        return 'Draft';
     }
-
-    if (urgency === 'high') {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-700 bg-red-50 border border-red-200 rounded">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          Required
-        </span>
-      );
-    }
-
-    return (
-      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded">
-        <Clock className="h-3.5 w-3.5" />
-        Pending
-      </span>
-    );
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div className="bg-white border border-slate-200 rounded-lg">
-        <div className="px-6 py-5 border-b border-slate-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center">
-                <User className="h-6 w-6 text-slate-600" />
-              </div>
-              <div>
-                <h1 className="text-lg font-semibold text-slate-900">{selectedEmployee.full_name}</h1>
-                <p className="text-sm text-slate-500">{selectedEmployee.role}</p>
-              </div>
-            </div>
-            {selectedEmployee.assigned_vehicle && (
-              <div className="text-right">
-                <p className="text-xs text-slate-500 uppercase tracking-wide">Assigned Vehicle</p>
-                <p className="text-sm font-medium text-slate-900">{selectedEmployee.assigned_vehicle.registration_number}</p>
-              </div>
-            )}
-          </div>
+    <div className="max-w-4xl mx-auto space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">
+            {selectedEmployee.full_name}
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {selectedEmployee.role}
+            {selectedEmployee.assigned_vehicle &&
+              ` \u2022 ${selectedEmployee.assigned_vehicle.registration_number}`}
+          </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || compliance.loading}
+          className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition-all disabled:opacity-50"
+          title="Refresh"
+        >
+          <RefreshCw className={`h-4.5 w-4.5 ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Shield className="h-4 w-4 text-slate-500" />
-              <h2 className="text-sm font-semibold text-slate-900">Compliance Status</h2>
+      {!compliance.loading && !compliance.todayVehicleCheck && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-red-100 rounded-lg mt-0.5">
+              <AlertTriangle className="h-4 w-4 text-red-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-800">
+                Daily vehicle check required
+              </p>
+              <p className="text-xs text-red-600 mt-0.5">
+                Complete your inspection before starting work
+              </p>
             </div>
             <button
-              onClick={handleRefresh}
-              disabled={refreshing || compliance.loading}
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded transition-colors disabled:opacity-50"
-              title="Refresh status"
+              onClick={() => onTaskSelect('inspection')}
+              className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 active:bg-red-800 rounded-lg transition-colors flex-shrink-0"
             >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Start Check
             </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className={`p-4 rounded-lg border ${
-              compliance.loading ? 'bg-slate-50 border-slate-200' :
-              compliance.todayVehicleCheck ? 'bg-emerald-50/50 border-emerald-200' : 'bg-red-50/50 border-red-200'
-            }`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-1.5 bg-blue-100 rounded">
-                  <ClipboardList className="h-4 w-4 text-blue-600" />
-                </div>
-                {getStatusBadge(compliance.todayVehicleCheck, 'high')}
-              </div>
-              <p className="text-sm font-medium text-slate-900">Daily Vehicle & Plant Check</p>
-              <p className="text-xs text-slate-500 mt-0.5">Required each working day</p>
-            </div>
-
-            <div className={`p-4 rounded-lg border ${
-              compliance.loading ? 'bg-slate-50 border-slate-200' :
-              compliance.currentWeekHavs ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/50 border-amber-200'
-            }`}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-1.5 bg-amber-100 rounded">
-                  <HardHat className="h-4 w-4 text-amber-600" />
-                </div>
-                {getStatusBadge(compliance.currentWeekHavs, 'medium')}
-              </div>
-              <p className="text-sm font-medium text-slate-900">HAVs Timesheet</p>
-              <p className="text-xs text-slate-500 mt-0.5">Weekly exposure record</p>
-            </div>
-          </div>
-
-          {!compliance.loading && !compliance.todayVehicleCheck && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-red-800">Daily vehicle check required</p>
-                  <p className="text-xs text-red-700 mt-0.5">Complete your vehicle inspection before starting work</p>
-                </div>
-                <button
-                  onClick={() => onTaskSelect('inspection')}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded transition-colors"
-                >
-                  Start Check
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!compliance.loading && compliance.todayVehicleCheck && compliance.currentWeekHavs && (
-            <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-emerald-600" />
-                <p className="text-sm font-medium text-emerald-800">All compliance requirements complete</p>
-              </div>
-            </div>
-          )}
         </div>
-      </div>
+      )}
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500 rounded-lg">
-                <HardHat className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-white">HAVS Gang Status</h2>
-                <p className="text-xs text-slate-300">Live exposure data</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              {gangHavsStatus.length > 0 && (
-                <div className="flex items-center gap-1.5 text-xs text-slate-300 bg-slate-600 px-2.5 py-1 rounded">
-                  <Users className="h-3.5 w-3.5" />
-                  <span>{gangHavsStatus.length} members</span>
-                </div>
-              )}
-              {weekEnding && (
-                <div className="text-right">
-                  <p className="text-xs text-slate-400">Week Ending</p>
-                  <p className="text-sm font-medium text-white">
-                    {new Date(weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4">
-          {gangHavsStatus.length === 0 ? (
-            <div className="text-center py-8">
-              <div className="w-12 h-12 mx-auto mb-3 bg-slate-100 rounded-full flex items-center justify-center">
-                <HardHat className="h-6 w-6 text-slate-400" />
-              </div>
-              <p className="text-sm text-slate-500">No HAVS data for this week</p>
-              <button
-                onClick={() => onTaskSelect('havs')}
-                className="mt-3 text-sm text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Start HAVS Timesheet
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {gangHavsStatus.map((member) => (
-                <div
-                  key={member.operative.id}
-                  className={`flex items-center justify-between p-4 rounded-lg border transition-colors ${
-                    member.role === 'Ganger'
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      member.role === 'Ganger' ? 'bg-blue-500' : 'bg-slate-300'
-                    }`}>
-                      <span className="text-sm font-bold text-white">
-                        {member.operative.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                      </span>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-slate-900">{member.operative.full_name}</p>
-                        <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                          member.role === 'Ganger' ? 'bg-blue-500 text-white' : 'bg-amber-500 text-white'
-                        }`}>
-                          {member.role}
-                        </span>
-                        {member.operative.is_manual && (
-                          <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-medium">
-                            Manual
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
-                        <span className="font-medium text-slate-700">
-                          {member.totalMinutes} min
-                          {member.totalMinutes > 0 && ` (${(member.totalMinutes / 60).toFixed(1)}h)`}
-                        </span>
-                        {member.updatedAt && (
-                          <span>
-                            Updated: {new Date(member.updatedAt).toLocaleString('en-GB', {
-                              day: 'numeric',
-                              month: 'short',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    {member.status === 'submitted' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 px-3 py-1.5 bg-emerald-100 border border-emerald-200 rounded-full">
-                        <CheckCircle className="h-3.5 w-3.5" />
-                        Submitted
-                      </span>
-                    ) : member.status === 'draft' ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 px-3 py-1.5 bg-amber-100 border border-amber-200 rounded-full">
-                        <Clock className="h-3.5 w-3.5" />
-                        In Progress
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400 px-3 py-1.5 bg-slate-100 rounded-full">Not Started</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {gangHavsStatus.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-slate-200">
-              <button
-                onClick={() => onTaskSelect('havs')}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-              >
-                {compliance.currentWeekHavs ? (
-                  <>
-                    <CheckCircle className="h-4 w-4" />
-                    View Submitted Timesheet
-                  </>
-                ) : gangHavsStatus.some(m => m.status === 'draft') ? (
-                  <>
-                    Continue HAVs Timesheet
-                    <ChevronRight className="h-4 w-4" />
-                  </>
-                ) : (
-                  <>
-                    Start HAVs Timesheet
-                    <ChevronRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <button
+      <div className="grid grid-cols-3 gap-3">
+        <ModuleCard
+          icon={<ClipboardList className="h-5 w-5" />}
+          label="Vehicle & Plant Check"
+          sublabel="Daily inspection"
+          iconBg="bg-sky-100"
+          iconColor="text-sky-600"
+          done={compliance.todayVehicleCheck}
+          loading={compliance.loading}
           onClick={() => onTaskSelect('inspection')}
-          className={`p-5 text-left rounded-lg border-2 transition-all ${
-            compliance.todayVehicleCheck
-              ? 'bg-white border-slate-200 hover:border-slate-300'
-              : 'bg-white border-red-200 hover:border-red-300'
-          }`}
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div className={`p-2.5 rounded-lg ${compliance.todayVehicleCheck ? 'bg-blue-50' : 'bg-red-50'}`}>
-              <ClipboardList className={`h-6 w-6 ${compliance.todayVehicleCheck ? 'text-blue-600' : 'text-red-600'}`} />
-            </div>
-            {!compliance.loading && (
-              compliance.todayVehicleCheck ? (
-                <CheckCircle className="h-5 w-5 text-emerald-500" />
-              ) : (
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-              )
-            )}
-          </div>
-          <h3 className="text-base font-semibold text-slate-900 mb-1">Daily Vehicle & Plant Check</h3>
-          <p className="text-sm text-slate-500 mb-3">Safety inspection for vehicles and equipment</p>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-medium ${
-              compliance.todayVehicleCheck ? 'text-emerald-600' : 'text-red-600'
-            }`}>
-              {compliance.loading ? 'Checking...' : compliance.todayVehicleCheck ? 'Completed Today' : 'Not Completed'}
-            </span>
-            <ChevronRight className="h-4 w-4 text-slate-400" />
-          </div>
-        </button>
-
-        <button
+        />
+        <ModuleCard
+          icon={<HardHat className="h-5 w-5" />}
+          label="HAVS Timesheet"
+          sublabel="Weekly exposure"
+          iconBg="bg-amber-100"
+          iconColor="text-amber-600"
+          done={compliance.currentWeekHavs}
+          loading={compliance.loading}
           onClick={() => onTaskSelect('havs')}
-          className={`p-5 text-left rounded-lg border-2 transition-all ${
-            compliance.currentWeekHavs
-              ? 'bg-white border-slate-200 hover:border-slate-300'
-              : 'bg-white border-amber-200 hover:border-amber-300'
-          }`}
-        >
-          <div className="flex items-start justify-between mb-3">
-            <div className={`p-2.5 rounded-lg ${compliance.currentWeekHavs ? 'bg-amber-50' : 'bg-amber-50'}`}>
-              <HardHat className="h-6 w-6 text-amber-600" />
-            </div>
-            {!compliance.loading && (
-              compliance.currentWeekHavs ? (
-                <CheckCircle className="h-5 w-5 text-emerald-500" />
-              ) : (
-                <Clock className="h-5 w-5 text-amber-500" />
-              )
-            )}
-          </div>
-          <h3 className="text-base font-semibold text-slate-900 mb-1">HAVs Timesheet</h3>
-          <p className="text-sm text-slate-500 mb-3">Record vibrating equipment exposure</p>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-medium ${
-              compliance.currentWeekHavs ? 'text-emerald-600' : 'text-amber-600'
-            }`}>
-              {compliance.loading ? 'Checking...' : compliance.currentWeekHavs ? 'Submitted This Week' : 'Weekly - Due Sunday'}
-            </span>
-            <ChevronRight className="h-4 w-4 text-slate-400" />
-          </div>
-        </button>
+        />
+        <ModuleCard
+          icon={<FileText className="h-5 w-5" />}
+          label="Weekly Timesheet"
+          sublabel="Work record"
+          iconBg="bg-teal-100"
+          iconColor="text-teal-600"
+          done={currentTimesheet?.status === 'submitted'}
+          loading={timesheetLoading}
+          onClick={() => onTaskSelect('timesheet-list')}
+        />
       </div>
 
-      <div className="bg-slate-50 border border-slate-200 rounded-lg px-6 py-4">
-        <div className="flex items-start gap-3">
-          <Calendar className="h-5 w-5 text-slate-500 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-slate-700">Compliance Reminder</p>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Daily vehicle checks must be completed each working day before starting work.
-              HAVs timesheets must be submitted by Monday 10:00 AM following the week ending.
-            </p>
-          </div>
-        </div>
-      </div>
+      <WeeklyTimesheetStatus
+        weekEnding={currentWeekEndingSunday}
+        timesheet={currentTimesheet}
+        loading={timesheetLoading}
+        statusLabel={getTimesheetStatusLabel()}
+        onOpen={() => onOpenTimesheetDirect(currentWeekEndingSunday)}
+      />
+
+      <HavsGangStatus
+        gangStatus={gangHavsStatus}
+        weekEnding={weekEnding}
+        havsSubmitted={compliance.currentWeekHavs}
+        loading={compliance.loading}
+        onOpen={() => onTaskSelect('havs')}
+      />
     </div>
   );
 };
+
+function ModuleCard({
+  icon,
+  label,
+  sublabel,
+  iconBg,
+  iconColor,
+  done,
+  loading,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel: string;
+  iconBg: string;
+  iconColor: string;
+  done: boolean | undefined;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex flex-col items-center text-center p-5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-slate-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 active:bg-slate-50 transition-all group"
+    >
+      <div className={`p-3 rounded-xl ${iconBg} mb-3 transition-transform group-hover:scale-105`}>
+        <span className={iconColor}>{icon}</span>
+      </div>
+      <p className="text-sm font-semibold text-slate-900 leading-tight">{label}</p>
+      <p className="text-xs text-slate-400 mt-1">{sublabel}</p>
+      <div className="mt-3">
+        {loading ? (
+          <div className="w-4 h-4 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+        ) : done ? (
+          <CheckCircle className="h-5 w-5 text-emerald-500" />
+        ) : (
+          <ChevronRight className="h-5 w-5 text-slate-300 group-hover:text-slate-500 transition-colors" />
+        )}
+      </div>
+    </button>
+  );
+}
+
+function WeeklyTimesheetStatus({
+  weekEnding,
+  timesheet,
+  loading,
+  statusLabel,
+  onOpen,
+}: {
+  weekEnding: string;
+  timesheet: TimesheetWeek | null;
+  loading: boolean;
+  statusLabel: string;
+  onOpen: () => void;
+}) {
+  const statusInfo = timesheet ? getStatusInfo(timesheet.status) : null;
+
+  const jobCount = timesheet?.job_rows?.length ?? 0;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="bg-white border border-slate-200 rounded-xl overflow-hidden cursor-pointer hover:border-slate-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 active:bg-slate-50/50 transition-all group"
+    >
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-teal-100 rounded-lg">
+            <FileText className="h-4 w-4 text-teal-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Weekly Timesheet</h3>
+            <p className="text-xs text-slate-400">
+              Week ending {formatWeekEnding(weekEnding)}
+            </p>
+          </div>
+        </div>
+        <ChevronRight className="h-4.5 w-4.5 text-slate-300 group-hover:text-teal-500 transition-colors" />
+      </div>
+
+      <div className="px-5 py-4">
+        {loading ? (
+          <div className="flex justify-center py-4">
+            <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+          </div>
+        ) : !timesheet ? (
+          <div className="flex items-center gap-3 py-1">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <Clock className="h-5 w-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700">Not started yet</p>
+              <p className="text-xs text-slate-400">Tap to create this week's timesheet</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {statusInfo && (
+                  <span
+                    className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full border ${statusInfo.color} ${statusInfo.bgColor} ${statusInfo.borderColor}`}
+                  >
+                    {statusLabel}
+                  </span>
+                )}
+              </div>
+              {timesheet.weekly_total_hours > 0 && (
+                <span className="text-lg font-bold text-slate-900">
+                  {formatHoursDecimal(timesheet.weekly_total_hours)}
+                  <span className="text-xs font-medium text-slate-400 ml-1">hrs</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              {jobCount > 0 && (
+                <span className="flex items-center gap-1">
+                  <Briefcase className="h-3.5 w-3.5" />
+                  {jobCount} {jobCount === 1 ? 'job' : 'jobs'}
+                </span>
+              )}
+              {timesheet.submitted_at && (
+                <span>
+                  Submitted{' '}
+                  {new Date(timesheet.submitted_at).toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              )}
+              {timesheet.status === 'returned' && timesheet.returned_reason && (
+                <span className="text-red-600 font-medium truncate">
+                  Reason: {timesheet.returned_reason}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HavsGangStatus({
+  gangStatus,
+  weekEnding,
+  havsSubmitted,
+  loading,
+  onOpen,
+}: {
+  gangStatus: GangMemberHavsStatus[];
+  weekEnding: string;
+  havsSubmitted: boolean;
+  loading: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className="bg-white border border-slate-200 rounded-xl overflow-hidden cursor-pointer hover:border-slate-300 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 active:bg-slate-50/50 transition-all group"
+    >
+      <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-amber-100 rounded-lg">
+            <HardHat className="h-4 w-4 text-amber-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">HAVS Gang Status</h3>
+            <p className="text-xs text-slate-400">
+              {weekEnding
+                ? `Week ending ${new Date(weekEnding).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : 'Current week'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {gangStatus.length > 0 && (
+            <span className="flex items-center gap-1 text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
+              <Users className="h-3 w-3" />
+              {gangStatus.length}
+            </span>
+          )}
+          <ChevronRight className="h-4.5 w-4.5 text-slate-300 group-hover:text-amber-500 transition-colors" />
+        </div>
+      </div>
+
+      <div className="px-5 py-4">
+        {loading ? (
+          <div className="flex justify-center py-4">
+            <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin" />
+          </div>
+        ) : gangStatus.length === 0 ? (
+          <div className="flex items-center gap-3 py-1">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <HardHat className="h-5 w-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700">No HAVS data this week</p>
+              <p className="text-xs text-slate-400">Tap to start HAVS timesheet</p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {gangStatus.map((member) => (
+              <div
+                key={member.operative.id}
+                className={`flex items-center justify-between p-3 rounded-lg border ${
+                  member.role === 'Ganger'
+                    ? 'bg-sky-50/50 border-sky-100'
+                    : 'bg-slate-50/50 border-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      member.role === 'Ganger' ? 'bg-sky-500' : 'bg-slate-400'
+                    }`}
+                  >
+                    <span className="text-xs font-bold text-white">
+                      {member.operative.full_name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .toUpperCase()
+                        .slice(0, 2)}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {member.operative.full_name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span
+                        className={`text-xs font-medium ${
+                          member.role === 'Ganger' ? 'text-sky-600' : 'text-slate-500'
+                        }`}
+                      >
+                        {member.role}
+                      </span>
+                      {member.totalMinutes > 0 && (
+                        <span className="text-xs text-slate-500">
+                          {member.totalMinutes} min
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-shrink-0 ml-2">
+                  {member.status === 'submitted' ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded-full">
+                      <CheckCircle className="h-3 w-3" />
+                      Done
+                    </span>
+                  ) : member.status === 'draft' ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full">
+                      <Clock className="h-3 w-3" />
+                      Draft
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-400 px-2 py-1 bg-slate-100 rounded-full">
+                      None
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
