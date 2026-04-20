@@ -1,9 +1,22 @@
 // src/apps/admin/components/EmployeeManagement.tsx
 import React, { useEffect, useState } from 'react';
-import {
-  Plus, Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle
-} from 'lucide-react';
+import { Plus, CreditCard as Edit, Trash2, Save, X, RefreshCw, Users, UserPlus, AlertTriangle } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+
+async function extractFunctionError(err: any, fallback = 'Edge Function error'): Promise<string> {
+  try {
+    const response: Response | undefined = err?.context?.response ?? err?.context;
+    if (response && typeof response.json === 'function') {
+      const cloned = typeof response.clone === 'function' ? response.clone() : response;
+      const body = await cloned.json();
+      if (body?.error) return String(body.error);
+      if (body?.message) return String(body.message);
+    }
+  } catch {
+    // ignore parse failures
+  }
+  return err?.message || fallback;
+}
 
 interface Vehicle {
   id: string;
@@ -141,7 +154,10 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
         },
       });
 
-      if (fnError) throw new Error(fnError.message || 'Edge Function error');
+      if (fnError) {
+        const parsed = await extractFunctionError(fnError, 'Failed to add employee');
+        throw new Error(parsed);
+      }
       if (!data?.ok) throw new Error(data?.error || 'Failed to add employee');
 
       setSuccess(`Employee ${newEmployee.full_name} added and login created.`);
@@ -207,7 +223,10 @@ export const EmployeeManagement: React.FC<EmployeeManagementProps> = ({
       const { data, error: fnErr } = await supabase.functions.invoke('delete-user', {
         body: { employee_id: employee.id },
       });
-      if (fnErr) throw new Error(fnErr.message || 'Edge Function error');
+      if (fnErr) {
+        const parsed = await extractFunctionError(fnErr, 'Failed to delete employee');
+        throw new Error(parsed);
+      }
       if (!data?.ok) throw new Error(data?.error || 'Failed to delete employee');
 
       setSuccess(`Employee ${employee.full_name} deleted successfully!`);

@@ -1,141 +1,156 @@
-// supabase/functions/add-employee/index.ts
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
 };
 
 type Role = 'Ganger' | 'Labourer' | 'Backup Driver';
 
 interface AddEmployeeRequest {
-  // match your Admin form / DB schema
   full_name: string;
   role: Role;
-  rate: number;                         // number, not string
+  rate: number;
   email: string;
-  password: string;                     // your employees table currently requires NOT NULL
-  assigned_vehicle_id?: string | null;  // FK to vehicles.id (optional)
+  password: string;
+  assigned_vehicle_id?: string | null;
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+function fail(code: string, error: string, status = 400) {
+  return json({ ok: false, code, error }, status);
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return fail('method_not_allowed', 'Method not allowed', 405);
   }
 
   try {
-    if (req.method !== 'POST') {
-      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), {
-        status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    if (!supabaseUrl || !serviceRoleKey) {
+      return fail('server_misconfigured', 'Server is missing Supabase credentials', 500);
     }
 
-    const body = (await req.json()) as Partial<AddEmployeeRequest>;
-
-    // ---- Validation ----
-    const { full_name, role, rate, email, password, assigned_vehicle_id } = body;
-
-    if (!full_name || !role || rate === undefined || rate === null || !email || !password) {
-      return new Response(JSON.stringify({
-        ok: false,
-        error: 'Missing required fields: full_name, role, rate, email, password',
-      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    let body: Partial<AddEmployeeRequest>;
+    try {
+      body = await req.json();
+    } catch {
+      return fail('invalid_json', 'Request body must be valid JSON', 400);
     }
 
+    const full_name = (body.full_name ?? '').toString().trim();
+    const role = body.role as Role | undefined;
+    const rate = body.rate === undefined || body.rate === null ? NaN : Number(body.rate);
+    const email = (body.email ?? '').toString().trim().toLowerCase();
+    const password = (body.password ?? '').toString();
+    const assigned_vehicle_id = body.assigned_vehicle_id || null;
+
+    if (!full_name) return fail('missing_full_name', 'Full name is required', 400);
+    if (!role) return fail('missing_role', 'Role is required', 400);
     const validRoles: Role[] = ['Ganger', 'Labourer', 'Backup Driver'];
     if (!validRoles.includes(role)) {
-      return new Response(JSON.stringify({ ok: false, error: 'Invalid role' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return fail('invalid_role', `Role must be one of: ${validRoles.join(', ')}`, 400);
+    }
+    if (Number.isNaN(rate)) return fail('invalid_rate', 'Hourly rate must be a number', 400);
+    if (!email) return fail('missing_email', 'Email is required', 400);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return fail('invalid_email', 'Invalid email format', 400);
+    }
+    if (!password) return fail('missing_password', 'Password is required', 400);
+    if (password.length < 6) {
+      return fail('weak_password', 'Password must be at least 6 characters', 400);
     }
 
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!emailOk) {
-      return new Response(JSON.stringify({ ok: false, error: 'Invalid email format' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    if (assigned_vehicle_id) {
+      const { data: vehicle, error: vehicleErr } = await admin
+        .from('vehicles')
+        .select('id')
+        .eq('id', assigned_vehicle_id)
+        .maybeSingle();
+      if (vehicleErr) return fail('vehicle_lookup_failed', vehicleErr.message, 400);
+      if (!vehicle) return fail('vehicle_not_found', 'Assigned vehicle does not exist', 400);
     }
 
-    if (String(password).length < 6) {
-      return new Response(JSON.stringify({ ok: false, error: 'Password must be at least 6 characters' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const { data: existing, error: existingErr } = await admin
+      .from('employees')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+    if (existingErr) return fail('email_check_failed', existingErr.message, 400);
+    if (existing) return fail('email_in_use', 'An employee with this email already exists', 409);
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
-
-    // ---- 1) Create Auth user (service role) ----
-    const { data: authCreated, error: authErr } = await supabase.auth.admin.createUser({
-      email: email.trim().toLowerCase(),
-      password: String(password),
+    const { data: authCreated, error: authErr } = await admin.auth.admin.createUser({
+      email,
+      password,
       email_confirm: true,
       user_metadata: { full_name },
     });
 
-    if (authErr) {
-      const msg = authErr.message || 'Failed to create auth user';
-      const status = /already/i.test(msg) ? 409 : 400;
-      return new Response(JSON.stringify({ ok: false, code: 'auth_create_failed', error: msg }), {
-        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (authErr || !authCreated?.user) {
+      const msg = authErr?.message || 'Failed to create auth user';
+      const status = /already|registered|exists/i.test(msg) ? 409 : 400;
+      return fail('auth_create_failed', msg, status);
     }
 
-    const authUser = authCreated.user;
-    if (!authUser) {
-      return new Response(JSON.stringify({ ok: false, error: 'Auth user missing from response' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    const authUserId = authCreated.user.id;
 
-    // ---- 2) Insert employees row (matches your table columns) ----
-    const { data: employee, error: empErr } = await supabase
+    const { data: employee, error: empErr } = await admin
       .from('employees')
       .insert({
-        full_name: full_name.trim(),
+        full_name,
         role,
-        rate: Number(rate),
-        email: email.trim().toLowerCase(),
-        password: String(password),                 // NOTE: your table has NOT NULL on password
-        assigned_vehicle_id: assigned_vehicle_id || null,
-        created_at: new Date().toISOString(),
+        rate,
+        email,
+        password,
+        assigned_vehicle_id,
       })
-      .select()
+      .select('id, full_name, role, rate, email, assigned_vehicle_id, created_at')
       .single();
 
-    if (empErr) {
-      // rollback auth user so we don't leave an orphaned login
-      await supabase.auth.admin.deleteUser(authUser.id);
-      return new Response(JSON.stringify({
-        ok: false, code: 'employee_insert_failed', error: empErr.message,
-      }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (empErr || !employee) {
+      try { await admin.auth.admin.deleteUser(authUserId); } catch (_) { /* ignore */ }
+      return fail('employee_insert_failed', empErr?.message || 'Failed to create employee record', 400);
     }
 
-    // ---- 3) Link user_profiles (non-fatal if it fails) ----
-    const { error: profileErr } = await supabase
+    const { error: profileErr } = await admin
       .from('user_profiles')
       .insert({
-        id: authUser.id,       // auth user id
+        id: authUserId,
         employee_id: employee.id,
         role: 'employee',
       });
-    if (profileErr) console.log('user_profiles insert failed:', profileErr.message);
 
-    return new Response(JSON.stringify({
+    if (profileErr) {
+      try { await admin.from('employees').delete().eq('id', employee.id); } catch (_) { /* ignore */ }
+      try { await admin.auth.admin.deleteUser(authUserId); } catch (_) { /* ignore */ }
+      return fail('profile_insert_failed', profileErr.message, 400);
+    }
+
+    return json({
       ok: true,
-      user_id: authUser.id,
+      user_id: authUserId,
       employee_id: employee.id,
       employee,
-    }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-  } catch (e: any) {
-    console.error('Unexpected error:', e);
-    return new Response(JSON.stringify({
-      ok: false, code: 'unexpected', error: e?.message || 'Internal server error',
-    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }, 200);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Unexpected server error';
+    return fail('unexpected', message, 500);
   }
 });
