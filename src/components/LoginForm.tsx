@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, LogIn, Car } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { ThemeToggle } from './ThemeToggle';
 
 /**
  * Props:
@@ -67,7 +68,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center px-4 relative">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         {/* Card */}
         <div className="bg-white shadow-xl rounded-2xl p-8 border border-slate-200">

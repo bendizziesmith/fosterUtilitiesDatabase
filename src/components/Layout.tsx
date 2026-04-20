@@ -1,6 +1,7 @@
 import React from 'react';
 import { Car, ArrowLeft, LogOut, Home } from 'lucide-react';
 import { signOut } from '../lib/auth';
+import { ThemeToggle } from './ThemeToggle';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -58,6 +59,7 @@ export const Layout: React.FC<LayoutProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <ThemeToggle compact />
               {onHome && (
                 <button
                   onClick={onHome}
