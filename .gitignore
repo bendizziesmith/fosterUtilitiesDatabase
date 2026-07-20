@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Obsidian project brain (kept out of the app repo)
+.obsidian/
+Project Brain/
+_Brain Home.md
+supabase/.temp/
