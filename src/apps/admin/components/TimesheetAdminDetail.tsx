@@ -11,6 +11,7 @@ import {
   CheckCircle,
   AlertTriangle,
   Download,
+  PoundSterling,
 } from 'lucide-react';
 import {
   TimesheetWeek,
@@ -26,6 +27,14 @@ import {
   getStatusInfo,
   downloadTimesheetCSV,
 } from '../../../lib/timesheetUtils';
+import {
+  hasPriceWork,
+  trenchTotal,
+  jointTotal,
+  formatMetres,
+  formatPwValue,
+} from '../../../lib/priceWork';
+import { downloadTimesheetPdf } from '../../../lib/timesheetPdf';
 
 interface TimesheetAdminDetailProps {
   timesheetId: string;
@@ -41,6 +50,7 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnReason, setReturnReason] = useState('');
   const [returning, setReturning] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,6 +86,19 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
     }
   };
 
+  const handleDownloadPdf = async () => {
+    if (!timesheet) return;
+    try {
+      setGeneratingPdf(true);
+      await downloadTimesheetPdf(timesheet);
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      setError('Failed to generate PDF. Please try again.');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -104,6 +127,18 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
     'Unknown';
   const statusInfo = getStatusInfo(timesheet.status);
   const jobRows = timesheet.job_rows || [];
+
+  const weeklyPriceWork = jobRows.reduce(
+    (acc, r) => {
+      if (hasPriceWork(r)) {
+        acc.trench += trenchTotal(r);
+        acc.joint += jointTotal(r);
+        acc.any = true;
+      }
+      return acc;
+    },
+    { trench: 0, joint: 0, any: false }
+  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -262,6 +297,15 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
             {formatHoursDecimal(timesheet.weekly_total_hours)} hours
           </span>
         </div>
+        {weeklyPriceWork.any && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-1.5 text-xs text-teal-700">
+            <PoundSterling className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="tabular-nums">
+              Price work (week): Trench {formatMetres(weeklyPriceWork.trench)} m ·
+              Joint Hole {weeklyPriceWork.joint}
+            </span>
+          </div>
+        )}
       </div>
 
       {timesheet.weekly_notes && (
@@ -281,13 +325,27 @@ export const TimesheetAdminDetail: React.FC<TimesheetAdminDetailProps> = ({
       )}
 
       <div className="flex items-center justify-between">
-        <button
-          onClick={() => downloadTimesheetCSV(timesheet)}
-          className="flex items-center gap-2 px-5 py-2.5 border-2 border-teal-300 text-teal-700 rounded-lg font-medium text-sm hover:bg-teal-50 transition-colors"
-        >
-          <Download className="h-4 w-4" />
-          Download CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => downloadTimesheetCSV(timesheet)}
+            className="flex items-center gap-2 px-5 py-2.5 border-2 border-teal-300 text-teal-700 rounded-lg font-medium text-sm hover:bg-teal-50 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            Download CSV
+          </button>
+          <button
+            onClick={handleDownloadPdf}
+            disabled={generatingPdf}
+            className="flex items-center gap-2 px-5 py-2.5 border-2 border-slate-300 text-slate-700 rounded-lg font-medium text-sm hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {generatingPdf ? (
+              <div className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
+            {generatingPdf ? 'Generating…' : 'Download PDF'}
+          </button>
+        </div>
         {timesheet.status === 'submitted' && (
           <button
             onClick={() => setShowReturnModal(true)}
@@ -462,6 +520,83 @@ function JobRowDetail({
             })}
           </tbody>
         </table>
+      </div>
+
+      <PriceWorkDetail row={row} />
+    </div>
+  );
+}
+
+function PriceWorkDetail({ row }: { row: TimesheetJobRow }) {
+  if (!hasPriceWork(row)) return null;
+
+  const trenchCells = [
+    { label: 'Verge', value: row.pw_trench_verge },
+    { label: 'F/W', value: row.pw_trench_footway },
+    { label: 'C/W', value: row.pw_trench_carriageway },
+  ];
+  const jointCells = [
+    { label: 'Verge', value: row.pw_joint_verge },
+    { label: 'F/W', value: row.pw_joint_footway },
+    { label: 'C/W', value: row.pw_joint_carriageway },
+  ];
+
+  return (
+    <div className="px-4 pb-4">
+      <div className="flex items-center gap-1.5 mb-2">
+        <PoundSterling className="h-3.5 w-3.5 text-teal-600" />
+        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          Price Work
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <PriceWorkPanel
+          title="Trench (metres)"
+          totalLabel={`${formatMetres(trenchTotal(row))} m`}
+          cells={trenchCells}
+        />
+        <PriceWorkPanel
+          title="Joint Hole (count)"
+          totalLabel={`${jointTotal(row)}`}
+          cells={jointCells}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PriceWorkPanel({
+  title,
+  totalLabel,
+  cells,
+}: {
+  title: string;
+  totalLabel: string;
+  cells: Array<{ label: string; value: number | null }>;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+        <span className="text-xs font-semibold text-slate-600">{title}</span>
+        <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded tabular-nums">
+          {totalLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 divide-x divide-slate-100">
+        {cells.map((c) => (
+          <div key={c.label} className="px-2 py-2 text-center">
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">
+              {c.label}
+            </div>
+            <div
+              className={`text-sm font-semibold tabular-nums ${
+                c.value === null ? 'text-slate-300' : 'text-slate-900'
+              }`}
+            >
+              {formatPwValue(c.value)}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
