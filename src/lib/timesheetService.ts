@@ -1,5 +1,6 @@
 import { supabase, Employee } from './supabase';
 import { getWeekEndingSunday, DAYS_OF_WEEK, calculateDayHours } from './timesheetUtils';
+import { PriceWorkFields } from './priceWork';
 
 export interface TimesheetWeek {
   id: string;
@@ -23,7 +24,7 @@ export interface TimesheetWeek {
   ganger?: Employee;
 }
 
-export interface TimesheetJobRow {
+export interface TimesheetJobRow extends PriceWorkFields {
   id: string;
   timesheet_week_id: string;
   sort_order: number;
@@ -190,7 +191,7 @@ export async function updateJobRow(
     sort_order?: number;
     default_start_time?: string | null;
     default_finish_time?: string | null;
-  }
+  } & Partial<PriceWorkFields>
 ): Promise<void> {
   const { error } = await supabase
     .from('timesheet_job_rows')
