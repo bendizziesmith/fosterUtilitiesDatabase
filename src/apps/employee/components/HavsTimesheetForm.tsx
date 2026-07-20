@@ -206,12 +206,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setHasUnsavedChanges(false);
   };
 
+  // Reload the week's data whether or not selectedWeek changes value. Setting state to the same
+  // value is a React no-op, so the [selectedWeek] effect would not re-run and the screen would
+  // stall on the previous state (e.g. "week not found"). Load directly when the value is unchanged.
+  const reloadOrSelectWeek = (weekEnding: string) => {
+    if (weekEnding === selectedWeek) {
+      initializeWeekData(weekEnding);
+    } else {
+      setSelectedWeek(weekEnding);
+    }
+  };
+
   const handleWeekSelect = (weekEnding: string) => {
     if (hasUnsavedChanges) {
       if (!confirm('You have unsaved changes. Discard and switch weeks?')) return;
     }
-    setSelectedWeek(weekEnding);
     setShowWeekSelector(false);
+    reloadOrSelectWeek(weekEnding);
   };
 
   const updateMinutes = (personIndex: number, equipmentName: string, day: DayKey, value: number) => {
@@ -361,7 +372,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setShowStartNewWeekModal(false);
     const updatedWeeks = await getViewableWeeks(2, selectedEmployee.id);
     setAvailableWeeks(updatedWeeks);
-    setSelectedWeek(weekEnding);
+    reloadOrSelectWeek(weekEnding);
   };
 
   const isSubmitted = havsWeek?.status === 'submitted';
