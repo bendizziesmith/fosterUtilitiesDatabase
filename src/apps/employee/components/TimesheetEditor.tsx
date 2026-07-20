@@ -33,6 +33,12 @@ import {
   formatWeekEnding,
   getStatusInfo,
 } from '../../../lib/timesheetUtils';
+import {
+  PriceWorkLocal,
+  EMPTY_PRICE_WORK_LOCAL,
+  fieldsToLocal,
+  buildPriceWorkUpdate,
+} from '../../../lib/priceWork';
 import { TimesheetHeader } from './timesheet/TimesheetHeader';
 import { JobRowCard, LocalDayEntry } from './timesheet/JobRowCard';
 
@@ -46,6 +52,7 @@ interface LocalJobRow extends TimesheetJobRow {
   localEntries: LocalDayEntry[];
   localDefaultStart: string;
   localDefaultFinish: string;
+  localPriceWork: PriceWorkLocal;
 }
 
 export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
@@ -107,6 +114,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
         localEntries: buildLocalEntries(row.day_entries || []),
         localDefaultStart: row.default_start_time || '',
         localDefaultFinish: row.default_finish_time || '',
+        localPriceWork: fieldsToLocal(row),
       }));
 
       setJobRows(rows);
@@ -248,6 +256,20 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     []
   );
 
+  const handlePriceWorkChange = useCallback(
+    (jobRowId: string, field: keyof PriceWorkLocal, value: string) => {
+      setJobRows((prev) =>
+        prev.map((row) =>
+          row.id === jobRowId
+            ? { ...row, localPriceWork: { ...row.localPriceWork, [field]: value } }
+            : row
+        )
+      );
+      scheduleSave();
+    },
+    []
+  );
+
   const scheduleSave = useCallback(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
@@ -275,6 +297,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           sort_order: row.sort_order,
           default_start_time: row.localDefaultStart || null,
           default_finish_time: row.localDefaultFinish || null,
+          ...buildPriceWorkUpdate(row.localPriceWork),
         });
 
         for (const entry of row.localEntries) {
@@ -318,6 +341,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           localEntries: buildLocalEntries([]),
           localDefaultStart: '',
           localDefaultFinish: '',
+          localPriceWork: EMPTY_PRICE_WORK_LOCAL,
         },
       ]);
     } catch (err) {
@@ -533,6 +557,8 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
             onDayEntryChange={handleDayEntryChange}
             onDayToggle={handleDayToggle}
             onDeleteRow={handleDeleteJobRow}
+            priceWork={row.localPriceWork}
+            onPriceWorkChange={handlePriceWorkChange}
             readOnly={!isEditable}
           />
         ))}
