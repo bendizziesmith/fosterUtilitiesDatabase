@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Save, Send, HardHat, Clock, CheckCircle, AlertTriangle, Shield, FileText, X, Plus } from 'lucide-react';
 import { supabase, Employee, HavsWeek, HavsWeekMember, HavsExposureEntry } from '../../../lib/supabase';
 import { GangMemberSelector } from './GangMemberSelector';
@@ -94,6 +94,16 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [weekNotFound, setWeekNotFound] = useState(false);
+
+  // Debounced autosave: refs hold the latest state so the delayed save reads current values.
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const peopleStateRef = useRef(peopleState);
+  const havsWeekRef = useRef(havsWeek);
+  // Serializes saves so a debounced save and a submit/manual flush never overlap.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(() => { peopleStateRef.current = peopleState; }, [peopleState]);
+  useEffect(() => { havsWeekRef.current = havsWeek; }, [havsWeek]);
 
   useEffect(() => {
     const initializeForm = async () => {
@@ -206,12 +216,23 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setHasUnsavedChanges(false);
   };
 
+  // Reload the week's data whether or not selectedWeek changes value. Setting state to the same
+  // value is a React no-op, so the [selectedWeek] effect would not re-run and the screen would
+  // stall on the previous state (e.g. "week not found"). Load directly when the value is unchanged.
+  const reloadOrSelectWeek = (weekEnding: string) => {
+    if (weekEnding === selectedWeek) {
+      initializeWeekData(weekEnding);
+    } else {
+      setSelectedWeek(weekEnding);
+    }
+  };
+
   const handleWeekSelect = (weekEnding: string) => {
     if (hasUnsavedChanges) {
       if (!confirm('You have unsaved changes. Discard and switch weeks?')) return;
     }
-    setSelectedWeek(weekEnding);
     setShowWeekSelector(false);
+    reloadOrSelectWeek(weekEnding);
   };
 
   const updateMinutes = (personIndex: number, equipmentName: string, day: DayKey, value: number) => {
@@ -225,6 +246,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       return updated;
     });
     setHasUnsavedChanges(true);
+    scheduleSave();
   };
 
   const updateField = (personIndex: number, field: 'comments' | 'actions', value: string) => {
@@ -234,13 +256,34 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
       return updated;
     });
     setHasUnsavedChanges(true);
+    scheduleSave();
   };
 
-  const handleSave = async () => {
+  // Debounce a save ~1.5s after the last change so rapid typing coalesces into one write.
+  const scheduleSave = useCallback(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = undefined;
+      performSave();
+    }, 1500);
+  }, []);
+
+  // Queue each save behind the previous one so concurrent runs of the non-idempotent
+  // exposure writes can't duplicate rows. Returns the tail so callers can await a flush.
+  const performSave = (): Promise<void> => {
+    const run = saveChainRef.current.then(() => doSave());
+    saveChainRef.current = run.catch(() => {});
+    return run;
+  };
+
+  const doSave = async () => {
+    const people = peopleStateRef.current;
+    const week = havsWeekRef.current;
+    if (people.length === 0) return;
     setSaving(true);
     setSaveError(null);
     try {
-      for (const personState of peopleState) {
+      for (const personState of people) {
         await supabase
           .from('havs_week_members')
           .update({ comments: personState.comments, actions: personState.actions })
@@ -290,8 +333,8 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         }
       }
 
-      if (havsWeek) {
-        await supabase.from('havs_weeks').update({ last_saved_at: new Date().toISOString() }).eq('id', havsWeek.id);
+      if (week) {
+        await supabase.from('havs_weeks').update({ last_saved_at: new Date().toISOString() }).eq('id', week.id);
         setHavsWeek(prev => prev ? { ...prev, last_saved_at: new Date().toISOString() } : null);
       }
 
@@ -305,11 +348,27 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     }
   };
 
-  const handleSubmitClick = () => {
-    if (hasUnsavedChanges) {
-      alert('Please save your changes before submitting.');
-      return;
+  // Manual "save now": cancel any pending debounce and save immediately.
+  const handleManualSave = () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = undefined;
     }
+    performSave();
+  };
+
+  // Flush a pending save on unmount / navigate-away so in-flight edits are not lost.
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = undefined;
+        performSave();
+      }
+    };
+  }, []);
+
+  const handleSubmitClick = () => {
     setShowSubmitConfirmation(true);
   };
 
@@ -317,7 +376,12 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setSubmitting(true);
     setShowSubmitConfirmation(false);
     try {
-      if (hasUnsavedChanges) await handleSave();
+      // Flush any pending autosave so the latest edits are persisted before submitting.
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = undefined;
+      }
+      if (hasUnsavedChanges) await performSave();
       if (havsWeek) {
         const isFirstSubmit = havsWeek.status === 'draft';
         const { data, error } = await supabase.rpc('submit_havs_week', { week_id_param: havsWeek.id });
@@ -361,7 +425,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
     setShowStartNewWeekModal(false);
     const updatedWeeks = await getViewableWeeks(2, selectedEmployee.id);
     setAvailableWeeks(updatedWeeks);
-    setSelectedWeek(weekEnding);
+    reloadOrSelectWeek(weekEnding);
   };
 
   const isSubmitted = havsWeek?.status === 'submitted';
@@ -394,6 +458,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
         selectedWeek={selectedWeek}
         havsWeek={havsWeek}
         weekNotFound={weekNotFound}
+        saving={saving}
         hasUnsavedChanges={hasUnsavedChanges}
         lastSaved={lastSaved}
         saveError={saveError}
@@ -454,7 +519,7 @@ export const HavsTimesheetForm: React.FC<HavsTimesheetFormProps> = ({
               submitting={submitting}
               hasUnsavedChanges={hasUnsavedChanges}
               peopleCount={peopleState.length}
-              onSave={handleSave}
+              onSave={handleManualSave}
               onSubmit={handleSubmitClick}
             />
           )}
@@ -495,6 +560,7 @@ interface WeekControlBarProps {
   selectedWeek: string | null;
   havsWeek: HavsWeek | null;
   weekNotFound: boolean;
+  saving: boolean;
   hasUnsavedChanges: boolean;
   lastSaved: Date | null;
   saveError: string | null;
@@ -507,6 +573,7 @@ const WeekControlBar: React.FC<WeekControlBarProps> = ({
   selectedWeek,
   havsWeek,
   weekNotFound,
+  saving,
   hasUnsavedChanges,
   lastSaved,
   saveError,
@@ -549,19 +616,25 @@ const WeekControlBar: React.FC<WeekControlBarProps> = ({
                 <span className="text-xs text-slate-500">Rev #{havsWeek.revision_number}</span>
               )}
             </div>
-            <div className="flex items-center gap-3 mt-0.5">
-              {hasUnsavedChanges && (
+            <div className="flex items-center gap-3 mt-0.5" aria-live="polite">
+              {saving && (
+                <span className="flex items-center gap-1 text-xs text-slate-400">
+                  <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin" />
+                  Saving...
+                </span>
+              )}
+              {!saving && hasUnsavedChanges && !saveError && (
                 <span className="flex items-center gap-1 text-xs text-amber-600">
                   <AlertTriangle className="h-3 w-3" /> Unsaved
                 </span>
               )}
-              {!hasUnsavedChanges && lastSaved && !saveError && (
+              {!saving && !hasUnsavedChanges && lastSaved && !saveError && (
                 <span className="flex items-center gap-1 text-xs text-slate-400">
                   <CheckCircle className="h-3 w-3 text-emerald-500" />
                   Saved {lastSaved.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
-              {saveError && (
+              {!saving && saveError && (
                 <span className="flex items-center gap-1 text-xs text-red-600">
                   <AlertTriangle className="h-3 w-3" /> {saveError}
                 </span>
@@ -830,7 +903,7 @@ const SaveSubmitBar: React.FC<SaveSubmitBarProps> = ({
       </button>
       <button
         onClick={onSubmit}
-        disabled={submitting || hasUnsavedChanges}
+        disabled={submitting}
         className="flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed"
       >
         {submitting ? (
@@ -840,9 +913,6 @@ const SaveSubmitBar: React.FC<SaveSubmitBarProps> = ({
         )}
       </button>
     </div>
-    {hasUnsavedChanges && (
-      <p className="text-xs text-red-500 mt-2 text-center">Save changes before submitting</p>
-    )}
   </div>
 );
 
