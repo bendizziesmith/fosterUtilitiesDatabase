@@ -113,6 +113,11 @@ export function formatMetres(n: number): string {
   return parseFloat(n.toFixed(2)).toString();
 }
 
+/** Read-only cell display: an em dash for blank (null/undefined), otherwise the number. */
+export function formatPwValue(v: number | null | undefined): string {
+  return v === null || v === undefined ? '–' : formatMetres(v);
+}
+
 /** Chip text, e.g. "Price work · Trench 57 m · Joint Hole 3". Null when no price work. */
 export function formatPriceWorkSummary(f: PriceWorkFields): string | null {
   if (!hasPriceWork(f)) return null;

@@ -1,3 +1,5 @@
+import { PriceWorkFields } from './priceWork';
+
 export const DAYS_OF_WEEK = [
   'monday',
   'tuesday',
@@ -142,27 +144,33 @@ function escapeCSV(val: string): string {
   return val;
 }
 
-export function downloadTimesheetCSV(ts: {
+export type CsvTimesheet = {
   week_ending: string;
-  ganger?: any;
+  ganger?: { full_name?: string; role?: string } | null;
   ganger_name_snapshot?: string;
   vehicle_registration_snapshot?: string | null;
   labourer_1_name?: string | null;
   labourer_2_name?: string | null;
   weekly_total_hours: number;
-  job_rows?: Array<{
-    job_number: string;
-    job_address: string;
-    day_entries?: Array<{
-      day_of_week: string;
-      start_time: string | null;
-      finish_time: string | null;
-      hours_total: number;
-    }>;
-  }>;
-}): void {
-  const empName =
-    ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
+  job_rows?: Array<
+    {
+      job_number: string;
+      job_address: string;
+      day_entries?: Array<{
+        day_of_week: string;
+        start_time: string | null;
+        finish_time: string | null;
+        hours_total: number;
+      }>;
+    } & Partial<PriceWorkFields>
+  >;
+};
+
+// Pure: builds the CSV text. Six price work columns are appended after the existing
+// columns (numeric, blank when null), placed on a job's first worked-day row so a
+// column sum counts each job once; a job with price work but no worked days gets one row.
+export function buildTimesheetCsv(ts: CsvTimesheet): string {
+  const empName = ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
   const role = ts.ganger?.role || '';
   const vehicle = ts.vehicle_registration_snapshot || '';
   const lab1 = ts.labourer_1_name || '';
@@ -182,11 +190,41 @@ export function downloadTimesheetCSV(ts: {
     'Finish',
     'Hours',
     'Weekly Total Hours',
+    'Trench Verge',
+    'Trench F/W',
+    'Trench C/W',
+    'Joint Verge',
+    'Joint F/W',
+    'Joint C/W',
   ];
 
   const rows: string[] = [headers.join(',')];
+  const pwCell = (v: number | null | undefined) =>
+    v === null || v === undefined ? '' : String(v);
+  const blankPw = ['', '', '', '', '', ''];
 
   for (const jobRow of ts.job_rows || []) {
+    const pwCells = [
+      pwCell(jobRow.pw_trench_verge),
+      pwCell(jobRow.pw_trench_footway),
+      pwCell(jobRow.pw_trench_carriageway),
+      pwCell(jobRow.pw_joint_verge),
+      pwCell(jobRow.pw_joint_footway),
+      pwCell(jobRow.pw_joint_carriageway),
+    ];
+    const jobHasPw = pwCells.some((c) => c !== '');
+    const leading = [
+      escapeCSV(formatWeekEnding(ts.week_ending)),
+      escapeCSV(empName),
+      escapeCSV(role),
+      escapeCSV(vehicle),
+      escapeCSV(lab1),
+      escapeCSV(lab2),
+      escapeCSV(jobRow.job_number || ''),
+      escapeCSV(jobRow.job_address || ''),
+    ];
+    let emittedForJob = false;
+
     for (const day of DAYS_OF_WEEK) {
       const entry = (jobRow.day_entries || []).find(
         (e) => e.day_of_week === day
@@ -195,26 +233,40 @@ export function downloadTimesheetCSV(ts: {
 
       rows.push(
         [
-          escapeCSV(formatWeekEnding(ts.week_ending)),
-          escapeCSV(empName),
-          escapeCSV(role),
-          escapeCSV(vehicle),
-          escapeCSV(lab1),
-          escapeCSV(lab2),
-          escapeCSV(jobRow.job_number || ''),
-          escapeCSV(jobRow.job_address || ''),
+          ...leading,
           escapeCSV(DAY_LABELS_FULL[day as DayOfWeek]),
           escapeCSV(entry.start_time || ''),
           escapeCSV(entry.finish_time || ''),
           formatHoursDecimal(entry.hours_total || 0),
           formatHoursDecimal(ts.weekly_total_hours),
+          ...(emittedForJob ? blankPw : pwCells),
+        ].join(',')
+      );
+      emittedForJob = true;
+    }
+
+    if (!emittedForJob && jobHasPw) {
+      rows.push(
+        [
+          ...leading,
+          '',
+          '',
+          '',
+          '',
+          formatHoursDecimal(ts.weekly_total_hours),
+          ...pwCells,
         ].join(',')
       );
     }
   }
 
+  return rows.join('\n');
+}
+
+export function downloadTimesheetCSV(ts: CsvTimesheet): void {
+  const empName = ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
   const safeName = empName.replace(/[^a-zA-Z0-9]/g, '_');
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const blob = new Blob([buildTimesheetCsv(ts)], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

@@ -10,6 +10,7 @@ import {
   jointTotal,
   hasPriceWork,
   formatMetres,
+  formatPwValue,
   formatPriceWorkSummary,
   liveTrenchTotal,
   liveJointTotal,
@@ -18,6 +19,24 @@ import {
   type PriceWorkFields,
   type PriceWorkLocal,
 } from './priceWork';
+
+describe('formatPwValue (read-only cell display)', () => {
+  it('renders a whole number', () => {
+    expect(formatPwValue(20)).toBe('20');
+  });
+  it('renders a decimal trimmed of trailing zeros', () => {
+    expect(formatPwValue(12.5)).toBe('12.5');
+  });
+  it('renders an em dash for null', () => {
+    expect(formatPwValue(null)).toBe('–');
+  });
+  it('renders an em dash for undefined', () => {
+    expect(formatPwValue(undefined)).toBe('–');
+  });
+  it('renders an explicit zero (not a dash)', () => {
+    expect(formatPwValue(0)).toBe('0');
+  });
+});
 
 describe('parseTrench (metres, decimals allowed)', () => {
   it('parses a whole number', () => {
