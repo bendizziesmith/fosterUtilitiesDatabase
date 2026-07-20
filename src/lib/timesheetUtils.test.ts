@@ -79,6 +79,19 @@ describe('buildTimesheetCsv — price work columns', () => {
     expect(lastSix(row)).toEqual(['', '12.5', '', '', '', '']);
   });
 
+  it('rounds a trench value to 2dp so the CSV matches the screen and PDF', () => {
+    const csv = buildTimesheetCsv({
+      week_ending: '2026-07-26',
+      ganger_name_snapshot: 'ben',
+      weekly_total_hours: 8,
+      job_rows: [
+        { job_number: '344', job_address: 'Norwich', ...NO_PW, pw_trench_footway: 12.567, day_entries: [day('monday')] },
+      ],
+    });
+    const row = csv.split('\n').find((l) => l.includes(',344,'))!;
+    expect(lastSix(row)).toEqual(['', '12.57', '', '', '', '']);
+  });
+
   it('puts price work on only the first day-row of a job (so column sums count it once)', () => {
     const csv = buildTimesheetCsv({
       week_ending: '2026-07-26',
@@ -109,6 +122,10 @@ describe('buildTimesheetCsv — price work columns', () => {
     });
     const rows = csv.split('\n').filter((l) => l.includes(',344,'));
     expect(rows).toHaveLength(1);
+    const c = cells(rows[0]);
+    expect(c).toHaveLength(19); // 13 existing + 6 price work columns
+    expect(c.slice(8, 12)).toEqual(['', '', '', '']); // Day, Start, Finish, Hours blank
+    expect(c[12]).toBe('0'); // Weekly Total Hours still lands in column 13
     expect(lastSix(rows[0])).toEqual(['', '', '', '', '', '200']);
   });
 

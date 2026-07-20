@@ -113,7 +113,7 @@ export function formatMetres(n: number): string {
   return parseFloat(n.toFixed(2)).toString();
 }
 
-/** Read-only cell display: an em dash for blank (null/undefined), otherwise the number. */
+/** Read-only cell display: a dash for blank (null/undefined), otherwise the number. */
 export function formatPwValue(v: number | null | undefined): string {
   return v === null || v === undefined ? '–' : formatMetres(v);
 }

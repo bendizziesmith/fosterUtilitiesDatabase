@@ -1,4 +1,4 @@
-import { PriceWorkFields } from './priceWork';
+import { PriceWorkFields, formatMetres } from './priceWork';
 
 export const DAYS_OF_WEEK = [
   'monday',
@@ -199,8 +199,9 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
   ];
 
   const rows: string[] = [headers.join(',')];
+  // Numeric, blank when null, rounded like the screen/PDF (2dp) so all three agree.
   const pwCell = (v: number | null | undefined) =>
-    v === null || v === undefined ? '' : String(v);
+    v === null || v === undefined ? '' : formatMetres(v);
   const blankPw = ['', '', '', '', '', ''];
 
   for (const jobRow of ts.job_rows || []) {
