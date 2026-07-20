@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Trash2, AlertCircle } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Trash2, AlertCircle, PoundSterling, ChevronDown } from 'lucide-react';
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
@@ -7,6 +7,15 @@ import {
   formatHoursDecimal,
 } from '../../../../lib/timesheetUtils';
 import { TimesheetJobRow } from '../../../../lib/timesheetService';
+import {
+  PriceWorkLocal,
+  buildPriceWorkUpdate,
+  formatPriceWorkSummary,
+  formatMetres,
+  liveTrenchTotal,
+  liveJointTotal,
+  localHasPriceWork,
+} from '../../../../lib/priceWork';
 
 export interface LocalDayEntry {
   day_of_week: DayOfWeek;
@@ -34,6 +43,12 @@ interface JobRowCardProps {
   ) => void;
   onDayToggle: (jobRowId: string, day: DayOfWeek, selected: boolean) => void;
   onDeleteRow: (jobRowId: string) => void;
+  priceWork: PriceWorkLocal;
+  onPriceWorkChange: (
+    jobRowId: string,
+    field: keyof PriceWorkLocal,
+    value: string
+  ) => void;
   readOnly: boolean;
 }
 
@@ -47,6 +62,8 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
   onDayEntryChange,
   onDayToggle,
   onDeleteRow,
+  priceWork,
+  onPriceWorkChange,
   readOnly,
 }) => {
   const selectedDays = localEntries.filter(
@@ -177,6 +194,13 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
         )}
       </div>
 
+      <PriceWorkSection
+        jobRowId={jobRow.id}
+        priceWork={priceWork}
+        onPriceWorkChange={onPriceWorkChange}
+        readOnly={readOnly}
+      />
+
       {!readOnly && (
         <div className={`px-5 py-3 border-b border-slate-100 ${daysLocked ? 'bg-slate-50' : 'bg-slate-50/50'}`}>
           <label className="text-xs font-medium text-slate-500 mb-2 block">
@@ -294,6 +318,199 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
           </p>
         </div>
       )}
+    </div>
+  );
+};
+
+type PriceWorkFieldDef = { field: keyof PriceWorkLocal; label: string };
+
+const TRENCH_FIELDS: PriceWorkFieldDef[] = [
+  { field: 'pw_trench_verge', label: 'Verge' },
+  { field: 'pw_trench_footway', label: 'F/W' },
+  { field: 'pw_trench_carriageway', label: 'C/W' },
+];
+
+const JOINT_FIELDS: PriceWorkFieldDef[] = [
+  { field: 'pw_joint_verge', label: 'Verge' },
+  { field: 'pw_joint_footway', label: 'F/W' },
+  { field: 'pw_joint_carriageway', label: 'C/W' },
+];
+
+interface PriceWorkSectionProps {
+  jobRowId: string;
+  priceWork: PriceWorkLocal;
+  onPriceWorkChange: (
+    jobRowId: string,
+    field: keyof PriceWorkLocal,
+    value: string
+  ) => void;
+  readOnly: boolean;
+}
+
+const PriceWorkSection: React.FC<PriceWorkSectionProps> = ({
+  jobRowId,
+  priceWork,
+  onPriceWorkChange,
+  readOnly,
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const fields = buildPriceWorkUpdate(priceWork);
+  const trenchLive = liveTrenchTotal(priceWork);
+  const jointLive = liveJointTotal(priceWork);
+  const summary = formatPriceWorkSummary(fields);
+  const hasAny = localHasPriceWork(priceWork);
+
+  // Read-only (submitted / returned): show entered values, hide entirely if empty.
+  if (readOnly) {
+    if (!hasAny) return null;
+
+    const renderReadRow = (
+      title: string,
+      defs: PriceWorkFieldDef[],
+      totalLabel: string
+    ) => {
+      if (!defs.some((d) => fields[d.field] !== null)) return null;
+      return (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-baseline gap-3 min-w-0">
+            <span className="text-sm font-semibold text-slate-700 flex-shrink-0">
+              {title}
+            </span>
+            <span className="text-sm text-slate-600 tabular-nums truncate">
+              {defs.map((d) => `${d.label} ${fields[d.field] ?? '–'}`).join(' · ')}
+            </span>
+          </div>
+          <span className="text-sm font-semibold text-teal-700 tabular-nums bg-teal-50 px-2.5 py-0.5 rounded flex-shrink-0">
+            {totalLabel}
+          </span>
+        </div>
+      );
+    };
+
+    return (
+      <div className="px-5 py-3 border-b border-slate-100">
+        <p className="text-xs font-medium text-slate-500 mb-2">Price Work</p>
+        <div className="space-y-2">
+          {renderReadRow('Trench', TRENCH_FIELDS, `${formatMetres(trenchLive)} m`)}
+          {renderReadRow('Joint Hole', JOINT_FIELDS, `${jointLive}`)}
+        </div>
+      </div>
+    );
+  }
+
+  const panelId = `price-work-${jobRowId}`;
+
+  const renderSection = (
+    title: string,
+    defs: PriceWorkFieldDef[],
+    totalLabel: string,
+    unitHint: string,
+    inputMode: 'decimal' | 'numeric',
+    step: string
+  ) => (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-slate-600">{title}</span>
+        <span className="text-xs font-semibold text-teal-700 tabular-nums bg-teal-50 px-2.5 py-1 rounded-full">
+          {totalLabel}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {defs.map((d) => {
+          const id = `${jobRowId}-${d.field}`;
+          return (
+            <div key={d.field}>
+              <label
+                htmlFor={id}
+                className="text-[11px] font-medium text-slate-500 mb-1 block"
+              >
+                {d.label}
+              </label>
+              <div className="relative">
+                <input
+                  id={id}
+                  type="number"
+                  inputMode={inputMode}
+                  step={step}
+                  min="0"
+                  value={priceWork[d.field]}
+                  onChange={(e) =>
+                    onPriceWorkChange(jobRowId, d.field, e.target.value)
+                  }
+                  tabIndex={open ? undefined : -1}
+                  placeholder="0"
+                  className="w-full pl-3 pr-8 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">
+                  {unitHint}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="px-5 py-3 border-b border-slate-100">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="w-full flex items-center justify-between gap-2 min-h-[44px] px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors cursor-pointer"
+      >
+        <span className="flex items-center gap-2">
+          <PoundSterling className="h-4 w-4" />
+          <span className="text-sm font-medium">Price Work</span>
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {!open && summary && (
+        <div className="mt-2">
+          <span className="inline-flex items-center text-xs font-medium text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
+            {summary}
+          </span>
+        </div>
+      )}
+
+      <div
+        id={panelId}
+        className={`grid transition-[grid-template-rows] duration-200 ease-in-out motion-reduce:transition-none ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div className="pt-3 space-y-4">
+            {renderSection(
+              'Trench (metres)',
+              TRENCH_FIELDS,
+              `${formatMetres(trenchLive)} m`,
+              'm',
+              'decimal',
+              '0.01'
+            )}
+            {renderSection(
+              'Joint Hole (count)',
+              JOINT_FIELDS,
+              `${jointLive}`,
+              'no.',
+              'numeric',
+              '1'
+            )}
+            <p className="text-xs text-slate-400">
+              F/W = Footway · C/W = Carriageway
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
