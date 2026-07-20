@@ -14,9 +14,18 @@ import {
   ChevronDown,
   Download,
   X,
+  Minus,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { HavsWeekDetail } from './HavsWeekDetail';
+import { getHavsCellPresentation, HavsCellState } from '../../../lib/havsGridStatus';
+
+const CELL_ICON: Record<HavsCellState, typeof CheckCircle> = {
+  submitted: CheckCircle,
+  draft: AlertCircle,
+  missing: FileX,
+  future: Minus,
+};
 
 interface WeekOverview {
   week_id: string;
@@ -186,59 +195,42 @@ export const HavsEmployerDashboard: React.FC = () => {
     };
   };
 
-  const getStatusCell = (gangerId: string, weekEnding: string) => {
-    const result = getWeekStatus(gangerId, weekEnding);
-    const isPast = new Date(weekEnding) < new Date();
+  // One identical, centred 32x32 chip for every status so rows and columns line up.
+  // Cells with a record are real buttons (clickable, keyboard/focus); others are static.
+  const getStatusCell = (ganger: Employee, week: WeekDate) => {
+    const result = getWeekStatus(ganger.id, week.date);
+    const presentation = getHavsCellPresentation(result?.status ?? null, week.date, new Date());
+    const Icon = CELL_ICON[presentation.state];
+    const chipClass = `flex h-8 w-8 items-center justify-center rounded-full transition-colors ${presentation.chipClass}`;
+    const icon = <Icon className={`h-4 w-4 ${presentation.iconClass}`} />;
 
-    if (!result) {
-      if (isPast) {
-        return (
-          <div className="flex items-center justify-center">
-            <div
-              className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center"
-              title="Missing"
-            >
-              <FileX className="w-4 h-4 text-red-500" />
-            </div>
-          </div>
-        );
-      }
+    if (presentation.clickable && result) {
       return (
-        <div className="flex items-center justify-center">
-          <div
-            className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"
-            title="Not started"
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setSelectedWeekId(result.weekId)}
+            aria-label={`Open ${ganger.full_name}'s HAVS week ending ${week.label}`}
+            title={`${presentation.label} - ${Math.floor(result.minutes / 60)}h ${result.minutes % 60}m exposure`}
+            className={`group ${chipClass} cursor-pointer border-0 p-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1`}
           >
-            <span className="text-slate-400 text-xs">-</span>
-          </div>
+            {icon}
+          </button>
         </div>
-      );
-    }
-
-    if (result.status === 'submitted') {
-      return (
-        <button
-          onClick={() => setSelectedWeekId(result.weekId)}
-          className="flex items-center justify-center group"
-          title={`Submitted - ${Math.floor(result.minutes / 60)}h ${result.minutes % 60}m exposure`}
-        >
-          <div className="w-8 h-8 rounded-full bg-emerald-100 group-hover:bg-emerald-200 flex items-center justify-center transition-colors">
-            <CheckCircle className="w-4 h-4 text-emerald-600" />
-          </div>
-        </button>
       );
     }
 
     return (
-      <button
-        onClick={() => setSelectedWeekId(result.weekId)}
-        className="flex items-center justify-center group"
-        title={`Draft - ${Math.floor(result.minutes / 60)}h ${result.minutes % 60}m exposure`}
-      >
-        <div className="w-8 h-8 rounded-full bg-amber-100 group-hover:bg-amber-200 flex items-center justify-center transition-colors">
-          <AlertCircle className="w-4 h-4 text-amber-600" />
+      <div className="flex justify-center">
+        <div
+          className={chipClass}
+          role="img"
+          aria-label={`${ganger.full_name}: ${presentation.label} for week ending ${week.label}`}
+          title={presentation.label}
+        >
+          {icon}
         </div>
-      </button>
+      </div>
     );
   };
 
@@ -375,7 +367,7 @@ export const HavsEmployerDashboard: React.FC = () => {
           <div className="bg-white border border-slate-200 rounded-xl p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">In Progress</p>
+                <p className="text-sm font-medium text-slate-500">Draft</p>
                 <p className="text-3xl font-bold text-slate-900 mt-1">{monthStats.draft}</p>
               </div>
               <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
@@ -459,14 +451,14 @@ export const HavsEmployerDashboard: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center">
-              <span className="text-slate-400 text-[8px]">-</span>
+              <Minus className="w-2.5 h-2.5 text-slate-400" />
             </div>
             <span className="text-slate-600">Future</span>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full table-fixed min-w-[760px]">
             <thead>
               <tr className="border-b border-slate-200">
                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-64">
@@ -475,7 +467,7 @@ export const HavsEmployerDashboard: React.FC = () => {
                 {monthWeeks.map((week) => (
                   <th
                     key={week.date}
-                    className={`text-center px-4 py-4 text-xs font-semibold uppercase tracking-wider min-w-[100px] ${
+                    className={`text-center px-4 py-4 text-xs font-semibold uppercase tracking-wider ${
                       week.date === currentWeekEnding ? 'text-blue-600 bg-blue-50' : 'text-slate-500'
                     }`}
                   >
@@ -539,11 +531,11 @@ export const HavsEmployerDashboard: React.FC = () => {
                       {monthWeeks.map((week) => (
                         <td
                           key={week.date}
-                          className={`px-4 py-4 ${
-                            week.date === currentWeekEnding ? 'bg-blue-50/50' : ''
+                          className={`px-4 py-4 align-middle ${
+                            week.date === currentWeekEnding ? 'bg-blue-50' : ''
                           }`}
                         >
-                          {getStatusCell(ganger.id, week.date)}
+                          {getStatusCell(ganger, week)}
                         </td>
                       ))}
                     </tr>
