@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Trash2, AlertCircle, PoundSterling, ChevronDown } from 'lucide-react';
+import { Trash2, AlertCircle, PoundSterling, ChevronDown, FileText } from 'lucide-react';
 import {
   DAYS_OF_WEEK,
   DAY_LABELS,
@@ -32,7 +32,7 @@ interface JobRowCardProps {
   defaultFinish: string;
   onJobFieldChange: (
     jobRowId: string,
-    field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time',
+    field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time' | 'notes',
     value: string
   ) => void;
   onDayEntryChange: (
@@ -126,6 +126,17 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
                 Default hours: {defaultStart || '--:--'} - {defaultFinish || '--:--'}
               </p>
             )}
+            {jobRow.notes?.trim() && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <FileText className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-xs font-medium text-slate-500">Notes</span>
+                </div>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                  {jobRow.notes}
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -189,6 +200,24 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
                   className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 tabular-nums bg-white"
                 />
               </div>
+            </div>
+
+            <div>
+              <label
+                htmlFor={`notes-${jobRow.id}`}
+                className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1"
+              >
+                <FileText className="h-3.5 w-3.5 text-slate-400" />
+                Notes <span className="text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                id={`notes-${jobRow.id}`}
+                value={jobRow.notes || ''}
+                onChange={(e) => onJobFieldChange(jobRow.id, 'notes', e.target.value)}
+                rows={3}
+                placeholder="Anything about this job not covered above - access, delays, materials, extra work..."
+                className="w-full px-4 py-3 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 resize-none"
+              />
             </div>
           </div>
         )}

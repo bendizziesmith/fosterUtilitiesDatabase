@@ -523,6 +523,20 @@ function JobRowDetail({
       </div>
 
       <PriceWorkDetail row={row} />
+
+      {row.notes?.trim() && (
+        <div className="px-4 pb-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <FileText className="h-3.5 w-3.5 text-slate-400" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              Notes
+            </span>
+          </div>
+          <p className="text-sm text-slate-700 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            {row.notes}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

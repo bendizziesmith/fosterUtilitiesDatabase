@@ -152,7 +152,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     timesheet?.status === 'draft' || timesheet?.status === 'returned';
 
   const handleJobFieldChange = useCallback(
-    (jobRowId: string, field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time', value: string) => {
+    (jobRowId: string, field: 'job_number' | 'job_address' | 'default_start_time' | 'default_finish_time' | 'notes', value: string) => {
       setJobRows((prev) =>
         prev.map((row) => {
           if (row.id !== jobRowId) return row;
@@ -297,6 +297,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           sort_order: row.sort_order,
           default_start_time: row.localDefaultStart || null,
           default_finish_time: row.localDefaultFinish || null,
+          notes: row.notes?.trim() ? row.notes : null,
           ...buildPriceWorkUpdate(row.localPriceWork),
         });
 
