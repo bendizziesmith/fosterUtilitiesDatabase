@@ -156,6 +156,7 @@ export type CsvTimesheet = {
     {
       job_number: string;
       job_address: string;
+      notes?: string | null;
       day_entries?: Array<{
         day_of_week: string;
         start_time: string | null;
@@ -196,6 +197,7 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
     'Joint Verge',
     'Joint F/W',
     'Joint C/W',
+    'Notes',
   ];
 
   const rows: string[] = [headers.join(',')];
@@ -214,6 +216,8 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
       pwCell(jobRow.pw_joint_carriageway),
     ];
     const jobHasPw = pwCells.some((c) => c !== '');
+    // Job-level text, so it repeats on each of the job's rows (like job number/address).
+    const notesCell = escapeCSV(jobRow.notes || '');
     const leading = [
       escapeCSV(formatWeekEnding(ts.week_ending)),
       escapeCSV(empName),
@@ -241,6 +245,7 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
           formatHoursDecimal(entry.hours_total || 0),
           formatHoursDecimal(ts.weekly_total_hours),
           ...(emittedForJob ? blankPw : pwCells),
+          notesCell,
         ].join(',')
       );
       emittedForJob = true;
@@ -256,6 +261,7 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
           '',
           formatHoursDecimal(ts.weekly_total_hours),
           ...pwCells,
+          notesCell,
         ].join(',')
       );
     }

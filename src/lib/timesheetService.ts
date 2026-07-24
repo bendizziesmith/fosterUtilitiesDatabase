@@ -32,6 +32,7 @@ export interface TimesheetJobRow extends PriceWorkFields {
   job_address: string;
   default_start_time: string | null;
   default_finish_time: string | null;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
   day_entries?: TimesheetDayEntry[];
@@ -191,6 +192,7 @@ export async function updateJobRow(
     sort_order?: number;
     default_start_time?: string | null;
     default_finish_time?: string | null;
+    notes?: string | null;
   } & Partial<PriceWorkFields>
 ): Promise<void> {
   const { error } = await supabase

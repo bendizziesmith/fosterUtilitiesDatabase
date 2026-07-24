@@ -29,6 +29,7 @@ export interface PdfJob {
   jobAddress: string;
   dayRows: PdfDayRow[];
   priceWork: PdfPriceWork | null;
+  notes: string | null;
 }
 
 export interface PdfModel {
@@ -57,6 +58,7 @@ export type PdfTimesheet = {
     {
       job_number: string;
       job_address: string;
+      notes?: string | null;
       day_entries?: Array<{
         day_of_week: string;
         start_time: string | null;
@@ -133,6 +135,7 @@ export function buildPdfModel(ts: PdfTimesheet): PdfModel {
       jobAddress: job.job_address || '',
       dayRows,
       priceWork,
+      notes: job.notes?.trim() ? job.notes.trim() : null,
     };
   });
 
@@ -260,6 +263,21 @@ export async function renderTimesheetPdf(ts: PdfTimesheet): Promise<{ save: (nam
         columnStyles: { 4: { halign: 'right', fontStyle: 'bold' } },
       });
       y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
+    }
+
+    if (job.notes) {
+      ensureSpace(40);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text('Notes:', margin, y);
+      doc.setTextColor(...SLATE);
+      const noteLines = doc.splitTextToSize(
+        job.notes,
+        pageWidth - margin * 2 - 34
+      ) as string[];
+      doc.text(noteLines, margin + 34, y);
+      y += noteLines.length * 11 + 4;
     }
 
     y += 8;

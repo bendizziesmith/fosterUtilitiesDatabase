@@ -72,6 +72,20 @@ describe('buildPdfModel', () => {
     ]);
   });
 
+  it('carries a job note into the model, and null when there is none', () => {
+    const m = buildPdfModel({
+      ...baseTs,
+      job_rows: [
+        { ...baseTs.job_rows[0], notes: 'Gate locked - call site manager' },
+        baseTs.job_rows[1],
+      ],
+    });
+    expect(m.jobs.find((j) => j.jobNumber === '344')!.notes).toBe(
+      'Gate locked - call site manager'
+    );
+    expect(m.jobs.find((j) => j.jobNumber === '100')!.notes).toBeNull();
+  });
+
   it('rolls up the weekly price work across jobs', () => {
     const m = buildPdfModel(baseTs);
     expect(m.weeklyPriceWork).toEqual({ trench: 20, joint: 200 });
