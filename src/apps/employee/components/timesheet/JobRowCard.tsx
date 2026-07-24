@@ -132,7 +132,7 @@ export const JobRowCard: React.FC<JobRowCardProps> = ({
                   <FileText className="h-3.5 w-3.5 text-slate-400" />
                   <span className="text-xs font-medium text-slate-500">Notes</span>
                 </div>
-                <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">
                   {jobRow.notes}
                 </p>
               </div>

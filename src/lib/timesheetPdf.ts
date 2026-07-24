@@ -266,18 +266,34 @@ export async function renderTimesheetPdf(ts: PdfTimesheet): Promise<{ save: (nam
     }
 
     if (job.notes) {
-      ensureSpace(40);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139); // slate-500
-      doc.text('Notes:', margin, y);
-      doc.setTextColor(...SLATE);
+      // Measure first, then reserve the space the note actually needs, so a long note
+      // is never drawn off the bottom of the page. Emit it in page-sized chunks.
       const noteLines = doc.splitTextToSize(
         job.notes,
         pageWidth - margin * 2 - 34
       ) as string[];
-      doc.text(noteLines, margin + 34, y);
-      y += noteLines.length * 11 + 4;
+      const lineHeight = 11;
+      let remaining = noteLines;
+      let first = true;
+      while (remaining.length > 0) {
+        ensureSpace(lineHeight * 2);
+        const roomLines = Math.max(
+          1,
+          Math.floor((pageHeight - margin - y) / lineHeight)
+        );
+        const chunk = remaining.slice(0, roomLines);
+        remaining = remaining.slice(roomLines);
+        if (first) {
+          doc.setTextColor(100, 116, 139); // slate-500
+          doc.text('Notes:', margin, y);
+          first = false;
+        }
+        doc.setTextColor(...SLATE);
+        doc.text(chunk, margin + 34, y);
+        y += chunk.length * lineHeight + 4;
+      }
     }
 
     y += 8;

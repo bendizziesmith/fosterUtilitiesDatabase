@@ -187,6 +187,44 @@ describe('buildTimesheetCsv — notes column', () => {
     expect(notesCell(row)).toBe('');
   });
 
+  it('emits a row for a job that has only a note (no hours, no price work)', () => {
+    const csv = buildTimesheetCsv({
+      week_ending: '2026-07-26',
+      ganger_name_snapshot: 'ben',
+      weekly_total_hours: 0,
+      job_rows: [
+        {
+          job_number: '344',
+          job_address: 'Norwich',
+          ...NO_PW,
+          notes: 'Turned away - no permit',
+          day_entries: [],
+        },
+      ],
+    });
+    const rows = csv.split('\n').filter((l) => l.includes(',344,'));
+    expect(rows).toHaveLength(1);
+    expect(notesCell(rows[0])).toBe('Turned away - no permit');
+  });
+
+  it('quotes a note containing commas, quotes and newlines so the row still parses', () => {
+    const csv = buildTimesheetCsv({
+      week_ending: '2026-07-26',
+      ganger_name_snapshot: 'ben',
+      weekly_total_hours: 8,
+      job_rows: [
+        {
+          job_number: '344',
+          job_address: 'Norwich',
+          ...NO_PW,
+          notes: 'Access via "rear" gate, waited 2h\nextra duct pulled',
+          day_entries: [day('monday')],
+        },
+      ],
+    });
+    expect(csv).toContain('"Access via ""rear"" gate, waited 2h\nextra duct pulled"');
+  });
+
   it('carries the note on the price-work fallback row too', () => {
     const csv = buildTimesheetCsv({
       week_ending: '2026-07-26',

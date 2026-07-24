@@ -297,7 +297,7 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
           sort_order: row.sort_order,
           default_start_time: row.localDefaultStart || null,
           default_finish_time: row.localDefaultFinish || null,
-          notes: row.notes?.trim() ? row.notes : null,
+          notes: row.notes?.trim() ? row.notes.trim() : null,
           ...buildPriceWorkUpdate(row.localPriceWork),
         });
 

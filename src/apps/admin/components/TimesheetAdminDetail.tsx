@@ -532,7 +532,7 @@ function JobRowDetail({
               Notes
             </span>
           </div>
-          <p className="text-sm text-slate-700 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <p className="text-sm text-slate-700 whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
             {row.notes}
           </p>
         </div>

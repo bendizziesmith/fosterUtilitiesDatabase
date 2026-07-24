@@ -251,7 +251,9 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
       emittedForJob = true;
     }
 
-    if (!emittedForJob && jobHasPw) {
+    // A job with price work or a note but no worked days still gets one row so those
+    // values export, matching what the screen and the PDF show for it.
+    if (!emittedForJob && (jobHasPw || notesCell !== '')) {
       rows.push(
         [
           ...leading,
