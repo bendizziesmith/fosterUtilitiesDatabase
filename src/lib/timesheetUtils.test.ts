@@ -225,6 +225,41 @@ describe('buildTimesheetCsv — notes column', () => {
     expect(csv).toContain('"Access via ""rear"" gate, waited 2h\nextra duct pulled"');
   });
 
+  it('neutralises a note that starts with a spreadsheet formula character', () => {
+    const build = (note: string) =>
+      buildTimesheetCsv({
+        week_ending: '2026-07-26',
+        ganger_name_snapshot: 'ben',
+        weekly_total_hours: 8,
+        job_rows: [{ job_number: '344', job_address: 'Norwich', ...NO_PW, notes: note, day_entries: [day('monday')] }],
+      });
+    const noteOf = (csv: string) => notesCell(csv.split('\n').find((l) => l.includes(',344,'))!);
+    expect(noteOf(build('=SUM(A1:A9)'))).toBe("'=SUM(A1:A9)");
+    expect(noteOf(build('+44 7700 900000'))).toBe("'+44 7700 900000");
+    expect(noteOf(build('-2h waiting on materials'))).toBe("'-2h waiting on materials");
+    expect(noteOf(build('@ site by 8am'))).toBe("'@ site by 8am");
+  });
+
+  it('prefixes AND quotes a formula note that also contains a comma', () => {
+    const csv = buildTimesheetCsv({
+      week_ending: '2026-07-26',
+      ganger_name_snapshot: 'ben',
+      weekly_total_hours: 8,
+      job_rows: [{ job_number: '344', job_address: 'Norwich', ...NO_PW, notes: '=1+1, then left', day_entries: [day('monday')] }],
+    });
+    expect(csv).toContain('"\'=1+1, then left"');
+  });
+
+  it('leaves a normal note untouched (no stray prefix)', () => {
+    const csv = buildTimesheetCsv({
+      week_ending: '2026-07-26',
+      ganger_name_snapshot: 'ben',
+      weekly_total_hours: 8,
+      job_rows: [{ job_number: '344', job_address: 'Norwich', ...NO_PW, notes: 'Gate locked', day_entries: [day('monday')] }],
+    });
+    expect(notesCell(csv.split('\n').find((l) => l.includes(',344,'))!)).toBe('Gate locked');
+  });
+
   it('carries the note on the price-work fallback row too', () => {
     const csv = buildTimesheetCsv({
       week_ending: '2026-07-26',

@@ -138,10 +138,15 @@ export function getStatusInfo(status: string): TimesheetStatusInfo {
 }
 
 function escapeCSV(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`;
+  let out = val;
+  // Neutralise spreadsheet formula injection: Excel/Sheets run a cell that starts with
+  // =, +, -, @, tab or CR as a formula. Prefix with a single quote so it stays text, then
+  // apply the comma/quote/newline escaping. Only text cells pass through here; numbers do not.
+  if (/^[=+\-@\t\r]/.test(out)) out = `'${out}`;
+  if (out.includes(',') || out.includes('"') || out.includes('\n')) {
+    return `"${out.replace(/"/g, '""')}"`;
   }
-  return val;
+  return out;
 }
 
 export type CsvTimesheet = {
