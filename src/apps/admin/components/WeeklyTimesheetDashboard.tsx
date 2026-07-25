@@ -3,10 +3,13 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Download,
   FileText,
 } from 'lucide-react';
-import { TimesheetComplianceCard } from './TimesheetComplianceCard';
+import { TimesheetComplianceCard, ComplianceCounts } from './TimesheetComplianceCard';
 import { formatWeekEnding } from '../../../lib/timesheetUtils';
+import { loadTimesheetsForWeek } from '../../../lib/timesheetService';
+import { downloadTimesheetsZip } from '../../../lib/timesheetBulkExport';
 
 function getPreviousSunday(): string {
   const now = new Date();
@@ -37,6 +40,55 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
   onViewTimesheet,
 }) => {
   const [weekEnding, setWeekEnding] = useState(getPreviousSunday());
+  const [counts, setCounts] = useState<ComplianceCounts | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [note, setNote] = useState<string | null>(null);
+
+  const changeWeek = (direction: number) => {
+    setWeekEnding(shiftWeek(weekEnding, direction));
+    setCounts(null); // counts belong to the previous week until the card reloads
+    setNote(null);
+  };
+
+  const countsReady = counts !== null;
+  const downloadable = counts ? counts.submitted + counts.returned : 0;
+  const noneToDownload = countsReady && downloadable === 0;
+
+  const handleDownloadAll = async () => {
+    setNote(null);
+    setGenerating(true);
+    setProgress({ done: 0, total: 0 });
+    try {
+      const timesheets = await loadTimesheetsForWeek(weekEnding);
+      if (timesheets.length === 0) {
+        setNote('No timesheets to download for this week.');
+        return;
+      }
+      const summary = await downloadTimesheetsZip(timesheets, weekEnding, {
+        onProgress: (done, total) => setProgress({ done, total }),
+      });
+      if (summary.failed.length > 0) {
+        setNote(
+          `Downloaded ${summary.succeeded} of ${summary.total}. ${summary.failed.length} could not be generated.`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to download timesheets:', err);
+      setNote('Download failed. Please try again.');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  let buttonLabel: string;
+  if (generating) {
+    buttonLabel = `Generating ${progress.done}/${progress.total} PDFs…`;
+  } else if (noneToDownload) {
+    buttonLabel = 'No timesheets to download';
+  } else {
+    buttonLabel = `Download all${downloadable > 0 ? ` (${downloadable})` : ''}`;
+  }
 
   return (
     <div className="space-y-5">
@@ -51,7 +103,8 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
 
           <div className="flex items-center gap-1 bg-slate-50 rounded-lg px-2 py-1.5">
             <button
-              onClick={() => setWeekEnding(shiftWeek(weekEnding, -1))}
+              onClick={() => changeWeek(-1)}
+              aria-label="Previous week"
               className="p-1.5 hover:bg-slate-200 rounded-md transition-colors"
             >
               <ChevronLeft className="h-4 w-4 text-slate-600" />
@@ -63,18 +116,45 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
               </span>
             </div>
             <button
-              onClick={() => setWeekEnding(shiftWeek(weekEnding, 1))}
+              onClick={() => changeWeek(1)}
+              aria-label="Next week"
               className="p-1.5 hover:bg-slate-200 rounded-md transition-colors"
             >
               <ChevronRight className="h-4 w-4 text-slate-600" />
             </button>
           </div>
         </div>
+
+        <div className="mt-3.5 pt-3.5 border-t border-slate-100 flex items-center justify-between gap-3">
+          <p
+            className={`text-xs ${note ? 'text-amber-700' : 'text-slate-500'}`}
+            role={note ? 'status' : undefined}
+            aria-live="polite"
+          >
+            {note ??
+              (generating
+                ? 'Building one PDF per ganger, then a single ZIP…'
+                : 'One PDF per submitted ganger, bundled into a single ZIP.')}
+          </p>
+          <button
+            onClick={handleDownloadAll}
+            disabled={generating || !countsReady || downloadable === 0}
+            className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white rounded-lg font-medium text-sm hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap shrink-0"
+          >
+            {generating ? (
+              <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            {buttonLabel}
+          </button>
+        </div>
       </div>
 
       <TimesheetComplianceCard
         weekEnding={weekEnding}
         onViewTimesheet={onViewTimesheet}
+        onCountsChange={setCounts}
       />
     </div>
   );

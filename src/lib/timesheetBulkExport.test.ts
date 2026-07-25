@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import JSZip from 'jszip';
 import {
   sanitizeName,
   gangerNameOf,
@@ -6,6 +7,7 @@ import {
   zipFilename,
   uniqueName,
   collectTimesheetPdfs,
+  downloadTimesheetsZip,
 } from './timesheetBulkExport';
 
 describe('sanitizeName', () => {
@@ -95,5 +97,49 @@ describe('collectTimesheetPdfs', () => {
     const seen: Array<[number, number]> = [];
     await collectTimesheetPdfs([ts('A'), ts('B')], buildBlob, (done, total) => seen.push([done, total]));
     expect(seen).toEqual([[1, 2], [2, 2]]);
+  });
+});
+
+describe('downloadTimesheetsZip (real jszip)', () => {
+  const ts = (name: string) => ({
+    week_ending: '2026-07-26',
+    weekly_total_hours: 0,
+    ganger: { full_name: name },
+  });
+
+  it('bundles one correctly-named PDF per ganger into a single ZIP', async () => {
+    const timesheets = [ts('Ben Carter'), ts('Sam Okafor'), ts('Ben Carter')];
+    let savedName = '';
+    let savedBlob: Blob | null = null;
+
+    const summary = await downloadTimesheetsZip(timesheets, '2026-07-26', {
+      buildBlob: async () => new Blob(['%PDF-1.4 fake']),
+      save: (blob, name) => {
+        savedBlob = blob;
+        savedName = name;
+      },
+    });
+
+    expect(savedName).toBe('Timesheets_WE_2026-07-26.zip');
+    expect(summary).toEqual({ total: 3, succeeded: 3, failed: [] });
+
+    const reloaded = await JSZip.loadAsync(savedBlob!);
+    expect(Object.keys(reloaded.files).sort()).toEqual([
+      'Timesheet_Ben_Carter_WE_2026-07-26.pdf',
+      'Timesheet_Ben_Carter_WE_2026-07-26_2.pdf',
+      'Timesheet_Sam_Okafor_WE_2026-07-26.pdf',
+    ]);
+  });
+
+  it('does not save a ZIP when there is nothing to download', async () => {
+    let saveCalled = false;
+    const summary = await downloadTimesheetsZip([], '2026-07-26', {
+      buildBlob: async () => new Blob(['pdf']),
+      save: () => {
+        saveCalled = true;
+      },
+    });
+    expect(saveCalled).toBe(false);
+    expect(summary).toEqual({ total: 0, succeeded: 0, failed: [] });
   });
 });
