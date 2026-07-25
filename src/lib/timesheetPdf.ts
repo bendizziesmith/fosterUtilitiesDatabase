@@ -329,3 +329,12 @@ export async function downloadTimesheetPdf(ts: PdfTimesheet): Promise<void> {
   const safeName = name.replace(/[^a-zA-Z0-9]/g, '_');
   doc.save(`Timesheet_${safeName}_WE_${ts.week_ending}.pdf`);
 }
+
+/**
+ * Renders the same PDF as {@link downloadTimesheetPdf} but returns it as a Blob
+ * instead of triggering a download, so callers can bundle many into one ZIP.
+ */
+export async function buildTimesheetPdfBlob(ts: PdfTimesheet): Promise<Blob> {
+  const doc = await renderTimesheetPdf(ts);
+  return (doc as unknown as { output: (type: 'blob') => Blob }).output('blob');
+}
