@@ -432,9 +432,14 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   };
 
   const handleWeekEndingChange = (newWeek: string) => {
+    // Flush a pending edit before switching weeks so a change typed within the debounce window
+    // isn't lost on the in-place reload. The flush queues on the save chain and reads the current
+    // refs; the new week's load replaces those refs only after it resolves, so in the common case
+    // the flush writes the previous week's edit. (Mirrors the unmount flush.)
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = undefined;
+      performSave();
     }
     setWeekEnding(newWeek);
   };

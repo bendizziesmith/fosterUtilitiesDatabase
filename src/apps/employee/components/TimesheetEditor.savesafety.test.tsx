@@ -151,4 +151,30 @@ describe('TimesheetEditor save safety', () => {
     // The manual save already cleared the pending debounce, so unmount must not re-save.
     expect(saveHeader).toHaveBeenCalledTimes(1);
   });
+
+  it('flushes a pending save when the week ending changes (edit not lost on week switch)', async () => {
+    await renderLoaded();
+    const saveHeader = vi.mocked(svc.saveTimesheetHeader);
+    saveHeader.mockClear();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.change(screen.getByPlaceholderText('e.g. J-1234'), { target: { value: 'J-77' } });
+    expect(saveHeader).not.toHaveBeenCalled(); // debounce still pending
+
+    // Switch to a different week before the debounce fires. Pick any option other than the
+    // currently selected one so the test doesn't depend on today's date (the week options come
+    // from getRecentSundays()).
+    const weekSelect = screen.getByRole('combobox') as HTMLSelectElement;
+    const otherWeek = Array.from(weekSelect.options)
+      .map((o) => o.value)
+      .find((v) => v && v !== weekSelect.value) as string;
+
+    await act(async () => {
+      fireEvent.change(weekSelect, { target: { value: otherWeek } });
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // The edit to the previous week was flushed before the switch, not dropped.
+    expect(saveHeader).toHaveBeenCalled();
+  });
 });
