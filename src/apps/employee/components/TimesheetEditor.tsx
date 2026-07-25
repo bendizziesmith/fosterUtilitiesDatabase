@@ -75,6 +75,9 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  // Serialises saves so a debounced save and a manual/submit save can't overlap and land
+  // out of order (mirrors HavsTimesheetForm).
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   const timesheetRef = useRef(timesheet);
   const jobRowsRef = useRef(jobRows);
   const labourer1Ref = useRef(labourer1);
@@ -273,11 +276,20 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   const scheduleSave = useCallback(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = undefined;
       performSave();
     }, 1500);
   }, []);
 
-  const performSave = async () => {
+  // Queue each save behind the previous one so runs can't interleave. Returns the tail so
+  // callers (manual save, submit, unmount flush) can await a flush.
+  const performSave = (): Promise<void> => {
+    const run = saveChainRef.current.then(() => doSave());
+    saveChainRef.current = run.catch(() => {});
+    return run;
+  };
+
+  const doSave = async () => {
     const ts = timesheetRef.current;
     if (!ts) return;
     try {
@@ -415,9 +427,15 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
     setWeekEnding(newWeek);
   };
 
+  // Flush a pending save on unmount / navigate-away so an edit made within the debounce
+  // window is not lost (React 18 no-ops post-unmount setState, so fire-and-forget is safe).
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = undefined;
+        performSave();
+      }
     };
   }, []);
 
