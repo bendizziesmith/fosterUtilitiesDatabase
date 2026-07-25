@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPdfModel } from './timesheetPdf';
+import { buildPdfModel, buildTimesheetPdfBlob } from './timesheetPdf';
 
 const NO_PW = {
   pw_trench_verge: null,
@@ -97,5 +97,16 @@ describe('buildPdfModel', () => {
       job_rows: [{ job_number: '100', job_address: 'Diss', ...NO_PW, day_entries: [] }],
     });
     expect(m.weeklyPriceWork).toBeNull();
+  });
+});
+
+describe('buildTimesheetPdfBlob', () => {
+  it('renders the timesheet to a non-empty PDF blob (the bulk-export bridge)', async () => {
+    const blob = await buildTimesheetPdfBlob(baseTs);
+    expect(blob).toBeInstanceOf(Blob);
+    expect(blob.type).toBe('application/pdf');
+    // A rendered A4 timesheet is well over a few hundred bytes; a zero/tiny blob
+    // would mean the render or the output('blob') bridge silently produced nothing.
+    expect(blob.size).toBeGreaterThan(500);
   });
 });

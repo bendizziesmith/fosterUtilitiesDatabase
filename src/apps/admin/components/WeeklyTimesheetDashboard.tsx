@@ -52,7 +52,7 @@ export const WeeklyTimesheetDashboard: React.FC<WeeklyTimesheetDashboardProps> =
   };
 
   const countsReady = counts !== null;
-  const downloadable = counts ? counts.submitted + counts.returned : 0;
+  const downloadable = counts ? counts.downloadable : 0;
   const noneToDownload = countsReady && downloadable === 0;
 
   const handleDownloadAll = async () => {

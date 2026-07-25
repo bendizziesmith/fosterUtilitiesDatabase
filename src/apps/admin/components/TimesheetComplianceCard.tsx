@@ -44,6 +44,13 @@ export interface ComplianceCounts {
   submitted: number;
   returned: number;
   notSubmitted: number;
+  /**
+   * Timesheets that "Download all" would actually bundle: every submitted/returned
+   * row for the week, counted by status straight from the loaded timesheets. This
+   * matches loadTimesheetsForWeek's filter, so it does not depend on the ganger
+   * still appearing in the role-scoped employee list (unlike submitted/returned).
+   */
+  downloadable: number;
 }
 
 interface TimesheetComplianceCardProps {
@@ -130,6 +137,12 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
 
   const totalExpected = employees.length;
 
+  // Counted by status from the loaded timesheets (not the role-scoped employee
+  // list) so it equals what loadTimesheetsForWeek returns for "Download all".
+  const downloadable = timesheets.filter(
+    (t) => t.status === 'submitted' || t.status === 'returned'
+  ).length;
+
   useEffect(() => {
     if (!loading && onCountsChange) {
       onCountsChange({
@@ -137,6 +150,7 @@ export const TimesheetComplianceCard: React.FC<TimesheetComplianceCardProps> = (
         submitted: submitted.length,
         returned: returned.length,
         notSubmitted: notSubmitted.length,
+        downloadable,
       });
     }
   }, [loading, employees, timesheets]);
