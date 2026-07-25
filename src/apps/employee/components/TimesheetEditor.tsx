@@ -274,7 +274,10 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   );
 
   const scheduleSave = useCallback(() => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = undefined;
+    }
     saveTimeoutRef.current = setTimeout(() => {
       saveTimeoutRef.current = undefined;
       performSave();
@@ -338,7 +341,10 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   };
 
   const handleSaveDraft = async () => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = undefined;
+    }
     await performSave();
   };
 
@@ -407,7 +413,10 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
 
     try {
       setSubmitting(true);
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = undefined;
+    }
       await performSave();
       await submitTimesheet(timesheet.id);
       setTimesheet((prev) =>
@@ -423,7 +432,10 @@ export const TimesheetEditor: React.FC<TimesheetEditorProps> = ({
   };
 
   const handleWeekEndingChange = (newWeek: string) => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = undefined;
+    }
     setWeekEnding(newWeek);
   };
 

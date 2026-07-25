@@ -94,7 +94,7 @@ describe('TimesheetEditor save safety', () => {
     expect(saveHeader).toHaveBeenCalled(); // the pending edit was flushed, not dropped
   });
 
-  it('serialises saves so a manual save cannot overlap an in-flight debounced save', async () => {
+  it('serialises saves so a second edit cannot overlap an in-flight save', async () => {
     await renderLoaded();
     const saveHeader = vi.mocked(svc.saveTimesheetHeader);
     saveHeader.mockClear();
@@ -128,5 +128,27 @@ describe('TimesheetEditor save safety', () => {
       releaseFirst();
       for (let i = 0; i < 6; i++) await Promise.resolve();
     });
+  });
+
+  it('does not re-save on unmount after a manual save (no stray write to a saved sheet)', async () => {
+    const { unmount } = await renderLoaded();
+    const saveHeader = vi.mocked(svc.saveTimesheetHeader);
+    saveHeader.mockClear();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.change(screen.getByPlaceholderText('e.g. J-1234'), { target: { value: 'J-99' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('Save Draft'));
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    expect(saveHeader).toHaveBeenCalledTimes(1); // the manual save ran
+
+    await act(async () => {
+      unmount();
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    // The manual save already cleared the pending debounce, so unmount must not re-save.
+    expect(saveHeader).toHaveBeenCalledTimes(1);
   });
 });
