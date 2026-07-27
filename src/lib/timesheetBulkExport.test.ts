@@ -11,12 +11,18 @@ import {
 } from './timesheetBulkExport';
 
 describe('sanitizeName', () => {
-  it('replaces non-alphanumeric characters with underscores', () => {
-    expect(sanitizeName('Ben Carter')).toBe('Ben_Carter');
-    expect(sanitizeName("O'Neil-Jones")).toBe('O_Neil_Jones');
+  it('keeps spaces and normal punctuation (readable names)', () => {
+    expect(sanitizeName('Ben Carter')).toBe('Ben Carter');
+    expect(sanitizeName("O'Neil-Jones")).toBe("O'Neil-Jones");
   });
-  it('falls back to Unknown for an empty name', () => {
+  it('replaces only filesystem-illegal characters and collapses/trims whitespace', () => {
+    expect(sanitizeName('Ben/Sam')).toBe('Ben Sam');
+    expect(sanitizeName('A: B')).toBe('A B');
+    expect(sanitizeName('  Ben  Carter  ')).toBe('Ben Carter');
+  });
+  it('falls back to Unknown for an empty or all-illegal name', () => {
     expect(sanitizeName('')).toBe('Unknown');
+    expect(sanitizeName('///')).toBe('Unknown');
   });
 });
 
@@ -31,26 +37,29 @@ describe('gangerNameOf', () => {
 });
 
 describe('pdfFilename / zipFilename', () => {
-  it('builds a per-ganger PDF filename with the sanitised name and week', () => {
-    expect(pdfFilename('Ben Carter', '2026-07-26')).toBe('Timesheet_Ben_Carter_WE_2026-07-26.pdf');
+  it('builds a per-ganger PDF filename: <Name> WE <DD Mon YYYY>, no "Timesheet" word', () => {
+    expect(pdfFilename('Ben Carter', '2026-07-26')).toBe('Ben Carter WE 26 Jul 2026.pdf');
   });
-  it('builds the ZIP filename for the week', () => {
-    expect(zipFilename('2026-07-26')).toBe('Timesheets_WE_2026-07-26.zip');
+  it('sanitises an illegal character in the name', () => {
+    expect(pdfFilename('Ben/Sam', '2026-07-26')).toBe('Ben Sam WE 26 Jul 2026.pdf');
+  });
+  it('builds the ZIP filename: All Gangers WE <DD Mon YYYY>, no "Timesheets" word', () => {
+    expect(zipFilename('2026-07-26')).toBe('All Gangers WE 26 Jul 2026.zip');
   });
 });
 
 describe('uniqueName', () => {
   it('returns the base name when it is free, and reserves it', () => {
     const used = new Set<string>();
-    expect(uniqueName('Timesheet_Ben_WE_2026-07-26.pdf', used)).toBe('Timesheet_Ben_WE_2026-07-26.pdf');
-    expect(used.has('Timesheet_Ben_WE_2026-07-26.pdf')).toBe(true);
+    expect(uniqueName('Ben WE 26 Jul 2026.pdf', used)).toBe('Ben WE 26 Jul 2026.pdf');
+    expect(used.has('Ben WE 26 Jul 2026.pdf')).toBe(true);
   });
   it('appends _2, _3 … before the extension on collisions', () => {
     const used = new Set<string>();
-    const base = 'Timesheet_Ben_WE_2026-07-26.pdf';
-    expect(uniqueName(base, used)).toBe('Timesheet_Ben_WE_2026-07-26.pdf');
-    expect(uniqueName(base, used)).toBe('Timesheet_Ben_WE_2026-07-26_2.pdf');
-    expect(uniqueName(base, used)).toBe('Timesheet_Ben_WE_2026-07-26_3.pdf');
+    const base = 'Ben WE 26 Jul 2026.pdf';
+    expect(uniqueName(base, used)).toBe('Ben WE 26 Jul 2026.pdf');
+    expect(uniqueName(base, used)).toBe('Ben WE 26 Jul 2026_2.pdf');
+    expect(uniqueName(base, used)).toBe('Ben WE 26 Jul 2026_3.pdf');
   });
 });
 
@@ -65,11 +74,24 @@ describe('collectTimesheetPdfs', () => {
 
     expect(buildBlob).toHaveBeenCalledTimes(3); // one per timesheet
     expect(files.map((f) => f.filename)).toEqual([
-      'Timesheet_Ben_Carter_WE_2026-07-26.pdf',
-      'Timesheet_Sam_Okafor_WE_2026-07-26.pdf',
-      'Timesheet_Ben_Carter_WE_2026-07-26_2.pdf', // duplicate name de-duped
+      'Ben Carter WE 26 Jul 2026.pdf',
+      'Sam Okafor WE 26 Jul 2026.pdf',
+      'Ben Carter WE 26 Jul 2026_2.pdf', // duplicate name de-duped
     ]);
     expect(summary).toEqual({ total: 3, succeeded: 3, failed: [] });
+  });
+
+  it('de-dupes on the SANITISED name, so raw names that collapse together still get _2', async () => {
+    const buildBlob = vi.fn(async () => new Blob(['pdf']));
+    // 'Ben/Carter' and 'Ben Carter' both sanitise to 'Ben Carter'.
+    const timesheets = [ts('Ben/Carter'), ts('Ben Carter')];
+
+    const { files } = await collectTimesheetPdfs(timesheets, buildBlob);
+
+    expect(files.map((f) => f.filename)).toEqual([
+      'Ben Carter WE 26 Jul 2026.pdf',
+      'Ben Carter WE 26 Jul 2026_2.pdf',
+    ]);
   });
 
   it('skips a timesheet whose PDF fails and records it, keeping the rest', async () => {
@@ -82,13 +104,13 @@ describe('collectTimesheetPdfs', () => {
     const { files, summary } = await collectTimesheetPdfs(timesheets, buildBlob);
 
     expect(files.map((f) => f.filename)).toEqual([
-      'Timesheet_Ben_Carter_WE_2026-07-26.pdf',
-      'Timesheet_Joe_Whitfield_WE_2026-07-26.pdf',
+      'Ben Carter WE 26 Jul 2026.pdf',
+      'Joe Whitfield WE 26 Jul 2026.pdf',
     ]);
     expect(summary.total).toBe(3);
     expect(summary.succeeded).toBe(2);
     expect(summary.failed).toEqual([
-      { filename: 'Timesheet_Sam_Okafor_WE_2026-07-26.pdf', error: 'boom' },
+      { filename: 'Sam Okafor WE 26 Jul 2026.pdf', error: 'boom' },
     ]);
   });
 
@@ -120,14 +142,14 @@ describe('downloadTimesheetsZip (real jszip)', () => {
       },
     });
 
-    expect(savedName).toBe('Timesheets_WE_2026-07-26.zip');
+    expect(savedName).toBe('All Gangers WE 26 Jul 2026.zip');
     expect(summary).toEqual({ total: 3, succeeded: 3, failed: [] });
 
     const reloaded = await JSZip.loadAsync(savedBlob!);
     expect(Object.keys(reloaded.files).sort()).toEqual([
-      'Timesheet_Ben_Carter_WE_2026-07-26.pdf',
-      'Timesheet_Ben_Carter_WE_2026-07-26_2.pdf',
-      'Timesheet_Sam_Okafor_WE_2026-07-26.pdf',
+      'Ben Carter WE 26 Jul 2026.pdf',
+      'Ben Carter WE 26 Jul 2026_2.pdf',
+      'Sam Okafor WE 26 Jul 2026.pdf',
     ]);
   });
 

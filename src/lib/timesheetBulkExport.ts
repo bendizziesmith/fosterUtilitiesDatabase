@@ -1,4 +1,5 @@
 import { buildTimesheetPdfBlob, type PdfTimesheet } from './timesheetPdf';
+import { formatWeekEnding } from './timesheetUtils';
 
 /**
  * Minimal shape of a timesheet needed to name and build its bulk PDF. The real
@@ -22,9 +23,17 @@ export interface BulkResult {
   summary: BulkSummary;
 }
 
-/** Replace anything that isn't a letter or digit with an underscore. Empty -> "Unknown". */
+/**
+ * Make a ganger's name safe for a filename while keeping it readable. Replace the
+ * filesystem-illegal characters (/ \ : * ? " < > |) with a space, collapse runs of
+ * whitespace, and trim. Spaces, apostrophes, and hyphens stay. Empty (or
+ * all-illegal) -> "Unknown".
+ */
 export function sanitizeName(name: string): string {
-  const cleaned = (name || '').replace(/[^a-zA-Z0-9]/g, '_');
+  const cleaned = (name || '')
+    .replace(/[/\\:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return cleaned || 'Unknown';
 }
 
@@ -33,14 +42,14 @@ export function gangerNameOf(ts: BulkTimesheet): string {
   return ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
 }
 
-/** e.g. Timesheet_Ben_Carter_WE_2026-07-26.pdf */
+/** e.g. "Ben Carter WE 26 Jul 2026.pdf" (day-month-year, matching the rest of the app). */
 export function pdfFilename(gangerName: string, weekEnding: string): string {
-  return `Timesheet_${sanitizeName(gangerName)}_WE_${weekEnding}.pdf`;
+  return `${sanitizeName(gangerName)} WE ${formatWeekEnding(weekEnding)}.pdf`;
 }
 
-/** e.g. Timesheets_WE_2026-07-26.zip */
+/** e.g. "All Gangers WE 26 Jul 2026.zip" */
 export function zipFilename(weekEnding: string): string {
-  return `Timesheets_WE_${weekEnding}.zip`;
+  return `All Gangers WE ${formatWeekEnding(weekEnding)}.zip`;
 }
 
 /**
