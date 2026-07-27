@@ -5,6 +5,7 @@ import {
   formatWeekEnding,
   formatHoursDecimal,
   getStatusInfo,
+  buildTimesheetFileBase,
 } from './timesheetUtils';
 import {
   PriceWorkFields,
@@ -326,8 +327,7 @@ export async function renderTimesheetPdf(ts: PdfTimesheet): Promise<{ save: (nam
 export async function downloadTimesheetPdf(ts: PdfTimesheet): Promise<void> {
   const doc = await renderTimesheetPdf(ts);
   const name = ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
-  const safeName = name.replace(/[^a-zA-Z0-9]/g, '_');
-  doc.save(`Timesheet_${safeName}_WE_${ts.week_ending}.pdf`);
+  doc.save(`${buildTimesheetFileBase(name, ts.week_ending)}.pdf`);
 }
 
 /**

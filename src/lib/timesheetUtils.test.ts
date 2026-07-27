@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { buildTimesheetCsv } from './timesheetUtils';
+import { describe, it, expect, vi } from 'vitest';
+import { buildTimesheetCsv, buildTimesheetFileBase, downloadTimesheetCSV } from './timesheetUtils';
 
 const NO_PW = {
   pw_trench_verge: null,
@@ -278,5 +278,44 @@ describe('buildTimesheetCsv — notes column', () => {
     });
     const row = csv.split('\n').find((l) => l.includes(',344,'))!;
     expect(notesCell(row)).toBe('Priced work only');
+  });
+});
+
+describe('buildTimesheetFileBase', () => {
+  it('builds the shared stem: "<Name> WE <DD Mon YYYY>" (no "Timesheet" word)', () => {
+    expect(buildTimesheetFileBase('Ben Carter', '2026-07-26')).toBe('Ben Carter WE 26 Jul 2026');
+  });
+  it('sanitises filesystem-illegal characters while keeping spaces', () => {
+    expect(buildTimesheetFileBase('Ben/Sam', '2026-07-26')).toBe('Ben Sam WE 26 Jul 2026');
+  });
+});
+
+describe('downloadTimesheetCSV — filename', () => {
+  it('names the single CSV "<Name> WE <DD Mon YYYY>.csv" (no "Timesheet" word)', () => {
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:fake');
+    URL.revokeObjectURL = vi.fn();
+
+    let captured = '';
+    const clickSpy = vi
+      .spyOn(HTMLElement.prototype, 'click')
+      .mockImplementation(function (this: HTMLElement) {
+        captured = (this as HTMLAnchorElement).download;
+      });
+
+    try {
+      downloadTimesheetCSV({
+        week_ending: '2026-07-26',
+        ganger: { full_name: 'Ben Carter' },
+        weekly_total_hours: 0,
+        job_rows: [],
+      });
+      expect(captured).toBe('Ben Carter WE 26 Jul 2026.csv');
+    } finally {
+      clickSpy.mockRestore();
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
   });
 });

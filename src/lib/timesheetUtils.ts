@@ -73,6 +73,29 @@ export function formatWeekEnding(dateStr: string): string {
   });
 }
 
+/**
+ * Make a ganger's name safe for a filename while keeping it readable. Replace the
+ * filesystem-illegal characters (/ \ : * ? " < > |) with a space, collapse runs of
+ * whitespace, and trim. Spaces, apostrophes, and hyphens stay. Empty (or
+ * all-illegal) -> "Unknown".
+ */
+export function sanitizeName(name: string): string {
+  const cleaned = (name || '')
+    .replace(/[/\\:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned || 'Unknown';
+}
+
+/**
+ * The filename stem shared by every timesheet download (single PDF, single CSV, and
+ * each PDF inside the bulk ZIP): e.g. "Ben Carter WE 26 Jul 2026". Callers append the
+ * extension. One source of truth so the three exports stay in the same format.
+ */
+export function buildTimesheetFileBase(gangerName: string, weekEnding: string): string {
+  return `${sanitizeName(gangerName)} WE ${formatWeekEnding(weekEnding)}`;
+}
+
 export function parseTimeToMinutes(time: string | null | undefined): number {
   if (!time) return 0;
   const parts = time.split(':');
@@ -279,12 +302,11 @@ export function buildTimesheetCsv(ts: CsvTimesheet): string {
 
 export function downloadTimesheetCSV(ts: CsvTimesheet): void {
   const empName = ts.ganger?.full_name || ts.ganger_name_snapshot || 'Unknown';
-  const safeName = empName.replace(/[^a-zA-Z0-9]/g, '_');
   const blob = new Blob([buildTimesheetCsv(ts)], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `Timesheet_${safeName}_WE_${ts.week_ending}.csv`;
+  link.download = `${buildTimesheetFileBase(empName, ts.week_ending)}.csv`;
   link.click();
   URL.revokeObjectURL(url);
 }

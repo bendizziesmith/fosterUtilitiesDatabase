@@ -1,5 +1,24 @@
-import { describe, it, expect } from 'vitest';
-import { buildPdfModel, buildTimesheetPdfBlob } from './timesheetPdf';
+import { describe, it, expect, vi } from 'vitest';
+import { buildPdfModel, buildTimesheetPdfBlob, downloadTimesheetPdf } from './timesheetPdf';
+
+// Capture the filename jsPDF is asked to save, without a real download. jsPDF attaches
+// `save` as an instance-own method (not on the prototype) and its save path doesn't go
+// through a DOM anchor in jsdom, so we wrap the constructor and override that method.
+const { savedPdfNames } = vi.hoisted(() => ({ savedPdfNames: [] as string[] }));
+vi.mock('jspdf', async (importActual) => {
+  const actual = await importActual<typeof import('jspdf')>();
+  const Real = actual.jsPDF as unknown as new (...args: unknown[]) => { save: (n: string) => unknown };
+  const Wrapped = function (...args: unknown[]) {
+    const doc = new Real(...args);
+    doc.save = (name: string) => {
+      savedPdfNames.push(name);
+      return doc;
+    };
+    return doc;
+  } as unknown as typeof actual.jsPDF;
+  Wrapped.prototype = actual.jsPDF.prototype;
+  return { ...actual, jsPDF: Wrapped };
+});
 
 const NO_PW = {
   pw_trench_verge: null,
@@ -108,5 +127,15 @@ describe('buildTimesheetPdfBlob', () => {
     // A rendered A4 timesheet is well over a few hundred bytes; a zero/tiny blob
     // would mean the render or the output('blob') bridge silently produced nothing.
     expect(blob.size).toBeGreaterThan(500);
+  });
+});
+
+describe('downloadTimesheetPdf — filename', () => {
+  // Asserts only the save filename (the mock swallows the download). The
+  // buildTimesheetPdfBlob test above covers real PDF rendering.
+  it('saves the single PDF as "<Name> WE <DD Mon YYYY>.pdf" (no "Timesheet" word)', async () => {
+    savedPdfNames.length = 0;
+    await downloadTimesheetPdf(baseTs); // baseTs's ganger snapshot is 'ben'
+    expect(savedPdfNames).toEqual(['ben WE 26 Jul 2026.pdf']);
   });
 });
