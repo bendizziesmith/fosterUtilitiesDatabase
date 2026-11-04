@@ -311,10 +311,25 @@ export interface KitItemOverview {
   last_seen_audit_id: string | null;
   removed_at: string | null;
   is_test: boolean;
+  /** round 3: kit belongs to a person, or (no person) to a spare van */
+  holder_employee_id: string | null;
+  holder_name: string | null;
+  holder_role: string | null;
+  holder_kind: 'person' | 'spare_van' | 'none';
+  holder_reg: string | null;
+  spare_vehicle_id: string | null;
+}
+
+export interface Auditor {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
 }
 
 export interface KitVanKitListRow {
   id: string;
+  holder_employee_id: string | null;
   vehicle_id: string | null;
   kit_type_id: string;
   carried: boolean;
@@ -340,6 +355,9 @@ export interface SiteAuditSummary {
   due_soon_count: number;
   not_carried_count: number;
   member_names: string | null;
+  auditor_id: string | null;
+  auditor_name: string | null;
+  holder_employee_id: string | null;
 }
 
 export interface SiteAudit {
@@ -357,6 +375,9 @@ export interface SiteAudit {
   status: 'draft' | 'submitted';
   submitted_at: string | null;
   is_test: boolean;
+  auditor_id: string | null;
+  auditor_name: string | null;
+  holder_employee_id: string | null;
 }
 
 export interface AuditMemberRow {
@@ -402,10 +423,14 @@ export interface KitRecentUpdate {
   new_values: Record<string, unknown> | null;
   certificate_path: string | null;
   related_vehicle_ids: string[];
+  /** the "Who's doing this?" name; null on old rows → "Office login" */
+  actor_name: string | null;
+  related_holder_ids: string[];
 }
 
 export interface AuditPpeItem {
   id: string;
+  holder_employee_id: string | null;
   vehicle_id: string | null;
   vehicle_reg_snapshot: string | null;
   checklist_item_id: string;

@@ -59,6 +59,9 @@ const header = {
   ganger_id: 'e1',
   ganger_name_snapshot: 'Dom Oliver',
   team_name_snapshot: "D. Oliver's gang",
+  holder_employee_id: 'e1',
+  auditor_id: 'a1',
+  auditor_name: 'Christina Pearson',
   site_visited: 'High St',
   notes: null,
   is_test: true,
@@ -73,7 +76,7 @@ describe('saveDraftAudit', () => {
       [{ section: 'kit', item_name: 'Digger', result: 'not_carried', expiry_date: null, kit_type_id: 't2', key: 'k' }]);
     expect(id).toBe('new-audit');
     const audit = H.calls.find((c) => c.table === 'audit_site_audits' && c.op === 'insert');
-    expect(audit?.payload).toMatchObject({ team_name_snapshot: "D. Oliver's gang", is_test: true, status: 'draft' });
+    expect(audit?.payload).toMatchObject({ team_name_snapshot: "D. Oliver's gang", is_test: true, status: 'draft', holder_employee_id: 'e1', auditor_name: 'Christina Pearson' });
     const members = H.calls.find((c) => c.table === 'audit_members' && c.op === 'insert');
     expect(members?.payload).toEqual([{ audit_id: 'new-audit', employee_id: 'e1', name: 'Dom Oliver', sort_order: 0 }]);
     const lines = H.calls.find((c) => c.table === 'audit_lines' && c.op === 'insert');
@@ -102,21 +105,42 @@ describe('RPC actions', () => {
 
   it('swapKit sends where the old item goes and what replaces it', async () => {
     await svc.swapKit({
-      itemId: 'k1', destination: 'away_for_service', destVehicleId: null, serviceCompany: 'Speedy',
-      replacement: 'spare', spareId: 'k2', newPlantNo: null, newServiceDate: null, newExpiryDate: null, note: 'x',
+      itemId: 'k1', destination: 'away_for_service', destHolderEmployeeId: null, destVehicleId: null, serviceCompany: 'Speedy',
+      replacement: 'spare', spareId: 'k2', newPlantNo: null, newServiceDate: null, newExpiryDate: null, note: 'x', actorId: 'a1',
     });
     expect(H.calls[0]).toMatchObject({
       rpc: 'kit_swap',
-      payload: { p_item_id: 'k1', p_destination: 'away_for_service', p_service_company: 'Speedy', p_replacement: 'spare', p_spare_id: 'k2' },
+      payload: { p_item_id: 'k1', p_destination: 'away_for_service', p_service_company: 'Speedy', p_replacement: 'spare', p_spare_id: 'k2', p_actor_id: 'a1' },
     });
   });
 
+  it('swapKit to another person sends the person, not a van', async () => {
+    await svc.swapKit({
+      itemId: 'k1', destination: 'holder', destHolderEmployeeId: 'e9', destVehicleId: null, serviceCompany: null,
+      replacement: 'none', spareId: null, newPlantNo: null, newServiceDate: null, newExpiryDate: null, note: null, actorId: 'a1',
+    });
+    expect(H.calls[0].payload).toMatchObject({ p_destination: 'holder', p_dest_holder_employee_id: 'e9', p_dest_vehicle_id: null });
+  });
+
   it('updateAttentionItem uses the PPE function for PPE and the kit function for kit', async () => {
-    await svc.updateAttentionItem({ source: 'ppe', itemId: 'p1', action: 'replaced', serviceDate: null, expiryDate: '2027-01-01', plantNo: null, certificatePath: null, note: null });
-    await svc.updateAttentionItem({ source: 'kit', itemId: 'k1', action: 'reserviced', serviceDate: '2026-11-04', expiryDate: '2027-11-04', plantNo: null, certificatePath: null, note: 'ok' });
+    await svc.updateAttentionItem({ source: 'ppe', itemId: 'p1', action: 'replaced', serviceDate: null, expiryDate: '2027-01-01', plantNo: null, certificatePath: null, note: null, actorId: 'a1' });
+    await svc.updateAttentionItem({ source: 'kit', itemId: 'k1', action: 'reserviced', serviceDate: '2026-11-04', expiryDate: '2027-11-04', plantNo: null, certificatePath: null, note: 'ok', actorId: 'a2' });
     expect(H.calls.map((c) => c.rpc)).toEqual(['audit_update_ppe', 'kit_update_item']);
-    expect(H.calls[0].payload).toMatchObject({ p_ppe_id: 'p1', p_expiry_date: '2027-01-01' });
-    expect(H.calls[1].payload).toMatchObject({ p_item_id: 'k1', p_action: 'reserviced' });
+    expect(H.calls[0].payload).toMatchObject({ p_ppe_id: 'p1', p_expiry_date: '2027-01-01', p_actor_id: 'a1' });
+    expect(H.calls[1].payload).toMatchObject({ p_item_id: 'k1', p_action: 'reserviced', p_actor_id: 'a2' });
+  });
+
+  it('addKit to a person sends the person; to a spare van sends the van', async () => {
+    const base = { kitTypeId: 't', plantNo: 'P', serviceDate: null, expiryDate: null, status: 'on_van' as const, serviceCompany: null, notes: null, isTest: true, actorId: 'a1' };
+    await svc.addKit({ ...base, holderEmployeeId: 'e1', vehicleId: null });
+    await svc.addKit({ ...base, holderEmployeeId: null, vehicleId: 'v2' });
+    expect(H.calls[0].payload).toMatchObject({ p_holder_employee_id: 'e1', p_vehicle_id: null, p_actor_id: 'a1' });
+    expect(H.calls[1].payload).toMatchObject({ p_holder_employee_id: null, p_vehicle_id: 'v2' });
+  });
+
+  it('moveKit sends the holder and who did it', async () => {
+    await svc.moveKit({ itemId: 'k1', status: 'on_van', holderEmployeeId: 'e1', vehicleId: null, serviceCompany: null, note: null, actorId: 'a3' });
+    expect(H.calls[0]).toMatchObject({ rpc: 'kit_move_item', payload: { p_item_id: 'k1', p_status: 'on_van', p_holder_employee_id: 'e1', p_vehicle_id: null, p_actor_id: 'a3' } });
   });
 });
 
@@ -124,17 +148,17 @@ describe('deleteAuditFile', () => {
   beforeEach(() => (H.calls = []));
 
   it('removes the file from the audit-photos bucket, then records who deleted it', async () => {
-    await svc.deleteAuditFile('lines/a.jpg', true);
+    await svc.deleteAuditFile('lines/a.jpg', true, { id: 'a1', name: 'Neil Foster' });
     expect(H.calls.map((c) => [c.table, c.op])).toEqual([
       ['storage:audit-photos', 'remove'],
       ['audit_file_deletions', 'insert'],
     ]);
     expect(H.calls[0].payload).toEqual(['lines/a.jpg']);
-    expect(H.calls[1].payload).toEqual({ path: 'lines/a.jpg', is_test: true });
+    expect(H.calls[1].payload).toEqual({ path: 'lines/a.jpg', is_test: true, actor_id: 'a1', actor_name: 'Neil Foster' });
   });
 
   it('never touches the audit line itself', async () => {
-    await svc.deleteAuditFile('lines/a.jpg', false);
+    await svc.deleteAuditFile('lines/a.jpg', false, { id: 'a1', name: 'Neil Foster' });
     expect(H.calls.some((c) => c.table === 'audit_lines')).toBe(false);
   });
 });

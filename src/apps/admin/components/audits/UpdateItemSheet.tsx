@@ -7,6 +7,9 @@ import { todayISO, autoExpiry, applyExpiry, AuditTarget, ServiceExpiryState } fr
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 import { DestinationFields, ReplacementFields, SwapNoteAndPreview } from './SwapFields';
 import { useSwapForm, SwapItem } from './useSwapForm';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
+import { Auditor } from '../../../../lib/supabase';
 
 export interface UpdateTarget {
   source: 'kit' | 'ppe';
@@ -29,11 +32,13 @@ type What = 'reserviced' | 'replaced' | 'swap';
 export function UpdateItemSheet({
   target,
   targets,
+  auditors,
   onClose,
   onSaved,
 }: {
   target: UpdateTarget;
   targets: AuditTarget[];
+  auditors: Auditor[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -51,7 +56,8 @@ export function UpdateItemSheet({
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const swapSave = useRef<(() => Promise<void>) | null>(null);
+  const swapSave = useRef<((actorId: string | null) => Promise<void>) | null>(null);
+  const { actorId, setActorId } = useActor(auditors);
 
   const options: { value: What; label: string; hint: string }[] = isPpe
     ? [{ value: 'replaced', label: 'Replaced with new', hint: 'New PPE issued, enter the new expiry' }]
@@ -65,10 +71,14 @@ export function UpdateItemSheet({
 
   const save = async () => {
     setError(null);
+    if (!actorId) {
+      setError('Pick who’s doing this.');
+      return;
+    }
     if (what === 'swap') {
       setSaving(true);
       try {
-        await swapSave.current?.();
+        await swapSave.current?.(actorId);
         onSaved();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not save the swap.');
@@ -93,6 +103,7 @@ export function UpdateItemSheet({
         plantNo: isPpe ? null : plantNo.trim() || null,
         certificatePath,
         note: [hatNote, note.trim()].filter(Boolean).join(' · ') || null,
+        actorId,
       });
       onSaved();
     } catch (e) {
@@ -119,6 +130,8 @@ export function UpdateItemSheet({
         <span>Current expiry:</span>
         <ExpiryPill expiry={target.expiryDate} />
       </div>
+
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
 
       <fieldset>
         <legend className="block text-xs font-semibold text-slate-600 mb-2">What happened?</legend>
@@ -181,7 +194,7 @@ function InlineSwap({ item, targets, months, register }: {
   item: SwapItem;
   targets: AuditTarget[];
   months: number | null;
-  register: (fn: () => Promise<void>) => void;
+  register: (fn: (actorId: string | null) => Promise<void>) => void;
 }) {
   const f = useSwapForm(item, targets);
   useEffect(() => register(f.save), [f.save, register]);

@@ -3,10 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { getAudit } from '../../../../lib/siteAuditService';
-import { getExpiryStatus, summariseAuditLines, FileDeletion } from '../../../../lib/siteAuditLogic';
+import { getExpiryStatus, summariseAuditLines, whoName, FileDeletion } from '../../../../lib/siteAuditLogic';
 import { FileLink } from './FileLink';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
-import { AuditLineRow, AuditMemberRow, SiteAudit } from '../../../../lib/supabase';
+import { AuditLineRow, AuditMemberRow, Auditor, SiteAudit } from '../../../../lib/supabase';
 import { CountBadge, ErrorNote, ExpiryPill, TestTag } from './ui';
 import { card, formatDate, formatDateTime } from './styles';
 
@@ -31,9 +31,9 @@ function Result({ r }: { r: AuditLineRow['result'] }) {
   return <span className="text-xs text-slate-500">—</span>;
 }
 
-function SectionTable({ title, lines, auditDate, section, deletions, onFileDeleted, dateLabelFor }: {
+function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor }: {
   title: string; lines: AuditLineRow[]; auditDate: string; section: AuditLineRow['section'];
-  deletions: FileDeletion[]; onFileDeleted: () => void; dateLabelFor: (l: AuditLineRow) => string | null;
+  deletions: FileDeletion[]; auditors: Auditor[]; onFileDeleted: () => void; dateLabelFor: (l: AuditLineRow) => string | null;
 }) {
   const [showAll, setShowAll] = useState(false);
   const flagged = lines.filter((l) => needsLook(l, auditDate));
@@ -41,7 +41,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, onFileDelet
   const isKit = section === 'kit';
   const hasExpiry = section === 'ppe' || section === 'kit';
   const ppeDates = section === 'ppe' && lines.some((l) => l.service_date);
-  const photo = (l: AuditLineRow) => l.photo_path && <FileLink path={l.photo_path} kind="Photo" deletions={deletions} onDeleted={onFileDeleted} />;
+  const photo = (l: AuditLineRow) => l.photo_path && <FileLink path={l.photo_path} kind="Photo" deletions={deletions} auditors={auditors} onDeleted={onFileDeleted} />;
   if (!lines.length) return null;
 
   const cells = (l: AuditLineRow) => (
@@ -159,7 +159,8 @@ export const AuditDetail: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <h2 className="text-lg font-bold text-slate-900">
             {(() => {
-              const key = audit.ganger_id ? `gang:${audit.ganger_id}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : null;
+              const person = audit.holder_employee_id ?? audit.ganger_id;
+              const key = person ? `person:${person}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : null;
               const label = audit.ganger_name_snapshot
                 ? `${audit.ganger_name_snapshot} · ${audit.vehicle_reg_snapshot ?? 'no van'}`
                 : audit.team_name_snapshot;
@@ -179,7 +180,7 @@ export const AuditDetail: React.FC = () => {
         </div>
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           {[
-            ['Audited by', audit.audited_by_name],
+            ['Audited by', whoName(audit.auditor_name)],
             ['Date', formatDate(audit.audit_date)],
             ['Van reg', audit.vehicle_reg_snapshot ?? '—'],
             ['Site', audit.site_visited ?? '—'],
@@ -204,7 +205,7 @@ export const AuditDetail: React.FC = () => {
 
       {SECTIONS.map((sec) => (
         <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)}
-          deletions={deletions} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} />
+          deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} />
       ))}
 
       <section className={`${card} p-4 sm:p-5`}>

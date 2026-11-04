@@ -12,12 +12,18 @@ import {
   groupKitForPhone,
   vanLabelFor,
   searchTargets,
+  auditTargetsOf,
+  allTargetsOf,
+  holderLabel,
+  holderKey,
+  whoName,
+  summariseKitByHolder,
+  buildAuditPrefill,
   addMonths,
   autoExpiry,
   applyServiceDate,
   applyExpiry,
   summariseKitByType,
-  summariseKitByVan,
   sortKit,
   isFileDeleted,
   type AttentionRow,
@@ -75,59 +81,88 @@ const employees = [
   { id: 'e5', full_name: 'Tristan Rose', role: 'Labourer', assigned_vehicle_id: null },
 ];
 
-describe('buildAuditTargets — ganger name + van everywhere', () => {
-  const targets = buildAuditTargets(employees, vehicles);
+describe('buildAuditTargets — holders: gangers, other staff, spare vans', () => {
+  const t = buildAuditTargets(employees, vehicles);
 
-  it('labels gangs "Ganger name · reg", and "no van" when none is assigned', () => {
-    expect(targets.gangs.map((g) => g.label)).toEqual(['Dom Oliver · YE24 TNL', 'Phil Hall · no van']);
+  it('labels people "Name · their van", or "no van"', () => {
+    expect(t.gangs.map((g) => g.label)).toEqual(['Dom Oliver · YE24 TNL', 'Phil Hall · no van']);
+    expect(t.staff.map((g) => g.label)).toEqual(['Kevin Noble · BV23 ZHK', 'Luca Clarke · no van', 'Tristan Rose · no van']);
   });
-  it('keeps the short team name for the audit record', () => {
-    expect(targets.gangs[0].teamName).toBe("D. Oliver's gang");
+  it('labels vans nobody is assigned "reg · spare van"', () => {
+    expect(t.spareVans.map((v) => v.label)).toEqual(['WV72 OZL · spare van']);
   });
-  it('carries the ganger and van ids on each gang', () => {
-    expect(targets.gangs[0]).toMatchObject({ gangerId: 'e1', vehicleId: 'v1', reg: 'YE24 TNL' });
+  it('uses person:<id> and van:<id> keys', () => {
+    expect(t.gangs[0]).toMatchObject({ key: 'person:e1', kind: 'person', personId: 'e1', isGanger: true, vehicleId: 'v1', reg: 'YE24 TNL', teamName: "D. Oliver's gang" });
+    expect(t.spareVans[0]).toMatchObject({ key: 'van:v2', kind: 'spare_van', personId: null, vehicleId: 'v2' });
   });
-  it('labels other vans "reg · person assigned" or "reg · Unassigned"', () => {
-    expect(targets.otherVans.map((v) => v.label)).toEqual(['BV23 ZHK · Kevin Noble', 'WV72 OZL · Unassigned']);
-    expect(targets.otherVans.every((v) => v.gangerId === null)).toBe(true);
-  });
-  it('gives every option a unique key so each pick is its own audit', () => {
-    const keys = [...targets.gangs, ...targets.otherVans].map((t) => t.key);
-    expect(new Set(keys).size).toBe(keys.length);
+  it('audit targets are gangers, staff who have a van, then spare vans', () => {
+    expect(auditTargetsOf(t).map((x) => x.key)).toEqual(['person:e1', 'person:e2', 'person:e3', 'van:v2']);
   });
 });
 
-describe('vanLabelFor — label for any van id', () => {
-  const targets = buildAuditTargets(employees, vehicles);
-  it('uses the gang label for a ganger’s van', () => {
-    expect(vanLabelFor(targets, 'v1')).toBe('Dom Oliver · YE24 TNL');
+describe('vanLabelFor — label for a van id', () => {
+  const t = buildAuditTargets(employees, vehicles);
+  it('names the person on the van (ganger first)', () => {
+    expect(vanLabelFor(t, 'v1')).toBe('Dom Oliver · YE24 TNL');
+    expect(vanLabelFor(t, 'v3')).toBe('Kevin Noble · BV23 ZHK');
   });
-  it('uses the other-van label otherwise', () => {
-    expect(vanLabelFor(targets, 'v2')).toBe('WV72 OZL · Unassigned');
+  it('says spare van when nobody has it', () => {
+    expect(vanLabelFor(t, 'v2')).toBe('WV72 OZL · spare van');
   });
-  it('falls back to the reg snapshot for a van no longer on the fleet', () => {
-    expect(vanLabelFor(targets, 'gone', 'AB12 CDE')).toBe('AB12 CDE');
-    expect(vanLabelFor(targets, null)).toBe('—');
+  it('falls back to the reg snapshot, or a dash', () => {
+    expect(vanLabelFor(t, 'gone', 'AB12 CDE')).toBe('AB12 CDE');
+    expect(vanLabelFor(t, null)).toBe('—');
   });
 });
 
-describe('searchTargets — type a ganger’s name or a reg', () => {
-  const targets = buildAuditTargets(employees, vehicles);
-  const all = [...targets.gangs, ...targets.otherVans];
-  it('matches a ganger by any part of the name, case-insensitive', () => {
-    expect(searchTargets(all, 'oliv').map((t) => t.key)).toEqual(['gang:e1']);
+describe('searchTargets — type a name or a reg', () => {
+  const t = buildAuditTargets(employees, vehicles);
+  const all = allTargetsOf(t);
+  it('matches a name in any case', () => {
+    expect(searchTargets(all, 'oliv').map((x) => x.key)).toEqual(['person:e1']);
   });
   it('matches a reg ignoring spaces', () => {
-    expect(searchTargets(all, 'bv23z').map((t) => t.key)).toEqual(['van:v3']);
+    expect(searchTargets(all, 'bv23z').map((x) => x.key)).toEqual(['person:e3']);
   });
-  it('matches the person a van is assigned to', () => {
-    expect(searchTargets(all, 'kevin').map((t) => t.key)).toEqual(['van:v3']);
+  it('lists gangers, then other staff, then spare vans', () => {
+    expect(searchTargets(all, '').map((x) => x.key)).toEqual(['person:e1', 'person:e2', 'person:e3', 'person:e4', 'person:e5', 'van:v2']);
   });
-  it('lists gangs first, then other vans, when the search is empty', () => {
-    expect(searchTargets(all, '').map((t) => t.key)).toEqual(['gang:e1', 'gang:e2', 'van:v3', 'van:v2']);
+  it('can be limited to vans (people with a van, and spare vans)', () => {
+    expect(searchTargets(all, '', { vansOnly: true }).map((x) => x.key)).toEqual(['person:e1', 'person:e3', 'van:v2']);
   });
-  it('can be limited to options that have a van', () => {
-    expect(searchTargets(all, '', { vansOnly: true }).map((t) => t.key)).toEqual(['gang:e1', 'van:v3', 'van:v2']);
+});
+
+describe('holderLabel / holderKey — who a kit item belongs to', () => {
+  it('a person: "Name · their current van" (kit goes with the ganger)', () => {
+    const k = { status: 'on_van', holder_kind: 'person', holder_employee_id: 'e1', holder_name: 'Dom Oliver', holder_reg: 'WV72 OZL', vehicle_id: 'v2' } as const;
+    expect(holderLabel(k)).toBe('Dom Oliver · WV72 OZL');
+    expect(holderKey(k)).toBe('person:e1');
+  });
+  it('a person with no van', () => {
+    expect(holderLabel({ status: 'on_van', holder_kind: 'person', holder_employee_id: 'e2', holder_name: 'Phil Hall', holder_reg: null, vehicle_id: null })).toBe('Phil Hall · no van');
+  });
+  it('a spare van', () => {
+    const k = { status: 'on_van', holder_kind: 'spare_van', holder_employee_id: null, holder_name: null, holder_reg: 'WV72 OZL', vehicle_id: 'v2' } as const;
+    expect(holderLabel(k)).toBe('WV72 OZL · spare van');
+    expect(holderKey(k)).toBe('van:v2');
+  });
+  it('a holder who was deleted from staff: needs a home', () => {
+    const k = { status: 'on_van', holder_kind: 'none', holder_employee_id: null, holder_name: null, holder_reg: null, vehicle_id: null } as const;
+    expect(holderLabel(k)).toBe('Unassigned, needs a home');
+    expect(holderKey(k)).toBeNull();
+  });
+  it('yard and service as before', () => {
+    expect(holderLabel({ status: 'spare', holder_kind: 'none', holder_employee_id: null, holder_name: null, holder_reg: null, vehicle_id: null })).toBe('Spare · Yard');
+  });
+});
+
+describe('whoName — never show a login email', () => {
+  it('shows the picked name', () => {
+    expect(whoName('Christina Pearson')).toBe('Christina Pearson');
+  });
+  it('shows "Office login" when only an email or nothing was recorded', () => {
+    expect(whoName(null)).toBe('Office login');
+    expect(whoName('')).toBe('Office login');
   });
 });
 
@@ -206,6 +241,12 @@ describe('Needs attention list', () => {
 
   it('puts expired first (most overdue first), then the soonest due', () => {
     expect(sortAttention(rows).map((r) => r.item_name)).toEqual(['D', 'B', 'C', 'A']);
+  });
+  it('puts kit that needs a home (holder deleted) at the very top', () => {
+    const homeless = row({ item_name: 'H', expiry_status: 'no_home', days_left: null, expiry_date: null });
+    expect(sortAttention([...rows, homeless])[0].item_name).toBe('H');
+    expect(filterAttention([...rows, homeless], 'expired').some((r) => r.item_name === 'H')).toBe(false);
+    expect(filterAttention([...rows, homeless], 'all').some((r) => r.item_name === 'H')).toBe(true);
   });
   it('Expired tab shows only expired', () => {
     expect(filterAttention(rows, 'expired').map((r) => r.item_name).sort()).toEqual(['B', 'D']);
@@ -389,7 +430,7 @@ describe('applyServiceDate / applyExpiry — expiry fills itself unless typed by
 
 const kitRow = (over: Record<string, unknown>) => ({
   id: Math.random().toString(), kit_type_id: 't1', type_name: 'Digger', plant_no: 'P1', status: 'on_van',
-  vehicle_id: 'v1', expiry_date: '2027-01-01', expiry_status: 'ok', days_left: 58, ...over,
+  vehicle_id: 'v1', holder_kind: 'person', holder_employee_id: 'e1', expiry_date: '2027-01-01', expiry_status: 'ok', days_left: 58, ...over,
 }) as never;
 
 describe('summariseKitByType — one row per kit type', () => {
@@ -410,21 +451,20 @@ describe('summariseKitByType — one row per kit type', () => {
   });
 });
 
-describe('summariseKitByVan — one row per gang / van', () => {
-  it('counts kit on each van with warning badges', () => {
-    const targets = buildAuditTargets(employees, vehicles);
-    const rows = summariseKitByVan([...targets.gangs, ...targets.otherVans], [
-      kitRow({ vehicle_id: 'v1', expiry_status: 'expired' }),
-      kitRow({ vehicle_id: 'v1', expiry_status: 'due_soon' }),
-      kitRow({ vehicle_id: 'v1' }),
-      kitRow({ vehicle_id: 'v3', status: 'on_van' }),
-      kitRow({ vehicle_id: null, status: 'spare' }),
+describe('summariseKitByHolder — one row per person / spare van', () => {
+  it('counts kit held by each, with warning badges', () => {
+    const t = buildAuditTargets(employees, vehicles);
+    const rows = summariseKitByHolder([...t.gangs, ...t.spareVans], [
+      kitRow({ holder_kind: 'person', holder_employee_id: 'e1', expiry_status: 'expired' }),
+      kitRow({ holder_kind: 'person', holder_employee_id: 'e1', expiry_status: 'due_soon' }),
+      kitRow({ holder_kind: 'person', holder_employee_id: 'e1' }),
+      kitRow({ holder_kind: 'spare_van', holder_employee_id: null, vehicle_id: 'v2' }),
+      kitRow({ status: 'spare', holder_kind: 'none', holder_employee_id: null, vehicle_id: null }),
     ]);
     expect(rows.map((r) => [r.key, r.items, r.expired, r.dueSoon])).toEqual([
-      ['gang:e1', 3, 1, 1],
-      ['gang:e2', 0, 0, 0],
-      ['van:v3', 1, 0, 0],
-      ['van:v2', 0, 0, 0],
+      ['person:e1', 3, 1, 1],
+      ['person:e2', 0, 0, 0],
+      ['van:v2', 1, 0, 0],
     ]);
   });
 });
@@ -453,5 +493,83 @@ describe('isFileDeleted', () => {
   });
   it('is undefined for a file still there', () => {
     expect(isFileDeleted('lines/b.jpg', deletions)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------- round 3: audits <-> kit in sync
+const checklistItems = [
+  { id: 'c-hat', section: 'ppe', name: 'Hard hats', expected_qty: 'Per person', sort_order: 30, service_interval_months: 36, date_label: 'Date on hat' },
+  { id: 'c-hivis', section: 'ppe', name: 'Hi vis', expected_qty: 'Per person', sort_order: 10, service_interval_months: null, date_label: null },
+  { id: 'c-aid', section: 'hs', name: 'First aid kit', expected_qty: '1 per van', sort_order: 10, service_interval_months: null, date_label: null },
+  { id: 'c-fuel', section: 'other', name: 'Fuel cans', expected_qty: 'x2', sort_order: 30, service_interval_months: null, date_label: null },
+] as never[];
+const types = [
+  { id: 't-saw', name: 'STIHL saw', sort_order: 40 },
+  { id: 't-dig', name: 'Digger', sort_order: 20 },
+  { id: 't-brk', name: 'Breaker', sort_order: 60 },
+];
+
+describe('buildAuditPrefill — a new audit starts from the person’s (or spare van’s) record', () => {
+  // (a) Dom was audited: kit, PPE dates, quantities and "not carried" were written back to his record
+  const domRecord = {
+    heldKit: [
+      { id: 'k-saw', kit_type_id: 't-saw', plant_no: 'S-100', service_date: '2026-05-01', expiry_date: '2027-05-01' },
+      { id: 'k-dig', kit_type_id: 't-dig', plant_no: 'D-7', service_date: '2026-01-10', expiry_date: '2027-01-10' },
+    ],
+    ppe: [{ checklist_item_id: 'c-hat', expiry_date: '2029-03-01' }],
+    notCarried: [{ kit_type_id: 't-brk', carried: false }],
+    lastLines: [
+      { section: 'ppe', checklist_item_id: 'c-hat', qty: '3', service_date: '2026-03-01', date_tag: null, result: 'Y' },
+      { section: 'hs', checklist_item_id: 'c-aid', qty: '1', service_date: null, date_tag: null, result: 'N' },
+      { section: 'other', checklist_item_id: 'c-fuel', qty: '2', service_date: null, date_tag: 'Tag 44', result: 'Y' },
+    ],
+  };
+  const lines = buildAuditPrefill({ checklist: checklistItems, kitTypes: types, ...domRecord });
+  const byName = (n: string) => lines.find((l) => l.item_name === n)!;
+
+  it('(a) carries over every kit item Dom holds, with plant no, service and expiry', () => {
+    expect(byName('STIHL saw')).toMatchObject({ kit_item_id: 'k-saw', plant_no_snapshot: 'S-100', service_date: '2026-05-01', expiry_date: '2027-05-01' });
+    expect(byName('Digger')).toMatchObject({ kit_item_id: 'k-dig', plant_no_snapshot: 'D-7' });
+  });
+  it('(a) carries over PPE expiry dates and the date on the hat', () => {
+    expect(byName('Hard hats')).toMatchObject({ expiry_date: '2029-03-01', service_date: '2026-03-01' });
+    expect(byName('Hi vis').expiry_date).toBeNull();
+  });
+  it('(a) carries over quantities (and date tags) from the last audit', () => {
+    expect(byName('Hard hats').qty).toBe('3');
+    expect(byName('First aid kit').qty).toBe('1');
+    expect(byName('Fuel cans')).toMatchObject({ qty: '2', date_tag: 'Tag 44' });
+  });
+  it('(a) carries over kit marked "not carried"', () => {
+    expect(byName('Breaker')).toMatchObject({ result: 'not_carried', notCarriedBefore: true });
+  });
+  it('(a) starts every Y/N box blank', () => {
+    expect(lines.filter((l) => l.result === 'Y' || l.result === 'N')).toEqual([]);
+  });
+  it('(a) treats carried-over expiry dates as automatic, so a new service date recalculates them', () => {
+    expect(byName('STIHL saw').expiryManual).toBe(false);
+  });
+
+  it('(b) after a swap on Kit & Plant, the next audit shows the new plant no', () => {
+    const afterSwap = { ...domRecord, heldKit: [{ id: 'k-saw2', kit_type_id: 't-saw', plant_no: 'S-200', service_date: '2026-11-04', expiry_date: '2027-11-04' }, domRecord.heldKit[1]] };
+    const l2 = buildAuditPrefill({ checklist: checklistItems, kitTypes: types, ...afterSwap });
+    expect(l2.find((l) => l.item_name === 'STIHL saw')).toMatchObject({ kit_item_id: 'k-saw2', plant_no_snapshot: 'S-200' });
+  });
+
+  it('(c) kit assigned to a spare van appears in that van’s audit', () => {
+    const vanRecord = { heldKit: [{ id: 'k-trl', kit_type_id: 't-dig', plant_no: 'D-55', service_date: null, expiry_date: null }], ppe: [], notCarried: [], lastLines: [] };
+    const l3 = buildAuditPrefill({ checklist: checklistItems, kitTypes: types, ...vanRecord });
+    expect(l3.find((l) => l.item_name === 'Digger')).toMatchObject({ kit_item_id: 'k-trl', plant_no_snapshot: 'D-55' });
+  });
+
+  it('(d) kit follows the ganger: his record is keyed by person, so a new van changes only the label', () => {
+    const t1 = buildAuditTargets(employees, vehicles);
+    const moved = employees.map((e) => (e.id === 'e1' ? { ...e, assigned_vehicle_id: 'v2' } : e));
+    const t2 = buildAuditTargets(moved, vehicles);
+    expect(t1.gangs[0].key).toBe('person:e1');
+    expect(t2.gangs[0].key).toBe('person:e1');
+    expect(t2.gangs[0].label).toBe('Dom Oliver · WV72 OZL');
+    expect(holderLabel({ status: 'on_van', holder_kind: 'person', holder_employee_id: 'e1', holder_name: 'Dom Oliver', holder_reg: 'WV72 OZL', vehicle_id: 'v2' }))
+      .toBe('Dom Oliver · WV72 OZL');
   });
 });

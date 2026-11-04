@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Image as ImageIcon, FileText, Trash2 } from 'lucide-react';
 import { deleteAuditFile, getAuditFileUrl } from '../../../../lib/siteAuditService';
-import { FileDeletion, isFileDeleted } from '../../../../lib/siteAuditLogic';
+import { FileDeletion, isFileDeleted, whoName } from '../../../../lib/siteAuditLogic';
+import { Auditor } from '../../../../lib/supabase';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
 import { Sheet, ErrorNote } from './ui';
 import { btn, formatDateTime, TEST_MODE } from './styles';
 
@@ -14,23 +17,26 @@ export function FileLink({
   path,
   kind,
   deletions,
+  auditors,
   onDeleted,
 }: {
   path: string;
   kind: 'Photo' | 'Certificate';
   deletions: FileDeletion[];
+  auditors: Auditor[];
   onDeleted: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { actorId, setActorId, actor } = useActor(auditors);
   const gone = isFileDeleted(path, deletions);
   const Icon = kind === 'Photo' ? ImageIcon : FileText;
 
   if (gone) {
     return (
       <span className="text-xs text-slate-500 italic">
-        {kind} deleted by {gone.deleted_by_name ?? 'admin'} on {formatDateTime(gone.deleted_at)}
+        {kind} deleted by {whoName(gone.actor_name)} on {formatDateTime(gone.deleted_at)}
       </span>
     );
   }
@@ -73,10 +79,14 @@ export function FileLink({
                 className={btn.danger}
                 disabled={busy}
                 onClick={async () => {
+                  if (!actor) {
+                    setError('Pick who’s doing this.');
+                    return;
+                  }
                   setBusy(true);
                   setError(null);
                   try {
-                    await deleteAuditFile(path, TEST_MODE);
+                    await deleteAuditFile(path, TEST_MODE, { id: actor.id, name: actor.name });
                     setConfirming(false);
                     onDeleted();
                   } catch (e) {
@@ -91,6 +101,7 @@ export function FileLink({
             </>
           }
         >
+          <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
           <ErrorNote message={error} />
         </Sheet>
       )}

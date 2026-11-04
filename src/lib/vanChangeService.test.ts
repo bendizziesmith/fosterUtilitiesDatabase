@@ -39,8 +39,9 @@ const input = {
   personId: 'e1',
   oldVehicleId: 'v-old',
   newVehicleId: 'v-new',
-  moves: [{ itemId: 'k1', to: 'new_van' as const }],
+  moves: [{ itemId: 'k1', to: 'person' as const }],
   note: 'Van change',
+  actorId: 'a1',
 };
 
 describe('changeVan', () => {
@@ -52,7 +53,7 @@ describe('changeVan', () => {
     expect(H.calls.some((c) => c.table === 'employees')).toBe(false);
     expect(H.calls[0]).toMatchObject({
       rpc: 'kit_change_van',
-      payload: { p_old_vehicle_id: 'v-old', p_new_vehicle_id: 'v-new', p_moves: [{ item_id: 'k1', to: 'new_van' }], p_is_test: true },
+      payload: { p_person_id: 'e1', p_old_vehicle_id: 'v-old', p_new_vehicle_id: 'v-new', p_moves: [{ item_id: 'k1', to: 'person' }], p_is_test: true, p_actor_id: 'a1' },
     });
   });
 

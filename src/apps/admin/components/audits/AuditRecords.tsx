@@ -4,6 +4,7 @@ import { ChevronRight, ClipboardList } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAuditSummaries } from '../../../../lib/siteAuditService';
 import { SiteAuditSummary } from '../../../../lib/supabase';
+import { whoName } from '../../../../lib/siteAuditLogic';
 import { Field, CountBadge, ErrorNote, TestTag } from './ui';
 import { card, inputCls, formatDate } from './styles';
 
@@ -25,7 +26,12 @@ function ResultBadges({ a }: { a: SiteAuditSummary }) {
 function whoLabel(a: SiteAuditSummary) {
   return a.ganger_name_snapshot ? `${a.ganger_name_snapshot} · ${a.vehicle_reg ?? 'no van'}` : a.team_name_snapshot;
 }
-const vanKey = (a: SiteAuditSummary) => (a.ganger_id ? `gang:${a.ganger_id}` : a.vehicle_id ? `van:${a.vehicle_id}` : null);
+const vanKey = (a: SiteAuditSummary) => {
+  const person = a.holder_employee_id ?? a.ganger_id;
+  return person ? `person:${person}` : a.vehicle_id ? `van:${a.vehicle_id}` : null;
+};
+/** the "Audited by" name; old test rows that only kept a login email show "Office login" */
+const byName = (a: SiteAuditSummary) => whoName(a.auditor_name);
 
 function DraftBadge() {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 text-slate-700 border-slate-200">Draft</span>;
@@ -51,7 +57,7 @@ export const AuditRecords: React.FC = () => {
   }, []);
 
   const teams = useMemo(() => [...new Set((rows ?? []).map(whoLabel))].sort(), [rows]);
-  const auditors = useMemo(() => [...new Set((rows ?? []).map((r) => r.audited_by_name))].sort(), [rows]);
+  const auditors = useMemo(() => [...new Set((rows ?? []).map(byName))].sort(), [rows]);
 
   const filtered = (rows ?? []).filter(
     (r) =>
@@ -59,7 +65,7 @@ export const AuditRecords: React.FC = () => {
       (!from || r.audit_date >= from) &&
       (!to || r.audit_date <= to) &&
       (!expiredOnly || r.expired_count > 0) &&
-      (!by || r.audited_by_name === by)
+      (!by || byName(r) === by)
   );
 
   const open = (r: SiteAuditSummary) =>
@@ -131,7 +137,7 @@ export const AuditRecords: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 text-slate-700">{r.vehicle_reg ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.site_visited ?? '—'}</td>
-                      <td className="px-3 py-3 text-slate-700">{r.audited_by_name}</td>
+                      <td className="px-3 py-3 text-slate-700">{byName(r)}</td>
                       <td className="px-3 py-3">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</td>
                       <td className="px-5 py-3 text-right">
                         <button type="button" onClick={(e) => { e.stopPropagation(); open(r); }} className="inline-flex items-center gap-1 min-h-[36px] px-2 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
@@ -149,7 +155,7 @@ export const AuditRecords: React.FC = () => {
                   <button type="button" onClick={() => open(r)} className="w-full text-left px-4 py-3 min-h-[64px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
-                      <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''}</span>
+                      <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''} · {byName(r)}</span>
                       <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</span>
                     </span>
                     <ChevronRight className="h-5 w-5 text-slate-400 flex-shrink-0" />

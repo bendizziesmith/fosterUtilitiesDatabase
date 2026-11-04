@@ -14,7 +14,7 @@ export function TargetPicker({
   onChange,
   vansOnly = false,
   excludeVehicleId,
-  placeholder = 'Type a ganger’s name or a reg…',
+  placeholder = 'Type a name or a reg…',
   disabled,
 }: {
   label: string;
@@ -61,7 +61,11 @@ export function TargetPicker({
     }
   };
 
-  const firstVan = results.findIndex((t) => !t.gangerId);
+  const firstStaff = results.findIndex((t) => t.kind === 'person' && !t.isGanger);
+  const firstVan = results.findIndex((t) => t.kind === 'spare_van');
+  const header = (text: string) => (
+    <li role="presentation" className="px-3 pt-2 pb-1 text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50">{text}</li>
+  );
 
   return (
     <div>
@@ -79,7 +83,7 @@ export function TargetPicker({
             }}
             className="flex-1 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-left text-sm font-semibold text-slate-900 flex items-center gap-2 cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {selected.gangerId ? <Users className="h-4 w-4 text-slate-500" /> : <Truck className="h-4 w-4 text-slate-500" />}
+            {selected.kind === 'person' ? <Users className="h-4 w-4 text-slate-500" /> : <Truck className="h-4 w-4 text-slate-500" />}
             <span className="truncate">{selected.label}</span>
             <span className="ml-auto text-xs font-medium text-blue-700">Change</span>
           </button>
@@ -125,11 +129,12 @@ export function TargetPicker({
           </div>
           {open && (
             <ul id={listId} role="listbox" aria-label={label} className="mt-1 max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
-              {results.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">No gang or van matches “{query}”.</li>}
+              {results.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">No one matches “{query}”.</li>}
               {results.map((t, i) => (
                 <React.Fragment key={t.key}>
-                  {(i === 0 && t.gangerId) && <li role="presentation" className="px-3 pt-2 pb-1 text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Gangs</li>}
-                  {i === firstVan && <li role="presentation" className="px-3 pt-2 pb-1 text-xs font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Other vans</li>}
+                  {i === 0 && t.isGanger && header('Gangers')}
+                  {i === firstStaff && header('Other staff')}
+                  {i === firstVan && header('Spare vans')}
                   <li
                     id={`${listId}-${i}`}
                     role="option"
@@ -139,7 +144,7 @@ export function TargetPicker({
                     onMouseEnter={() => setActive(i)}
                     className={`min-h-[44px] px-3 flex items-center gap-2 text-sm cursor-pointer ${i === active ? 'bg-blue-50 text-slate-900' : 'text-slate-800'} ${t.key === value ? 'font-semibold' : ''}`}
                   >
-                    {t.gangerId ? <Users className="h-4 w-4 text-slate-400 flex-shrink-0" /> : <Truck className="h-4 w-4 text-slate-400 flex-shrink-0" />}
+                    {t.kind === 'person' ? <Users className="h-4 w-4 text-slate-400 flex-shrink-0" /> : <Truck className="h-4 w-4 text-slate-400 flex-shrink-0" />}
                     {t.label}
                   </li>
                 </React.Fragment>

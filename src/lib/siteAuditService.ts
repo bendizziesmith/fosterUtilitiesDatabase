@@ -11,8 +11,9 @@ import {
   KitRecentUpdate,
   KitStatus,
   AuditPpeItem,
+  Auditor,
 } from './supabase';
-import { AttentionRow, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
+import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { getWeekEndingSunday } from './timesheetUtils';
 
 /**
@@ -44,18 +45,21 @@ export async function loadAuditReferenceData(): Promise<{
   vehicles: VanRow[];
   checklist: AuditChecklistItem[];
   kitTypes: KitType[];
+  auditors: Auditor[];
 }> {
-  const [emp, veh, chk, kt] = await Promise.all([
+  const [emp, veh, chk, kt, aud] = await Promise.all([
     supabase.from('employees').select('id, full_name, role, assigned_vehicle_id').order('full_name'),
     supabase.from('vehicles').select('id, registration_number').order('registration_number'),
     supabase.from('audit_checklist_items').select('*').eq('is_active', true).order('sort_order'),
     supabase.from('kit_types').select('*').eq('is_active', true).order('sort_order'),
+    supabase.from('audit_auditors').select('*').eq('is_active', true).order('sort_order'),
   ]);
   return {
     employees: check(emp) ?? [],
     vehicles: check(veh) ?? [],
     checklist: check(chk) ?? [],
     kitTypes: check(kt) ?? [],
+    auditors: check(aud) ?? [],
   };
 }
 
@@ -108,16 +112,50 @@ export async function loadTeam(ganger: StaffRow | null, employees: StaffRow[]): 
   return buildTeam({ ganger, timesheet: ts?.[0] ?? null, havsMembers, employees });
 }
 
-export async function loadVanKit(vehicleId: string | null): Promise<{
-  list: KitVanKitListRow[];
-  items: KitItemOverview[];
+/** person:<id> → that person; van:<id> → that spare van */
+export const holderParams = (t: Pick<AuditTarget, 'kind' | 'personId' | 'vehicleId'>) => ({
+  holderEmployeeId: t.kind === 'person' ? t.personId : null,
+  vehicleId: t.kind === 'spare_van' ? t.vehicleId : null,
+});
+
+/**
+ * Everything a person (or spare van) holds: kit, PPE expiry dates, "not carried"
+ * list, and the lines of their last submitted audit (for quantities).
+ */
+export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' | 'vehicleId'>): Promise<{
+  heldKit: KitItemOverview[];
+  ppe: AuditPpeItem[];
+  notCarried: KitVanKitListRow[];
+  lastLines: AuditLineRow[];
+  lastAuditId: string | null;
 }> {
-  if (!vehicleId) return { list: [], items: [] };
-  const [list, items] = await Promise.all([
-    supabase.from('kit_van_kit_list').select('*').eq('vehicle_id', vehicleId),
-    supabase.from('kit_items_overview').select('*').eq('vehicle_id', vehicleId).eq('status', 'on_van').order('type_sort'),
+  const { holderEmployeeId, vehicleId } = holderParams(t);
+  if (!holderEmployeeId && !vehicleId) return { heldKit: [], ppe: [], notCarried: [], lastLines: [], lastAuditId: null };
+  // rows held by this person, or (no person) by this spare van
+  const own = (table: string, cols = '*') => {
+    const q = supabase.from(table).select(cols);
+    return holderEmployeeId ? q.eq('holder_employee_id', holderEmployeeId) : q.is('holder_employee_id', null).eq('vehicle_id', vehicleId as string);
+  };
+  const [kit, ppe, vkl, audits] = await Promise.all([
+    holderEmployeeId
+      ? supabase.from('kit_items_overview').select('*').eq('status', 'on_van').eq('holder_employee_id', holderEmployeeId).order('type_sort')
+      : supabase.from('kit_items_overview').select('*').eq('status', 'on_van').is('holder_employee_id', null).eq('spare_vehicle_id', vehicleId as string).order('type_sort'),
+    own('audit_ppe_items'),
+    own('kit_van_kit_list'),
+    own('audit_site_audits', 'id, audit_date, submitted_at').eq('status', 'submitted')
+      .order('audit_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(1),
   ]);
-  return { list: check(list) ?? [], items: check(items) ?? [] };
+  const last = (check(audits) as unknown as { id: string }[] | null)?.[0] ?? null;
+  const lastLines = last
+    ? ((check(await supabase.from('audit_lines').select('*').eq('audit_id', last.id).order('sort_order')) as AuditLineRow[]) ?? [])
+    : [];
+  return {
+    heldKit: (check(kit) as unknown as KitItemOverview[]) ?? [],
+    ppe: (check(ppe) as unknown as AuditPpeItem[]) ?? [],
+    notCarried: (check(vkl) as unknown as KitVanKitListRow[]) ?? [],
+    lastLines,
+    lastAuditId: last?.id ?? null,
+  };
 }
 
 // ---------------------------------------------------------------- audits
@@ -236,9 +274,11 @@ export async function listVanKitLists(): Promise<KitVanKitListRow[]> {
   return check(await supabase.from('kit_van_kit_list').select('*')) ?? [];
 }
 
-export async function setVanCarried(vehicleId: string, kitTypeId: string, carried: boolean, isTest: boolean) {
-  check(await supabase.rpc('kit_set_van_carried', {
-    p_vehicle_id: vehicleId, p_kit_type_id: kitTypeId, p_carried: carried, p_is_test: isTest,
+/** "Not carried" list for a person (holderEmployeeId) or a spare van (vehicleId). */
+export async function setCarried(holderEmployeeId: string | null, vehicleId: string | null, kitTypeId: string, carried: boolean, isTest: boolean) {
+  check(await supabase.rpc('kit_set_carried', {
+    p_holder_employee_id: holderEmployeeId, p_vehicle_id: holderEmployeeId ? null : vehicleId,
+    p_kit_type_id: kitTypeId, p_carried: carried, p_is_test: isTest,
   }));
 }
 
@@ -248,10 +288,15 @@ export interface AddKitInput {
   serviceDate: string | null;
   expiryDate: string | null;
   status: Exclude<KitStatus, 'removed'>;
+  /** a person holds it … */
+  holderEmployeeId: string | null;
+  /** … or, with no person, a spare van */
   vehicleId: string | null;
   serviceCompany: string | null;
   notes: string | null;
   isTest: boolean;
+  /** "Who's doing this?" */
+  actorId: string | null;
 }
 
 export async function addKit(input: AddKitInput): Promise<string> {
@@ -261,10 +306,12 @@ export async function addKit(input: AddKitInput): Promise<string> {
     p_service_date: input.serviceDate || null,
     p_expiry_date: input.expiryDate || null,
     p_status: input.status,
-    p_vehicle_id: input.vehicleId,
+    p_holder_employee_id: input.holderEmployeeId,
+    p_vehicle_id: input.holderEmployeeId ? null : input.vehicleId,
     p_service_company: input.serviceCompany,
     p_notes: input.notes,
     p_is_test: input.isTest,
+    p_actor_id: input.actorId,
     p_audit_id: null,
   })) as string;
 }
@@ -278,6 +325,7 @@ export interface UpdateItemInput {
   plantNo: string | null;
   certificatePath: string | null;
   note: string | null;
+  actorId: string | null;
 }
 
 /** "Update" from Needs attention / Kit page: clears the warning and logs old → new. */
@@ -288,6 +336,7 @@ export async function updateAttentionItem(input: UpdateItemInput): Promise<void>
       p_expiry_date: input.expiryDate || null,
       p_certificate_path: input.certificatePath,
       p_note: input.note,
+      p_actor_id: input.actorId,
     }));
     return;
   }
@@ -299,19 +348,26 @@ export async function updateAttentionItem(input: UpdateItemInput): Promise<void>
     p_plant_no: input.plantNo,
     p_certificate_path: input.certificatePath,
     p_note: input.note,
+    p_actor_id: input.actorId,
   }));
 }
 
-export async function moveKit(itemId: string, status: KitStatus, vehicleId: string | null, serviceCompany: string | null, note: string | null) {
+export async function moveKit(m: {
+  itemId: string; status: KitStatus; holderEmployeeId: string | null; vehicleId: string | null;
+  serviceCompany: string | null; note: string | null; actorId: string | null;
+}) {
   check(await supabase.rpc('kit_move_item', {
-    p_item_id: itemId, p_status: status, p_vehicle_id: vehicleId,
-    p_service_company: serviceCompany, p_note: note, p_action: null,
+    p_item_id: m.itemId, p_status: m.status, p_holder_employee_id: m.holderEmployeeId,
+    p_vehicle_id: m.holderEmployeeId ? null : m.vehicleId,
+    p_service_company: m.serviceCompany, p_note: m.note, p_action: null, p_actor_id: m.actorId,
   }));
 }
 
 export interface SwapInput {
   itemId: string;
-  destination: 'away_for_service' | 'spare' | 'on_van' | 'removed';
+  /** holder = another person or spare van */
+  destination: 'away_for_service' | 'spare' | 'holder' | 'removed';
+  destHolderEmployeeId: string | null;
   destVehicleId: string | null;
   serviceCompany: string | null;
   replacement: 'spare' | 'new' | 'none';
@@ -320,13 +376,15 @@ export interface SwapInput {
   newServiceDate: string | null;
   newExpiryDate: string | null;
   note: string | null;
+  actorId: string | null;
 }
 
 export async function swapKit(input: SwapInput): Promise<string | null> {
   return check(await supabase.rpc('kit_swap', {
     p_item_id: input.itemId,
     p_destination: input.destination,
-    p_dest_vehicle_id: input.destVehicleId,
+    p_dest_holder_employee_id: input.destHolderEmployeeId,
+    p_dest_vehicle_id: input.destHolderEmployeeId ? null : input.destVehicleId,
     p_service_company: input.serviceCompany,
     p_replacement: input.replacement,
     p_spare_id: input.spareId,
@@ -334,6 +392,7 @@ export async function swapKit(input: SwapInput): Promise<string | null> {
     p_new_service_date: input.newServiceDate || null,
     p_new_expiry_date: input.newExpiryDate || null,
     p_note: input.note,
+    p_actor_id: input.actorId,
   })) as string | null;
 }
 
@@ -355,26 +414,24 @@ export async function getAuditFileUrl(path: string): Promise<string> {
 
 // ---------------------------------------------------------------- gang / van view
 
-export async function listVanHistory(vehicleId: string, limit = 15): Promise<KitRecentUpdate[]> {
+/** Kit history for a person (anything they held) or a spare van. */
+export async function listHolderHistory(t: Pick<AuditTarget, 'kind' | 'personId' | 'vehicleId'>, limit = 15): Promise<KitRecentUpdate[]> {
+  const { holderEmployeeId, vehicleId } = holderParams(t);
+  if (!holderEmployeeId && !vehicleId) return [];
+  const q = supabase.from('kit_recent_updates').select('*');
   return check(
-    await supabase
-      .from('kit_recent_updates')
-      .select('*')
-      .contains('related_vehicle_ids', [vehicleId])
+    await (holderEmployeeId ? q.contains('related_holder_ids', [holderEmployeeId]) : q.contains('related_vehicle_ids', [vehicleId as string]))
       .order('created_at', { ascending: false })
       .limit(limit)
   ) ?? [];
 }
 
-export async function listPpeForVan(vehicleId: string): Promise<AuditPpeItem[]> {
-  return check(await supabase.from('audit_ppe_items').select('*').eq('vehicle_id', vehicleId).order('item_name')) ?? [];
-}
-
-/** Latest submitted audit for a gang (by ganger) or a van. */
-export async function lastAudit(by: { gangerId?: string | null; vehicleId?: string | null }): Promise<SiteAuditSummary | null> {
+/** Latest submitted audit for a person or a spare van. */
+export async function lastAudit(t: Pick<AuditTarget, 'kind' | 'personId' | 'vehicleId'>): Promise<SiteAuditSummary | null> {
+  const { holderEmployeeId, vehicleId } = holderParams(t);
   let q = supabase.from('audit_site_audit_summary').select('*').eq('status', 'submitted');
-  if (by.gangerId) q = q.eq('ganger_id', by.gangerId);
-  else if (by.vehicleId) q = q.eq('vehicle_id', by.vehicleId);
+  if (holderEmployeeId) q = q.eq('holder_employee_id', holderEmployeeId);
+  else if (vehicleId) q = q.is('holder_employee_id', null).eq('vehicle_id', vehicleId);
   else return null;
   const rows = check(await q.order('audit_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(1)) as SiteAuditSummary[];
   return rows?.[0] ?? null;
@@ -383,16 +440,16 @@ export async function lastAudit(by: { gangerId?: string | null; vehicleId?: stri
 // ---------------------------------------------------------------- deleting photos / certificates
 
 export async function listFileDeletions(): Promise<FileDeletion[]> {
-  return check(await supabase.from('audit_file_deletions').select('path, deleted_by_name, deleted_at')) ?? [];
+  return check(await supabase.from('audit_file_deletions').select('path, deleted_by_name, deleted_at, actor_name')) ?? [];
 }
 
 /**
  * Deletes the file from storage, then records "deleted by X on date". The audit
  * line / history entry that pointed at it is never changed.
  */
-export async function deleteAuditFile(path: string, isTest: boolean): Promise<void> {
+export async function deleteAuditFile(path: string, isTest: boolean, actor: { id: string; name: string } | null): Promise<void> {
   check(await supabase.storage.from(BUCKET).remove([path]));
-  check(await supabase.from('audit_file_deletions').insert({ path, is_test: isTest }));
+  check(await supabase.from('audit_file_deletions').insert({ path, is_test: isTest, actor_id: actor?.id ?? null, actor_name: actor?.name ?? null }));
 }
 
 // ---------------------------------------------------------------- who is auditing

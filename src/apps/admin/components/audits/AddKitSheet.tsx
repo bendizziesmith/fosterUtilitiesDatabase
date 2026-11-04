@@ -3,7 +3,9 @@ import { Sheet, Field, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
 import { addKit, createKitType } from '../../../../lib/siteAuditService';
 import { AuditTarget, ServiceExpiryState, autoExpiry } from '../../../../lib/siteAuditLogic';
-import { KitType } from '../../../../lib/supabase';
+import { Auditor, KitType } from '../../../../lib/supabase';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
 import { TargetPicker } from './TargetPicker';
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 
@@ -26,8 +28,9 @@ export function AddKitSheet({
   mode,
   kitTypes,
   targets,
+  auditors = [],
   vanReg,
-  defaultVehicleId,
+  defaultHolderKey,
   onClose,
   onSaved,
   onAddLine,
@@ -35,10 +38,12 @@ export function AddKitSheet({
 }: {
   mode: 'page' | 'audit';
   kitTypes: KitType[];
+  /** every holder: gangers, other staff, spare vans */
   targets: AuditTarget[];
+  auditors?: Auditor[];
   vanReg?: string | null;
-  /** pre-pick this van (gang / van page) */
-  defaultVehicleId?: string | null;
+  /** pre-pick this holder (person:<id> / van:<id>) */
+  defaultHolderKey?: string | null;
   onClose: () => void;
   onSaved?: () => void;
   onAddLine?: (line: NewKitLine) => void;
@@ -50,7 +55,8 @@ export function AddKitSheet({
   const [plantNo, setPlantNo] = useState('');
   const [dates, setDates] = useState<ServiceExpiryState>({ serviceDate: null, expiry: null, expiryManual: false });
   const [where, setWhere] = useState<Where>('on_van');
-  const [vanKey, setVanKey] = useState(() => targets.find((t) => t.vehicleId && t.vehicleId === defaultVehicleId)?.key ?? '');
+  const [holderKeyValue, setHolderKey] = useState(defaultHolderKey ?? '');
+  const { actorId, setActorId } = useActor(auditors);
   const [company, setCompany] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -58,7 +64,7 @@ export function AddKitSheet({
 
   const months =
     typeId === '__new' ? (Number(newMonths) > 0 ? Number(newMonths) : null) : kitTypes.find((t) => t.id === typeId)?.service_interval_months ?? null;
-  const van = targets.find((t) => t.key === vanKey);
+  const holder = targets.find((t) => t.key === holderKeyValue);
 
   const changeType = (id: string) => {
     setTypeId(id);
@@ -70,7 +76,8 @@ export function AddKitSheet({
     setError(null);
     if (typeId === '__new' && !newType.trim()) return setError('Type the name of the new kit type.');
     if (typeId === '__new' && newMonths && !(Number(newMonths) >= 1 && Number(newMonths) <= 240)) return setError('Service interval must be between 1 and 240 months.');
-    if (mode === 'page' && where === 'on_van' && !van?.vehicleId) return setError('Pick the van this kit is on.');
+    if (mode === 'page' && where === 'on_van' && !holder) return setError('Pick who holds this kit.');
+    if (mode === 'page' && !actorId) return setError('Pick who’s doing this.');
     setSaving(true);
     try {
       let type = kitTypes.find((t) => t.id === typeId);
@@ -96,10 +103,12 @@ export function AddKitSheet({
         serviceDate: dates.serviceDate,
         expiryDate: dates.expiry,
         status: where,
-        vehicleId: where === 'on_van' ? van!.vehicleId : null,
+        holderEmployeeId: where === 'on_van' && holder?.kind === 'person' ? holder.personId : null,
+        vehicleId: where === 'on_van' && holder?.kind === 'spare_van' ? holder.vehicleId : null,
         serviceCompany: where === 'away_for_service' ? company.trim() || null : null,
         notes: notes.trim() || null,
         isTest: TEST_MODE,
+        actorId: actorId || null,
       });
       onSaved?.();
     } catch (e) {
@@ -123,6 +132,7 @@ export function AddKitSheet({
         </>
       }
     >
+      {mode === 'page' && <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />}
       <Field label="Kit type">
         {(id) => (
           <select id={id} className={inputCls} value={typeId} onChange={(e) => changeType(e.target.value)}>
@@ -152,7 +162,7 @@ export function AddKitSheet({
             <legend className="block text-xs font-semibold text-slate-600 mb-2">Where is it?</legend>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
-                ['on_van', 'On a van'],
+                ['on_van', 'Held by someone'],
                 ['spare', 'Spare in yard'],
                 ['away_for_service', 'Away for service'],
               ] as [Where, string][]).map(([v, l]) => (
@@ -163,7 +173,7 @@ export function AddKitSheet({
               ))}
             </div>
           </fieldset>
-          {where === 'on_van' && <TargetPicker label="Van" targets={targets} value={vanKey} onChange={setVanKey} vansOnly />}
+          {where === 'on_van' && <TargetPicker label="Who holds it? (person or spare van)" targets={targets} value={holderKeyValue} onChange={setHolderKey} />}
           {where === 'away_for_service' && (
             <Field label="Service company (optional)">
               {(id) => <input id={id} className={inputCls} value={company} onChange={(e) => setCompany(e.target.value)} />}

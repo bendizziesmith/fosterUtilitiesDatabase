@@ -6,7 +6,9 @@ import { TargetPicker } from './TargetPicker';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { planVanChange, MixChoice, VanChangeMode, VanKit } from '../../../../lib/vanChange';
 import { changeVan } from '../../../../lib/vanChangeService';
-import { KitItemOverview } from '../../../../lib/supabase';
+import { Auditor, KitItemOverview } from '../../../../lib/supabase';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
 import { StaffRow } from '../../../../lib/siteAuditService';
 
 const kitLabel = (k: VanKit) => `${k.type_name}${k.plant_no ? ` ${k.plant_no}` : ''}`;
@@ -27,6 +29,7 @@ export function ChangeVanSheet({
   employees,
   allKit,
   vanLabel,
+  auditors,
   onClose,
   onDone,
 }: {
@@ -39,6 +42,7 @@ export function ChangeVanSheet({
   employees: StaffRow[];
   allKit: KitItemOverview[];
   vanLabel: (id: string | null, reg?: string | null) => string;
+  auditors: Auditor[];
   onClose: () => void;
   onDone: (message: string) => void;
 }) {
@@ -48,14 +52,16 @@ export function ChangeVanSheet({
   const [mix, setMix] = useState<Record<string, MixChoice>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { actorId, setActorId } = useActor(auditors);
 
   const newVehicleId = targets.find((t) => t.key === newKey)?.vehicleId ?? null;
+  // kit belongs to the person; the new van brings only its spare-van kit
   const oldKit = useMemo<VanKit[]>(
-    () => (oldVehicleId ? allKit.filter((k) => k.status === 'on_van' && k.vehicle_id === oldVehicleId) : []),
-    [allKit, oldVehicleId]
+    () => allKit.filter((k) => k.status === 'on_van' && k.holder_employee_id === person.id),
+    [allKit, person.id]
   );
   const newKit = useMemo<VanKit[]>(
-    () => (newVehicleId ? allKit.filter((k) => k.status === 'on_van' && k.vehicle_id === newVehicleId) : []),
+    () => (newVehicleId ? allKit.filter((k) => k.status === 'on_van' && k.holder_kind === 'spare_van' && k.spare_vehicle_id === newVehicleId) : []),
     [allKit, newVehicleId]
   );
   const holdersOf = (vid: string | null) =>
@@ -72,6 +78,10 @@ export function ChangeVanSheet({
 
   const save = async () => {
     if (!newVehicleId) return;
+    if (!actorId) {
+      setError('Pick who’s doing this.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -83,6 +93,7 @@ export function ChangeVanSheet({
         note: `Van change: ${person.name} ${oldLabel} → ${newLabel}`,
         testMode: TEST_MODE,
         assignmentAlreadyDone,
+        actorId,
       });
       onDone(
         assignmentAlreadyDone
@@ -128,15 +139,17 @@ export function ChangeVanSheet({
     >
       {step === 1 && (
         <>
+          <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
           <TargetPicker label="New van" targets={targets} value={newKey} onChange={setNewKey} vansOnly excludeVehicleId={oldVehicleId} />
+          <p className="text-xs text-slate-600">{person.name}’s own kit goes with them. Next you choose what happens to it and to any spare-van kit in the new van.</p>
           {newVehicleId && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
               <p className="text-sm text-slate-800 flex items-center gap-2">
                 <User className="h-4 w-4 text-slate-500" />
                 {newHolders.length ? `Has it now: ${newHolders.join(', ')}` : 'Spare van (nobody assigned)'}
               </p>
-              <p className="text-xs font-semibold text-slate-600">Kit in this van</p>
-              <KitList items={newKit} empty="No kit recorded in this van." />
+              <p className="text-xs font-semibold text-slate-600">Spare-van kit in this van</p>
+              <KitList items={newKit} empty="No spare-van kit in this van." />
             </div>
           )}
         </>
@@ -151,7 +164,7 @@ export function ChangeVanSheet({
                 <label className={radio(mode === 'take_all')}>
                   <input type="radio" name="mode" checked={mode === 'take_all'} onChange={() => setMode('take_all')} className="mt-1 h-4 w-4" />
                   <span><span className="block text-sm font-semibold text-slate-900">Take my kit with me</span>
-                    <span className="block text-xs text-slate-600">Everything on {oldLabel} moves to the new van.</span></span>
+                    <span className="block text-xs text-slate-600">Everything {person.name} holds goes with them (and any spare-van kit in the new van becomes theirs).</span></span>
                 </label>
               )}
               <label className={radio(mode === 'use_new')}>
@@ -172,8 +185,8 @@ export function ChangeVanSheet({
           {mode === 'mix' && (
             <div className="space-y-4">
               {oldKit.length > 0 && (
-                <MixList title={`From the old van (${oldLabel})`} items={oldKit} mix={mix} setMix={setMix}
-                  options={[['old_van', 'Leave in old van'], ['new_van', 'Move to new van'], ['spare', 'Back to yard as spare']]} fallback="old_van" />
+                <MixList title={`${person.name}’s kit`} items={oldKit} mix={mix} setMix={setMix}
+                  options={[['new_van', 'Move to new van'], ['old_van', 'Leave in old van'], ['spare', 'Back to yard as spare']]} fallback="new_van" />
               )}
               {newKit.length > 0 && (
                 <MixList title={`Already in the new van (${newLabel})`} items={newKit} mix={mix} setMix={setMix}

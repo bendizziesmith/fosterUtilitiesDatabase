@@ -20,16 +20,20 @@ export async function changeVan(input: {
   moves: KitMove[];
   note: string | null;
   testMode: boolean;
+  /** "Who's doing this?" (audit_auditors.id) */
+  actorId: string | null;
   /** the van was already changed in Employee / Vehicle Management */
   assignmentAlreadyDone?: boolean;
 }): Promise<{ vanSaved: boolean }> {
   check(
     await supabase.rpc('kit_change_van', {
+      p_person_id: input.personId,
       p_old_vehicle_id: input.oldVehicleId,
       p_new_vehicle_id: input.newVehicleId,
       p_moves: input.moves.map((m) => ({ item_id: m.itemId, to: m.to })),
       p_note: input.note,
       p_is_test: input.testMode,
+      p_actor_id: input.actorId,
     })
   );
 

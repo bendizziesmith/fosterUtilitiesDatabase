@@ -4,11 +4,16 @@ import { btn } from './styles';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { DestinationFields, ReplacementFields, SwapNoteAndPreview } from './SwapFields';
 import { useSwapForm, SwapItem } from './useSwapForm';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
+import { Auditor } from '../../../../lib/supabase';
+import { holderLabel } from '../../../../lib/siteAuditLogic';
 
 export function SwapKitSheet({
   item,
   targets,
   months,
+  auditors,
   onClose,
   onSaved,
 }: {
@@ -16,10 +21,12 @@ export function SwapKitSheet({
   targets: AuditTarget[];
   /** service interval of this kit type, for "+ Add a new" */
   months: number | null | undefined;
+  auditors: Auditor[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const f = useSwapForm(item, targets);
+  const { actorId, setActorId } = useActor(auditors);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = item.plant_no || item.type_name;
@@ -28,7 +35,7 @@ export function SwapKitSheet({
     setSaving(true);
     setError(null);
     try {
-      await f.save();
+      await f.save(actorId || null);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the swap.');
@@ -39,7 +46,7 @@ export function SwapKitSheet({
   return (
     <Sheet
       title={`Swap ${item.type_name}`}
-      subtitle={`${label} · ${item.vehicle_reg ?? ''}`}
+      subtitle={`${label} · ${holderLabel(item)}`}
       onClose={onClose}
       footer={
         <>
@@ -50,6 +57,7 @@ export function SwapKitSheet({
         </>
       }
     >
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <DestinationFields f={f} title={`1. Where is ${label} going?`} />
       <ReplacementFields f={f} months={months} title="2. What goes on the van instead?" />
       <SwapNoteAndPreview f={f} />

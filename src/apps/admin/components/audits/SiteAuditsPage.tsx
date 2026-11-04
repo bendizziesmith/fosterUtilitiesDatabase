@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardPlus, ClipboardList, Wrench, ArrowRight, AlertTriangle, CheckCircle2, History } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAttention, listRecentUpdates, listKit } from '../../../../lib/siteAuditService';
-import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus } from '../../../../lib/siteAuditLogic';
+import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus, whoName } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview, KitRecentUpdate } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
@@ -14,6 +14,13 @@ import { ErrorNote, TestModeBanner, TestTag } from './ui';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL } from './styles';
 
 function StatusText({ r }: { r: AttentionRow }) {
+  if (r.expiry_status === 'no_home') {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-red-50 text-red-700 border-red-200">
+        Needs a home
+      </span>
+    );
+  }
   const expired = r.expiry_status === 'expired';
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${expired ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
@@ -51,9 +58,16 @@ export const SiteAuditsPage: React.FC = () => {
   }, [load]);
 
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
-  const where = (r: AttentionRow) =>
-    r.source === 'kit' && r.kit_status === 'spare' ? 'Spare · Yard' : ref.vanLabel(r.vehicle_id, r.vehicle_reg);
-  const vanKey = (r: AttentionRow) => (r.source === 'kit' && r.kit_status === 'spare' ? null : ref.keyForVan(r.vehicle_id));
+  /** "Dom Oliver · YE24 TNL", "WV72 OZL · spare van", "Spare · Yard" or "Unassigned, needs a home" */
+  const where = (r: AttentionRow) => {
+    if (r.source === 'kit' && r.kit_status === 'spare') return 'Spare · Yard';
+    if (r.holder_kind === 'person') return `${r.holder_name ?? 'Unknown'} · ${r.vehicle_reg ?? 'no van'}`;
+    if (r.holder_kind === 'spare_van') return `${r.vehicle_reg ?? 'Van'} · spare van`;
+    return r.expiry_status === 'no_home' ? 'Unassigned, needs a home' : r.vehicle_reg ?? '—';
+  };
+  const vanKey = (r: AttentionRow) =>
+    r.holder_kind === 'person' && r.holder_employee_id ? `person:${r.holder_employee_id}`
+      : r.holder_kind === 'spare_van' && r.vehicle_id ? `van:${r.vehicle_id}` : null;
   const whereCell = (r: AttentionRow) => {
     const key = vanKey(r);
     return key ? (
@@ -64,8 +78,8 @@ export const SiteAuditsPage: React.FC = () => {
   };
   const openUpdate = (r: AttentionRow) => {
     const k = kitFor(r);
-    if (r.source === 'kit' && k) setUpdating(kitUpdateTarget(k, ref.kitTypes, ref.vanLabel));
-    else setUpdating(ppeUpdateTarget({ id: r.item_id, item_name: r.item_name, expiry_date: r.expiry_date, vehicle_id: r.vehicle_id, vehicle_reg: r.vehicle_reg }, ref.checklist, ref.vanLabel));
+    if (r.source === 'kit' && k) setUpdating(kitUpdateTarget(k, ref.kitTypes));
+    else setUpdating(ppeUpdateTarget({ id: r.item_id, item_name: r.item_name, expiry_date: r.expiry_date }, where(r), ref.checklist));
   };
   const done = () => {
     setUpdating(null);
@@ -242,18 +256,18 @@ export const SiteAuditsPage: React.FC = () => {
                     <TestTag show={u.is_test} />
                   </p>
                   {u.note && <p className="text-xs text-slate-600 ml-6 mt-0.5">{u.note}</p>}
-                  {u.certificate_path && <div className="ml-6"><FileLink path={u.certificate_path} kind="Certificate" deletions={deletions} onDeleted={reloadDeletions} /></div>}
+                  {u.certificate_path && <div className="ml-6"><FileLink path={u.certificate_path} kind="Certificate" deletions={deletions} auditors={ref.auditors} onDeleted={reloadDeletions} /></div>}
                 </div>
-                <p className="text-xs text-slate-500 ml-6 sm:ml-0 whitespace-nowrap">{u.by_name ?? 'Unknown'} · {formatDateTime(u.created_at)}</p>
+                <p className="text-xs text-slate-500 ml-6 sm:ml-0 whitespace-nowrap">{whoName(u.actor_name)} · {formatDateTime(u.created_at)}</p>
               </li>
             ))}
           </ul>
         )}
       </section>
 
-      {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} onClose={() => setUpdating(null)} onSaved={done} />}
+      {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={ref.auditors} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && (
-        <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} onClose={() => setSwapping(null)} onSaved={done} />
+        <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={ref.auditors} onClose={() => setSwapping(null)} onSaved={done} />
       )}
     </div>
   );

@@ -5,7 +5,7 @@ import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import {
   loadAuditReferenceData,
   loadTeam,
-  loadVanKit,
+  loadHolderRecord,
   saveDraftAudit,
   submitAudit,
   getAudit,
@@ -17,6 +17,9 @@ import {
 import {
   buildAuditTargets,
   buildKitLines,
+  buildAuditPrefill,
+  auditTargetsOf,
+  allTargetsOf,
   summariseAuditLines,
   todayISO,
   applyServiceDate,
@@ -25,7 +28,9 @@ import {
   DraftLine,
   TeamMember,
 } from '../../../../lib/siteAuditLogic';
-import { AuditChecklistItem, KitItemOverview, KitType } from '../../../../lib/supabase';
+import { AuditChecklistItem, Auditor, KitItemOverview, KitType } from '../../../../lib/supabase';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
 import { AddKitSheet } from './AddKitSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
@@ -35,39 +40,26 @@ import { btn, card, inputCls, TEST_MODE } from './styles';
 const SECTIONS: { key: DraftLine['section']; title: string; note: string }[] = [
   { key: 'ppe', title: 'PPE', note: 'Qty per person' },
   { key: 'hs', title: 'Health & safety', note: 'Expected qty shown · audit only, no dates' },
-  { key: 'kit', title: 'Kit', note: 'Pre-filled from this van’s kit list' },
+  { key: 'kit', title: 'Kit', note: 'Pre-filled from their Kit & Plant record' },
   { key: 'other', title: 'Other', note: '' },
 ];
 
 let keySeq = 0;
 const newKey = (p: string) => `${p}:${Date.now()}:${keySeq++}`;
 
-function checklistLines(checklist: AuditChecklistItem[]): DraftLine[] {
-  return checklist.map((c) => ({
-    key: `c:${c.id}`,
-    section: c.section,
-    checklist_item_id: c.id,
-    item_name: c.name,
-    expected_qty: c.expected_qty,
-    result: null,
-    qty: '',
-    expiry_date: null,
-    date_tag: '',
-    comment: '',
-    photo_path: null,
-  }));
-}
-
 export const NewAuditForm: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const draftParam = params.get('draft');
-  const targetParam = params.get('target');
+  // old links used gang:<id>; a gang is now its ganger (person:<id>)
+  const targetParam = params.get('target')?.replace(/^gang:/, 'person:') ?? null;
 
   const [employees, setEmployees] = useState<StaffRow[]>([]);
   const [vehicles, setVehicles] = useState<VanRow[]>([]);
   const [checklist, setChecklist] = useState<AuditChecklistItem[]>([]);
   const [kitTypes, setKitTypes] = useState<KitType[]>([]);
+  const [auditors, setAuditors] = useState<Auditor[]>([]);
+  const { actorId: auditorId, setActorId: setAuditorId, actor: auditorRec } = useActor(auditors);
   const [auditor, setAuditor] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -88,8 +80,11 @@ export const NewAuditForm: React.FC = () => {
   const [confirmSubmit, setConfirmSubmit] = useState(false);
 
   const targets = useMemo(() => buildAuditTargets(employees, vehicles), [employees, vehicles]);
-  const allTargets = useMemo(() => [...targets.gangs, ...targets.otherVans], [targets]);
-  const target: AuditTarget | undefined = allTargets.find((t) => t.key === targetKey);
+  /** who can be audited: gangers, staff with a van, spare vans */
+  const allTargets = useMemo(() => auditTargetsOf(targets), [targets]);
+  /** every holder (for Add kit / Swap) */
+  const allHolders = useMemo(() => allTargetsOf(targets), [targets]);
+  const target: AuditTarget | undefined = allHolders.find((t) => t.key === targetKey);
 
   // ---------------------------------------------------------- load
   useEffect(() => {
@@ -100,6 +95,7 @@ export const NewAuditForm: React.FC = () => {
         setVehicles(ref.vehicles);
         setChecklist(ref.checklist);
         setKitTypes(ref.kitTypes);
+        setAuditors(ref.auditors);
         setAuditor(who);
         if (draftParam) {
           const { audit, members: m, lines: l } = await getAudit(draftParam);
@@ -107,14 +103,16 @@ export const NewAuditForm: React.FC = () => {
             navigate(`/audits/detail?id=${audit.id}`, { replace: true });
             return;
           }
-          setTargetKey(audit.ganger_id ? `gang:${audit.ganger_id}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : '');
+          const person = audit.holder_employee_id ?? audit.ganger_id;
+          setTargetKey(person ? `person:${person}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : '');
+          if (audit.auditor_id) setAuditorId(audit.auditor_id);
           setAuditDate(audit.audit_date);
           setSite(audit.site_visited ?? '');
           setNotes(audit.notes ?? '');
           setMembers(m.map((x) => ({ name: x.name, employee_id: x.employee_id })));
           setLines(l.map((x) => ({ ...x, key: `row:${x.id}` })));
-          const vk = await loadVanKit(audit.vehicle_id);
-          setVanItems(vk.items);
+          const rec = await loadHolderRecord({ kind: person ? 'person' : 'spare_van', personId: person, vehicleId: audit.vehicle_id });
+          setVanItems(rec.heldKit);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not load the audit form.');
@@ -122,6 +120,7 @@ export const NewAuditForm: React.FC = () => {
         setLoading(false);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftParam, navigate]);
 
   // opened from a gang / van page: "New audit for this gang"
@@ -146,11 +145,17 @@ export const NewAuditForm: React.FC = () => {
     setBusy('target');
     setError(null);
     try {
-      const ganger = t.gangerId ? employees.find((e) => e.id === t.gangerId) ?? null : null;
-      const [team, vk] = await Promise.all([loadTeam(ganger, employees), loadVanKit(t.vehicleId)]);
+      const person = t.kind === 'person' ? employees.find((e) => e.id === t.personId) ?? null : null;
+      const [team, rec] = await Promise.all([
+        t.isGanger ? loadTeam(person, employees) : Promise.resolve(person ? [{ name: person.full_name, employee_id: person.id }] : []),
+        loadHolderRecord(t),
+      ]);
       setMembers(team);
-      setVanItems(vk.items);
-      setLines([...checklistLines(checklist), ...buildKitLines(kitTypes, vk.list, vk.items)]);
+      setVanItems(rec.heldKit);
+      // pre-filled from their record (kit, PPE dates, last quantities, not carried); Y/N start blank
+      setLines(buildAuditPrefill({
+        checklist, kitTypes, heldKit: rec.heldKit, ppe: rec.ppe, notCarried: rec.notCarried, lastLines: rec.lastLines,
+      }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the team.');
     } finally {
@@ -164,9 +169,10 @@ export const NewAuditForm: React.FC = () => {
 
   const reloadKitAfterSwap = async () => {
     setSwapItem(null);
-    if (!target?.vehicleId) return;
-    const vk = await loadVanKit(target.vehicleId);
-    setVanItems(vk.items);
+    if (!target) return;
+    const rec = await loadHolderRecord(target);
+    const vk = { list: rec.notCarried, items: rec.heldKit };
+    setVanItems(rec.heldKit);
     setLines((ls) => {
       const kept = ls.filter((l) => l.section !== 'kit');
       const old = ls.filter((l) => l.section === 'kit');
@@ -184,10 +190,13 @@ export const NewAuditForm: React.FC = () => {
     audit_date: auditDate,
     audited_by: auditor?.id ?? null,
     audited_by_name: auditor?.name ?? 'Admin',
+    auditor_id: auditorRec?.id ?? null,
+    auditor_name: auditorRec?.name ?? null,
+    holder_employee_id: target?.kind === 'person' ? target.personId : null,
     vehicle_id: target?.vehicleId ?? null,
     vehicle_reg_snapshot: target?.reg ?? null,
-    ganger_id: target?.gangerId ?? null,
-    ganger_name_snapshot: target?.gangerName ?? null,
+    ganger_id: target?.isGanger ? target.personId : null,
+    ganger_name_snapshot: target?.personName ?? null,
     team_name_snapshot: target?.teamName ?? '',
     site_visited: site.trim() || null,
     notes: notes.trim() || null,
@@ -245,6 +254,7 @@ export const NewAuditForm: React.FC = () => {
 
       {/* ------------------------------------------------ header */}
       <section className={`${card} p-4 sm:p-5 space-y-4`}>
+        <ActorPicker auditors={auditors} value={auditorId} onChange={setAuditorId} label="Audited by" />
         <TargetPicker label="Audit who?" targets={allTargets} value={targetKey} onChange={pickTarget} disabled={busy === 'target'} />
 
         {busy === 'target' && <p className="text-sm text-slate-600">Loading team and kit…</p>}
@@ -261,10 +271,6 @@ export const NewAuditForm: React.FC = () => {
               <Field label="Date">
                 {(id) => <input id={id} type="date" className={inputCls} value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />}
               </Field>
-              <div>
-                <p className="text-xs font-semibold text-slate-600 mb-1">Audited by</p>
-                <p className="min-h-[44px] flex items-center px-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 truncate">{auditor?.name ?? '—'}</p>
-              </div>
               <Field label="Site visited">
                 {(id) => <input id={id} className={inputCls} value={site} onChange={(e) => setSite(e.target.value)} placeholder="Street / job" />}
               </Field>
@@ -339,7 +345,7 @@ export const NewAuditForm: React.FC = () => {
                   onChange={(p) => update(l.key!, p)}
                   onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
                   onSwap={
-                    s.key === 'kit' && l.kit_item_id && target.vehicleId
+                    s.key === 'kit' && l.kit_item_id
                       ? () => setSwapItem(vanItems.find((v) => v.id === l.kit_item_id) ?? null)
                       : undefined
                   }
@@ -349,10 +355,9 @@ export const NewAuditForm: React.FC = () => {
             </ul>
             {s.key === 'kit' && (
               <div className="px-4 sm:px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
-                <button type="button" className={btn.secondary} onClick={() => setShowAddKit(true)} disabled={!target.vehicleId}>
-                  <Plus className="h-4 w-4" />Add kit to van
+                <button type="button" className={btn.secondary} onClick={() => setShowAddKit(true)}>
+                  <Plus className="h-4 w-4" />Add kit
                 </button>
-                {!target.vehicleId && <p className="text-xs text-slate-500 self-center">This gang has no van assigned, so kit can’t be added to a van.</p>}
               </div>
             )}
           </section>
@@ -381,7 +386,14 @@ export const NewAuditForm: React.FC = () => {
               <button type="button" className={`${btn.secondary} flex-1 sm:flex-none`} onClick={onSaveDraft} disabled={!!busy}>
                 <Save className="h-4 w-4" />{busy === 'draft' ? 'Saving…' : 'Save draft'}
               </button>
-              <button type="button" className={`${btn.primary} flex-1 sm:flex-none`} onClick={() => setConfirmSubmit(true)} disabled={!!busy}>
+              <button type="button" className={`${btn.primary} flex-1 sm:flex-none`} onClick={() => {
+                if (!auditorRec) {
+                  setError('Pick who did the audit (“Audited by”, at the top) before submitting.');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  return;
+                }
+                setConfirmSubmit(true);
+              }} disabled={!!busy}>
                 <Send className="h-4 w-4" />{busy === 'submit' ? 'Submitting…' : 'Submit audit'}
               </button>
             </div>
@@ -393,8 +405,8 @@ export const NewAuditForm: React.FC = () => {
         <AddKitSheet
           mode="audit"
           kitTypes={kitTypes}
-          targets={allTargets}
-          vanReg={target?.reg}
+          targets={allHolders}
+          vanReg={target?.label}
           onClose={() => setShowAddKit(false)}
           onTypeCreated={(t) => setKitTypes((ts) => [...ts, t])}
           onAddLine={(n) => {
@@ -419,7 +431,7 @@ export const NewAuditForm: React.FC = () => {
         />
       )}
       {swapItem && (
-        <SwapKitSheet item={swapItem} targets={allTargets} months={kitTypes.find((t) => t.id === swapItem.kit_type_id)?.service_interval_months ?? null}
+        <SwapKitSheet item={swapItem} targets={allHolders} auditors={auditors} months={kitTypes.find((t) => t.id === swapItem.kit_type_id)?.service_interval_months ?? null}
           onClose={() => setSwapItem(null)} onSaved={reloadKitAfterSwap} />
       )}
       {confirmSubmit && (

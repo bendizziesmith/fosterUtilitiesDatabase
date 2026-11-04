@@ -1,7 +1,7 @@
 /**
  * Planning a "Change van" for a person (pure, unit-tested in vanChange.test.ts).
- * Kit belongs to a van; a person holds whatever is on their van. Changing van
- * decides, item by item, where the kit on the old and new van ends up.
+ * Kit belongs to a person (or a spare van). oldKit = what the person holds;
+ * newKit = spare-van kit in the new van. Changing van decides where each ends up.
  */
 
 export interface VanKit {
@@ -12,19 +12,20 @@ export interface VanKit {
 }
 
 export type VanChangeMode = 'take_all' | 'use_new' | 'mix';
-/** old-van kit: new_van / old_van (stay) / spare. New-van kit: keep / old_van / spare. */
+/** person's kit: new_van (stays with them) / old_van / spare. New-van kit: keep / old_van / spare. */
 export type MixChoice = 'new_van' | 'old_van' | 'spare' | 'keep';
 
 export interface KitMove {
   itemId: string;
-  to: 'new_van' | 'old_van' | 'spare';
+  /** person: now held by the person · old_van: whoever has the old van, else spare-van kit · spare: yard */
+  to: 'person' | 'old_van' | 'spare';
 }
 
 export interface VanChangePlan {
   moves: KitMove[];
-  /** kit the person will hold (on the new van) */
+  /** kit the person will hold */
   willHold: VanKit[];
-  /** kit left on the old van (goes to whoever has that van, or stays as spare-van kit) */
+  /** kit left with the old van (whoever is assigned it, or spare-van kit) */
   leftInOld: VanKit[];
   toYard: VanKit[];
   /** kit types the person would hold more than one of */
@@ -46,15 +47,16 @@ export function planVanChange(input: {
   const toYard: VanKit[] = [];
 
   for (const k of oldKit) {
-    const choice: MixChoice = mode === 'take_all' ? 'new_van' : mode === 'use_new' ? 'old_van' : mix[k.id] ?? 'old_van';
-    if (choice === 'new_van') {
-      moves.push({ itemId: k.id, to: 'new_van' });
-      willHold.push(k);
+    let choice: MixChoice = mode === 'take_all' ? 'new_van' : mode === 'use_new' ? 'old_van' : mix[k.id] ?? 'new_van';
+    if (choice === 'old_van' && !hasOldVan) choice = 'new_van';
+    if (choice === 'old_van') {
+      moves.push({ itemId: k.id, to: 'old_van' });
+      leftInOld.push(k);
     } else if (choice === 'spare') {
       moves.push({ itemId: k.id, to: 'spare' });
       toYard.push(k);
     } else {
-      leftInOld.push(k);
+      willHold.push(k); // already theirs: goes with them
     }
   }
 
@@ -68,6 +70,7 @@ export function planVanChange(input: {
       moves.push({ itemId: k.id, to: 'spare' });
       toYard.push(k);
     } else {
+      moves.push({ itemId: k.id, to: 'person' });
       willHold.push(k);
     }
   }

@@ -51,7 +51,7 @@ export function DestinationFields({ f, title }: { f: SwapForm; title: string }) 
   const options: { value: Dest; label: string }[] = [
     { value: 'away_for_service', label: 'Away for service' },
     { value: 'spare', label: 'Back to yard as spare' },
-    { value: 'on_van', label: 'Another van' },
+    { value: 'holder', label: 'Someone else (person or spare van)' },
     { value: 'removed', label: 'Scrapped / remove' },
   ];
   return (
@@ -69,9 +69,9 @@ export function DestinationFields({ f, title }: { f: SwapForm; title: string }) 
                 {(id) => <input id={id} className={inputCls} value={f.company} onChange={(e) => f.setCompany(e.target.value)} />}
               </Field>
             )}
-            {f.dest === 'on_van' && o.value === 'on_van' && (
+            {f.dest === 'holder' && o.value === 'holder' && (
               <div className="mt-2 ml-7">
-                <TargetPicker label="Which van?" targets={f.targets} value={f.destKey} onChange={f.setDestKey} vansOnly excludeVehicleId={f.item.vehicle_id} />
+                <TargetPicker label="Who gets it?" targets={f.targets.filter((t) => t.key !== f.currentKey)} value={f.destKey} onChange={f.setDestKey} />
               </div>
             )}
           </div>

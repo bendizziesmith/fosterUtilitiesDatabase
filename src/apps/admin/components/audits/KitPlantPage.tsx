@@ -3,7 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Truck, Warehouse, Wrench, AlertTriangle, Clock, ChevronRight, ArrowLeft, Users, X } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, moveKit } from '../../../../lib/siteAuditService';
-import { searchTargets, sortKit, summariseKitByType, summariseKitByVan, AuditTarget, KitSort } from '../../../../lib/siteAuditLogic';
+import { searchTargets, sortKit, summariseKitByType, summariseKitByHolder, holderKey, holderLabel, AuditTarget, KitSort } from '../../../../lib/siteAuditLogic';
+import { Auditor } from '../../../../lib/supabase';
+import { ActorPicker } from './ActorPicker';
+import { useActor } from './useActor';
 import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
@@ -63,14 +66,15 @@ export const KitPlantPage: React.FC = () => {
     load();
   };
 
-  const { vanLabel, keyForVan } = ref;
+  const { auditors } = ref;
   const all = useMemo(() => kit ?? [], [kit]);
   const labelled = useMemo(
-    () => all.map((k) => ({ ...k, vehicle_label: k.status === 'on_van' ? vanLabel(k.vehicle_id, k.vehicle_reg) : null })),
-    [all, vanLabel]
+    () => all.map((k) => ({ ...k, vehicle_label: k.status === 'on_van' ? holderLabel(k) : null })),
+    [all]
   );
-  const openVan = (vehicleId: string | null) => {
-    const key = keyForVan(vehicleId);
+  /** the holder's page (person or spare van) */
+  const openHolder = (k: KitItemOverview) => {
+    const key = holderKey(k);
     if (key) navigate(`/kit/van?key=${encodeURIComponent(key)}`);
   };
 
@@ -123,18 +127,18 @@ export const KitPlantPage: React.FC = () => {
             {vanHits.map((t) => (
               <button key={t.key} type="button" onClick={() => navigate(`/kit/van?key=${encodeURIComponent(t.key)}`)}
                 className="w-full min-h-[44px] px-3 flex items-center gap-2 text-left text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
-                {t.gangerId ? <Users className="h-4 w-4 text-slate-400" /> : <Truck className="h-4 w-4 text-slate-400" />}
+                {t.kind === 'person' ? <Users className="h-4 w-4 text-slate-400" /> : <Truck className="h-4 w-4 text-slate-400" />}
                 <span className="font-semibold">{t.label}</span>
                 <ChevronRight className="h-4 w-4 text-slate-400 ml-auto" />
               </button>
             ))}
             {itemHits.map((k) => (
               <button key={k.id} type="button"
-                onClick={() => (k.status === 'on_van' ? openVan(k.vehicle_id) : setParams({ type: k.kit_type_id, q: k.plant_no ?? '' }))}
+                onClick={() => (holderKey(k) ? openHolder(k) : setParams({ type: k.kit_type_id, q: k.plant_no ?? '' }))}
                 className="w-full min-h-[44px] px-3 flex items-center gap-2 text-left text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
                 <Wrench className="h-4 w-4 text-slate-400" />
                 <span className="font-semibold">{k.type_name}</span>
-                <span className="text-slate-600">{k.plant_no ?? 'No plant no'} · {kitWhere(k, vanLabel)}</span>
+                <span className="text-slate-600">{k.plant_no ?? 'No plant no'} · {kitWhere(k)}</span>
                 <ChevronRight className="h-4 w-4 text-slate-400 ml-auto" />
               </button>
             ))}
@@ -165,38 +169,43 @@ export const KitPlantPage: React.FC = () => {
           initialQuery={params.get('q') ?? ''}
           items={labelled.filter((k) => k.kit_type_id === type.id)}
           onBack={() => setParams({})}
-          onOpenVan={openVan}
-          onUpdate={(k) => setUpdating(kitUpdateTarget(k, ref.kitTypes, vanLabel))}
+          onOpenHolder={openHolder}
+          onUpdate={(k) => setUpdating(kitUpdateTarget(k, ref.kitTypes))}
           onSwap={setSwapping}
           onAssign={(k, back) => setAssigning({ item: k, back })}
           onRemove={setRemoving}
-          where={(k) => kitWhere(k, vanLabel)}
+          where={(k) => kitWhere(k)}
         />
       ) : (
         <section className={card}>
           <div className="px-4 sm:px-5 py-3 border-b border-slate-200">
             <div role="tablist" aria-label="View" className="inline-flex gap-1 bg-slate-100 p-1 rounded-lg">
               <button type="button" role="tab" aria-selected={view === 'type'} className={tabCls(view === 'type')} onClick={() => setParams({})}>By kit type</button>
-              <button type="button" role="tab" aria-selected={view === 'van'} className={tabCls(view === 'van')} onClick={() => setParams({ view: 'van' })}>By gang / van</button>
+              <button type="button" role="tab" aria-selected={view === 'van'} className={tabCls(view === 'van')} onClick={() => setParams({ view: 'van' })}>By person / spare van</button>
             </div>
           </div>
           {view === 'type' ? (
             <ByType rows={summariseKitByType(ref.kitTypes, all)} onOpen={(id) => setParams({ type: id })} />
           ) : (
-            <ByVan rows={summariseKitByVan(ref.allTargets, all)} changedVans={new Set(ref.vanChanges.map((c) => c.toVehicleId))}
+            <ByVan
+              rows={summariseKitByHolder(ref.allTargets, all).filter((r, i) => {
+                const t = ref.allTargets[i];
+                return r.items > 0 || t.isGanger || t.kind === 'spare_van' || !!t.vehicleId;
+              })}
+              changedPeople={new Set(ref.vanChanges.map((c) => c.employeeId))}
               onOpen={(key) => navigate(`/kit/van?key=${encodeURIComponent(key)}`)} />
           )}
         </section>
       )}
 
       {adding && (
-        <AddKitSheet mode="page" kitTypes={ref.kitTypes} targets={ref.allTargets} onClose={() => setAdding(false)} onSaved={done}
+        <AddKitSheet mode="page" kitTypes={ref.kitTypes} targets={ref.allTargets} auditors={auditors} onClose={() => setAdding(false)} onSaved={done}
           onTypeCreated={(t) => ref.setKitTypes((ts) => [...ts, t])} />
       )}
-      {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} onClose={() => setUpdating(null)} onSaved={done} />}
-      {swapping && <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} onClose={() => setSwapping(null)} onSaved={done} />}
-      {assigning && <AssignSheet {...assigning} targets={ref.allTargets} onClose={() => setAssigning(null)} onSaved={done} />}
-      {removing && <RemoveSheet item={removing} onClose={() => setRemoving(null)} onSaved={done} />}
+      {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={auditors} onClose={() => setUpdating(null)} onSaved={done} />}
+      {swapping && <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={auditors} onClose={() => setSwapping(null)} onSaved={done} />}
+      {assigning && <AssignSheet {...assigning} targets={ref.allTargets} auditors={auditors} onClose={() => setAssigning(null)} onSaved={done} />}
+      {removing && <RemoveSheet item={removing} auditors={auditors} onClose={() => setRemoving(null)} onSaved={done} />}
     </div>
   );
 };
@@ -269,7 +278,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
 
 // ---------------------------------------------------------------- By gang / van
 
-function ByVan({ rows, changedVans, onOpen }: { rows: ReturnType<typeof summariseKitByVan>; changedVans: Set<string>; onOpen: (key: string) => void }) {
+function ByVan({ rows, changedPeople, onOpen }: { rows: ReturnType<typeof summariseKitByHolder>; changedPeople: Set<string>; onOpen: (key: string) => void }) {
   return (
     <ul className="divide-y divide-slate-200">
       {rows.map((r) => (
@@ -281,7 +290,7 @@ function ByVan({ rows, changedVans, onOpen }: { rows: ReturnType<typeof summaris
                 <CountBadge n={r.items} label={r.items === 1 ? 'item' : 'items'} tone="slate" />
                 {r.expired > 0 && <CountBadge n={r.expired} label="expired" tone="red" />}
                 {r.dueSoon > 0 && <CountBadge n={r.dueSoon} label="due soon" tone="amber" />}
-                {r.vehicleId && changedVans.has(r.vehicleId) && (
+                {r.personId && changedPeople.has(r.personId) && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-800 border-amber-200">Van changed: check kit</span>
                 )}
               </span>
@@ -298,13 +307,13 @@ function ByVan({ rows, changedVans, onOpen }: { rows: ReturnType<typeof summaris
 
 type Labelled = KitItemOverview & { vehicle_label: string | null };
 
-function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenVan, onUpdate, onSwap, onAssign, onRemove, where }: {
+function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder, onUpdate, onSwap, onAssign, onRemove, where }: {
   typeName: string;
   months: number | null;
   initialQuery: string;
   items: Labelled[];
   onBack: () => void;
-  onOpenVan: (vehicleId: string | null) => void;
+  onOpenHolder: (k: KitItemOverview) => void;
   onUpdate: (k: KitItemOverview) => void;
   onSwap: (k: KitItemOverview) => void;
   onAssign: (k: KitItemOverview, back: boolean) => void;
@@ -340,8 +349,8 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenVan, o
     );
   };
   const whereCell = (k: KitItemOverview) =>
-    k.status === 'on_van' ? (
-      <button type="button" onClick={() => onOpenVan(k.vehicle_id)} className="text-left font-medium text-blue-700 hover:underline cursor-pointer min-h-[44px] sm:min-h-[36px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">{where(k)}</button>
+    holderKey(k) ? (
+      <button type="button" onClick={() => onOpenHolder(k)} className="text-left font-medium text-blue-700 hover:underline cursor-pointer min-h-[44px] sm:min-h-[36px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">{where(k)}</button>
     ) : (
       <span className="text-slate-700">{where(k)}</span>
     );
@@ -444,18 +453,28 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenVan, o
 
 // ---------------------------------------------------------------- sheets
 
-function AssignSheet({ item, back, targets, onClose, onSaved }: { item: KitItemOverview; back: boolean; targets: AuditTarget[]; onClose: () => void; onSaved: () => void }) {
+function AssignSheet({ item, back, targets, auditors, onClose, onSaved }: { item: KitItemOverview; back: boolean; targets: AuditTarget[]; auditors: Auditor[]; onClose: () => void; onSaved: () => void }) {
   const [to, setTo] = useState<'spare' | 'on_van'>(back ? 'spare' : 'on_van');
-  const [vanKey, setVanKey] = useState('');
+  const [holderKeyValue, setHolderKey] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const van = targets.find((t) => t.key === vanKey);
+  const { actorId, setActorId } = useActor(auditors);
+  const holder = targets.find((t) => t.key === holderKeyValue);
   const save = async () => {
-    if (to === 'on_van' && !van?.vehicleId) return setError('Pick a van.');
+    if (!actorId) return setError('Pick who’s doing this.');
+    if (to === 'on_van' && !holder) return setError('Pick who it goes to.');
     setBusy(true);
     try {
-      await moveKit(item.id, to, to === 'on_van' ? van!.vehicleId : null, null, note.trim() || null);
+      await moveKit({
+        itemId: item.id,
+        status: to,
+        holderEmployeeId: to === 'on_van' && holder?.kind === 'person' ? holder.personId : null,
+        vehicleId: to === 'on_van' && holder?.kind === 'spare_van' ? holder.vehicleId : null,
+        serviceCompany: null,
+        note: note.trim() || null,
+        actorId,
+      });
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save.');
@@ -463,13 +482,14 @@ function AssignSheet({ item, back, targets, onClose, onSaved }: { item: KitItemO
     }
   };
   return (
-    <Sheet title={back ? `Back from service: ${item.type_name}` : `Assign ${item.type_name} to a van`} subtitle={item.plant_no ?? undefined} onClose={onClose}
+    <Sheet title={back ? `Back from service: ${item.type_name}` : `Assign ${item.type_name}`} subtitle={item.plant_no ?? undefined} onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><button type="button" className={btn.primary} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button></>}>
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       {back && (
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-600 mb-2">Where does it go now?</legend>
           <div className="grid grid-cols-2 gap-2">
-            {([['spare', 'Spare in yard'], ['on_van', 'Onto a van']] as const).map(([v, l]) => (
+            {([['spare', 'Spare in yard'], ['on_van', 'To someone']] as const).map(([v, l]) => (
               <label key={v} className={`flex items-center gap-2 min-h-[44px] px-3 rounded-lg border cursor-pointer text-sm font-medium ${to === v ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
                 <input type="radio" checked={to === v} onChange={() => setTo(v)} className="h-4 w-4" />{l}
               </label>
@@ -477,14 +497,15 @@ function AssignSheet({ item, back, targets, onClose, onSaved }: { item: KitItemO
           </div>
         </fieldset>
       )}
-      {to === 'on_van' && <TargetPicker label="Van" targets={targets} value={vanKey} onChange={setVanKey} vansOnly />}
+      {to === 'on_van' && <TargetPicker label="Who gets it? (person or spare van)" targets={targets} value={holderKeyValue} onChange={setHolderKey} />}
       <Field label="Note (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />}</Field>
       <ErrorNote message={error} />
     </Sheet>
   );
 }
 
-function RemoveSheet({ item, onClose, onSaved }: { item: KitItemOverview; onClose: () => void; onSaved: () => void }) {
+function RemoveSheet({ item, auditors, onClose, onSaved }: { item: KitItemOverview; auditors: Auditor[]; onClose: () => void; onSaved: () => void }) {
+  const { actorId, setActorId } = useActor(auditors);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -493,9 +514,10 @@ function RemoveSheet({ item, onClose, onSaved }: { item: KitItemOverview; onClos
       footer={<>
         <button type="button" className={btn.secondary} onClick={onClose}>Keep it</button>
         <button type="button" className={btn.danger} disabled={busy} onClick={async () => {
+          if (!actorId) return setError('Pick who’s doing this.');
           setBusy(true);
           try {
-            await moveKit(item.id, 'removed', null, null, note.trim() || null);
+            await moveKit({ itemId: item.id, status: 'removed', holderEmployeeId: null, vehicleId: null, serviceCompany: null, note: note.trim() || null, actorId });
             onSaved();
           } catch (e) {
             setError(e instanceof Error ? e.message : 'Could not remove.');
@@ -503,6 +525,7 @@ function RemoveSheet({ item, onClose, onSaved }: { item: KitItemOverview; onClos
           }
         }}>{busy ? 'Removing…' : 'Remove kit'}</button>
       </>}>
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <Field label="Reason (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Scrapped, beyond repair" />}</Field>
       <ErrorNote message={error} />
     </Sheet>

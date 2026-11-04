@@ -62,11 +62,15 @@ interface VanLike {
   registration_number: string;
 }
 
+/** A kit holder / audit subject: a person (key person:<id>) or a spare van (key van:<id>). */
 export interface AuditTarget {
   key: string;
   label: string;
-  gangerId: string | null;
-  gangerName: string | null;
+  kind: 'person' | 'spare_van';
+  personId: string | null;
+  personName: string | null;
+  isGanger: boolean;
+  /** the person's assigned van, or the spare van */
   vehicleId: string | null;
   reg: string | null;
   teamName: string;
@@ -79,48 +83,55 @@ export function shortName(fullName: string): string {
   return `${parts[0][0].toUpperCase()}. ${parts.slice(1).join(' ')}`;
 }
 
-export function buildAuditTargets(
-  employees: StaffLike[],
-  vehicles: VanLike[]
-): { gangs: AuditTarget[]; otherVans: AuditTarget[] } {
-  const byId = new Map(vehicles.map((v) => [v.id, v]));
-  const gangers = employees
-    .filter((e) => e.role === 'Ganger')
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+export interface Targets {
+  gangs: AuditTarget[];
+  staff: AuditTarget[];
+  spareVans: AuditTarget[];
+}
 
-  const gangs = gangers.map((g) => {
-    const van = g.assigned_vehicle_id ? byId.get(g.assigned_vehicle_id) : undefined;
-    const teamName = `${shortName(g.full_name)}'s gang`;
+/** Gangers, then other staff, then vans nobody is assigned (spare vans). */
+export function buildAuditTargets(employees: StaffLike[], vehicles: VanLike[]): Targets {
+  const byId = new Map(vehicles.map((v) => [v.id, v]));
+  const person = (e: StaffLike): AuditTarget => {
+    const van = e.assigned_vehicle_id ? byId.get(e.assigned_vehicle_id) : undefined;
+    const isGanger = e.role === 'Ganger';
     return {
-      key: `gang:${g.id}`,
-      label: `${g.full_name} · ${van ? van.registration_number : 'no van'}`,
-      gangerId: g.id,
-      gangerName: g.full_name,
+      key: `person:${e.id}`,
+      label: `${e.full_name} · ${van ? van.registration_number : 'no van'}`,
+      kind: 'person',
+      personId: e.id,
+      personName: e.full_name,
+      isGanger,
       vehicleId: van?.id ?? null,
       reg: van?.registration_number ?? null,
-      teamName,
+      teamName: isGanger ? `${shortName(e.full_name)}'s gang` : e.full_name,
     };
-  });
-
-  const gangerVans = new Set(gangers.map((g) => g.assigned_vehicle_id).filter(Boolean));
-  const otherVans = vehicles
-    .filter((v) => !gangerVans.has(v.id))
+  };
+  const byName = (a: StaffLike, b: StaffLike) => a.full_name.localeCompare(b.full_name);
+  const gangs = employees.filter((e) => e.role === 'Ganger').sort(byName).map(person);
+  const staff = employees.filter((e) => e.role !== 'Ganger').sort(byName).map(person);
+  const taken = new Set(employees.map((e) => e.assigned_vehicle_id).filter(Boolean));
+  const spareVans = vehicles
+    .filter((v) => !taken.has(v.id))
     .sort((a, b) => a.registration_number.localeCompare(b.registration_number))
-    .map((v) => {
-      const holder = employees.find((e) => e.assigned_vehicle_id === v.id);
-      return {
-        key: `van:${v.id}`,
-        label: `${v.registration_number} · ${holder ? holder.full_name : 'Unassigned'}`,
-        gangerId: null,
-        gangerName: null,
-        vehicleId: v.id,
-        reg: v.registration_number,
-        teamName: holder ? `${v.registration_number} (${holder.full_name})` : v.registration_number,
-      };
-    });
-
-  return { gangs, otherVans };
+    .map((v) => ({
+      key: `van:${v.id}`,
+      label: `${v.registration_number} · spare van`,
+      kind: 'spare_van' as const,
+      personId: null,
+      personName: null,
+      isGanger: false,
+      vehicleId: v.id,
+      reg: v.registration_number,
+      teamName: `${v.registration_number} (spare van)`,
+    }));
+  return { gangs, staff, spareVans };
 }
+
+export const allTargetsOf = (t: Targets): AuditTarget[] => [...t.gangs, ...t.staff, ...t.spareVans];
+
+/** Who can be audited: gangers, staff who have a van, then spare vans. */
+export const auditTargetsOf = (t: Targets): AuditTarget[] => [...t.gangs, ...t.staff.filter((s) => s.vehicleId), ...t.spareVans];
 
 export interface TeamMember {
   name: string;
@@ -186,17 +197,22 @@ export interface AttentionRow {
   vehicle_id: string | null;
   vehicle_reg: string | null;
   ganger_name: string | null;
-  expiry_date: string;
-  days_left: number;
-  expiry_status: 'expired' | 'due_soon';
+  expiry_date: string | null;
+  days_left: number | null;
+  /** no_home: held by someone who was deleted from staff */
+  expiry_status: 'expired' | 'due_soon' | 'no_home';
   is_test: boolean;
+  holder_employee_id?: string | null;
+  holder_name?: string | null;
+  holder_kind?: 'person' | 'spare_van' | 'none';
 }
 
 export type AttentionTab = 'all' | 'expired' | 'due';
 
 /** Expired first (most overdue first), then the soonest due. */
-export function sortAttention<T extends { days_left: number }>(rows: T[]): T[] {
-  return [...rows].sort((a, b) => a.days_left - b.days_left);
+export function sortAttention<T extends { days_left: number | null }>(rows: T[]): T[] {
+  const d = (r: T) => (r.days_left === null ? -Infinity : r.days_left);
+  return [...rows].sort((a, b) => d(a) - d(b));
 }
 
 export function filterAttention<T extends { expiry_status: string }>(rows: T[], tab: AttentionTab): T[] {
@@ -370,24 +386,91 @@ export function groupKitForPhone<
 
 // ---------------------------------------------------------------- labels + search (round 2)
 
-/** "Dom Oliver · YE24 TNL" / "BV23 ZHK · Kevin Noble" / "WV72 OZL · Unassigned" for any van id. */
-export function vanLabelFor(targets: { gangs: AuditTarget[]; otherVans: AuditTarget[] }, vehicleId: string | null | undefined, fallbackReg?: string | null): string {
+/** Label for a van: the person on it ("Dom Oliver · YE24 TNL", ganger first) or "WV72 OZL · spare van". */
+export function vanLabelFor(t: Targets, vehicleId: string | null | undefined, fallbackReg?: string | null): string {
   if (vehicleId) {
-    const t = targets.gangs.find((g) => g.vehicleId === vehicleId) ?? targets.otherVans.find((v) => v.vehicleId === vehicleId);
-    if (t) return t.label;
+    const hit = t.gangs.find((g) => g.vehicleId === vehicleId) ?? t.staff.find((s) => s.vehicleId === vehicleId) ?? t.spareVans.find((v) => v.vehicleId === vehicleId);
+    if (hit) return hit.label;
   }
   return fallbackReg || '—';
 }
 
 const squash = (s: string) => s.toLowerCase().replace(/\s+/g, '');
 
-/** Match a ganger's name, a reg (spaces ignored) or the person a van is assigned to. Gangs first. */
+/** Match a name or a reg (spaces ignored). Gangers, then other staff, then spare vans. */
 export function searchTargets(targets: AuditTarget[], query: string, opts: { vansOnly?: boolean } = {}): AuditTarget[] {
   const q = squash(query);
   const list = targets.filter((t) => (!opts.vansOnly || t.vehicleId) && (!q || squash(t.label).includes(q)));
-  const gangs = list.filter((t) => t.gangerId);
-  const vans = list.filter((t) => !t.gangerId);
-  return [...gangs, ...vans];
+  return [...list.filter((t) => t.isGanger), ...list.filter((t) => t.kind === 'person' && !t.isGanger), ...list.filter((t) => t.kind === 'spare_van')];
+}
+
+// ---------------------------------------------------------------- holders + names (round 3)
+
+export interface HolderLike {
+  status: string;
+  holder_kind: 'person' | 'spare_van' | 'none';
+  holder_employee_id: string | null;
+  holder_name: string | null;
+  holder_reg: string | null;
+  vehicle_id: string | null;
+  service_company?: string | null;
+}
+
+export function holderLabel(k: HolderLike): string {
+  if (k.status === 'spare') return 'Spare · Yard';
+  if (k.status === 'away_for_service') return `Away for service${k.service_company ? ` · ${k.service_company}` : ''}`;
+  if (k.status === 'removed') return 'Removed';
+  if (k.holder_kind === 'person') return `${k.holder_name ?? 'Unknown'} · ${k.holder_reg ?? 'no van'}`;
+  if (k.holder_kind === 'spare_van') return `${k.holder_reg ?? 'Van'} · spare van`;
+  return 'Unassigned, needs a home';
+}
+
+/** holder page key: person:<id> or van:<id>; null when not held (yard, service, needs a home) */
+export function holderKey(k: HolderLike): string | null {
+  if (k.status !== 'on_van') return null;
+  if (k.holder_kind === 'person' && k.holder_employee_id) return `person:${k.holder_employee_id}`;
+  if (k.holder_kind === 'spare_van' && k.vehicle_id) return `van:${k.vehicle_id}`;
+  return null;
+}
+
+/** The "Who's doing this?" name. Rows that only recorded a login email show "Office login". */
+export const whoName = (name: string | null | undefined): string => (name && name.trim() ? name : 'Office login');
+
+// ---------------------------------------------------------------- audit pre-fill from the holder's record
+
+export function buildAuditPrefill(input: {
+  checklist: { id: string; section: string; name: string; expected_qty: string | null; sort_order: number }[];
+  kitTypes: { id: string; name: string; sort_order: number }[];
+  heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null }[];
+  ppe: { checklist_item_id: string; expiry_date: string | null }[];
+  notCarried: { kit_type_id: string; carried: boolean }[];
+  lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null }[];
+}): DraftLine[] {
+  const last = new Map(input.lastLines.filter((l) => l.checklist_item_id).map((l) => [l.checklist_item_id as string, l]));
+  const ppe = new Map(input.ppe.map((p) => [p.checklist_item_id, p.expiry_date]));
+  const sectionOrder: Record<string, number> = { ppe: 0, hs: 1, other: 2 };
+  const checklistLines: DraftLine[] = [...input.checklist]
+    .sort((a, b) => (sectionOrder[a.section] ?? 9) - (sectionOrder[b.section] ?? 9) || a.sort_order - b.sort_order)
+    .map((c) => {
+      const prev = last.get(c.id);
+      return {
+        key: `c:${c.id}`,
+        section: c.section as AuditSection,
+        checklist_item_id: c.id,
+        item_name: c.name,
+        expected_qty: c.expected_qty,
+        result: null,
+        qty: prev?.qty ?? '',
+        expiry_date: c.section === 'ppe' ? ppe.get(c.id) ?? null : null,
+        expiryManual: false,
+        service_date: c.section === 'ppe' ? prev?.service_date ?? null : null,
+        date_tag: prev?.date_tag ?? '',
+        comment: '',
+        photo_path: null,
+      };
+    });
+  const kit = buildKitLines(input.kitTypes, input.notCarried, input.heldKit).map((l) => ({ ...l, expiryManual: false }));
+  return [...checklistLines, ...kit];
 }
 
 // ---------------------------------------------------------------- auto expiry from service date
@@ -459,13 +542,14 @@ export function summariseKitByType(types: { id: string; name: string; sort_order
     });
 }
 
-export function summariseKitByVan(targets: AuditTarget[], kit: KitLike[]) {
+export function summariseKitByHolder(targets: AuditTarget[], kit: (KitLike & Partial<HolderLike>)[]) {
   return targets.map((t) => {
-    const items = t.vehicleId ? kit.filter((k) => k.status === 'on_van' && k.vehicle_id === t.vehicleId) : [];
+    const items = kit.filter((k) => k.status === 'on_van' && holderKey(k as HolderLike) === t.key);
     return {
       key: t.key,
       label: t.label,
       vehicleId: t.vehicleId,
+      personId: t.personId,
       items: items.length,
       expired: items.filter((k) => k.expiry_status === 'expired').length,
       dueSoon: items.filter((k) => k.expiry_status === 'due_soon').length,
@@ -493,6 +577,8 @@ export interface FileDeletion {
   path: string;
   deleted_by_name: string | null;
   deleted_at: string;
+  /** "Who's doing this?" name (round 3) */
+  actor_name?: string | null;
 }
 
 export function isFileDeleted(path: string | null | undefined, deletions: FileDeletion[]): FileDeletion | undefined {

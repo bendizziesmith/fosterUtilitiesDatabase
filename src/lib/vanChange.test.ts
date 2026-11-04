@@ -11,15 +11,16 @@ const newKit: VanKit[] = [
 ];
 const ids = (xs: VanKit[]) => xs.map((x) => x.id);
 
+// Kit belongs to the person. oldKit = what the person holds; newKit = spare-van kit in the new van.
 describe('planVanChange — "Take my kit with me"', () => {
   const p = planVanChange({ oldKit, newKit, mode: 'take_all' });
-  it('moves everything from the old van to the new van', () => {
+  it('their own kit needs no move (it goes with them); the new van’s kit becomes theirs too', () => {
     expect(p.moves).toEqual([
-      { itemId: 'o1', to: 'new_van' },
-      { itemId: 'o2', to: 'new_van' },
+      { itemId: 'n1', to: 'person' },
+      { itemId: 'n2', to: 'person' },
     ]);
   });
-  it('leaves the kit already in the new van there, so the person holds both', () => {
+  it('so they hold everything', () => {
     expect(ids(p.willHold)).toEqual(['o1', 'o2', 'n1', 'n2']);
     expect(p.leftInOld).toEqual([]);
     expect(p.toYard).toEqual([]);
@@ -31,11 +32,14 @@ describe('planVanChange — "Take my kit with me"', () => {
 
 describe('planVanChange — "Use the kit already in the new van"', () => {
   const p = planVanChange({ oldKit, newKit, mode: 'use_new' });
-  it('moves nothing; the old kit stays with the old van', () => {
-    expect(p.moves).toEqual([]);
+  it('their old kit stays with the old van, the new van’s kit becomes theirs', () => {
+    expect(p.moves).toEqual([
+      { itemId: 'o1', to: 'old_van' },
+      { itemId: 'o2', to: 'old_van' },
+      { itemId: 'n1', to: 'person' },
+      { itemId: 'n2', to: 'person' },
+    ]);
     expect(ids(p.leftInOld)).toEqual(['o1', 'o2']);
-  });
-  it('the person holds the new van’s kit, with no duplicate warning', () => {
     expect(ids(p.willHold)).toEqual(['n1', 'n2']);
     expect(p.duplicates).toEqual([]);
   });
@@ -50,9 +54,9 @@ describe('planVanChange — "Mix"', () => {
   });
   it('turns each choice into a move', () => {
     expect(p.moves).toEqual([
-      { itemId: 'o1', to: 'new_van' },
       { itemId: 'o2', to: 'spare' },
       { itemId: 'n1', to: 'old_van' },
+      { itemId: 'n2', to: 'person' },
     ]);
   });
   it('summarises what the person holds, what is left in the old van and what goes to the yard', () => {
@@ -61,26 +65,26 @@ describe('planVanChange — "Mix"', () => {
     expect(ids(p.toYard)).toEqual(['o2']);
     expect(p.duplicates).toEqual([]);
   });
-  it('defaults unchosen items: old-van kit stays in the old van, new-van kit is kept', () => {
+  it('defaults unchosen items: their kit stays with them, the new van’s kit is kept', () => {
     const d = planVanChange({ oldKit, newKit, mode: 'mix', mix: {} });
-    expect(d.moves).toEqual([]);
-    expect(ids(d.willHold)).toEqual(['n1', 'n2']);
-    expect(ids(d.leftInOld)).toEqual(['o1', 'o2']);
+    expect(d.moves).toEqual([{ itemId: 'n1', to: 'person' }, { itemId: 'n2', to: 'person' }]);
+    expect(ids(d.willHold)).toEqual(['o1', 'o2', 'n1', 'n2']);
   });
   it('warns when the mix leaves two of a type with the person', () => {
-    expect(planVanChange({ oldKit, newKit, mode: 'mix', mix: { o1: 'new_van' } }).duplicates).toEqual(['Digger']);
+    expect(planVanChange({ oldKit, newKit, mode: 'mix', mix: { o1: 'old_van' } }).duplicates).toEqual([]);
+    expect(planVanChange({ oldKit, newKit, mode: 'mix', mix: {} }).duplicates).toEqual(['Digger']);
   });
 });
 
 describe('planVanChange — person had no van before', () => {
-  it('can only use the kit in the new van', () => {
-    const p = planVanChange({ oldKit: [], newKit, mode: 'take_all' });
-    expect(p.moves).toEqual([]);
+  it('takes over the kit in the new van', () => {
+    const p = planVanChange({ oldKit: [], newKit, mode: 'take_all', hasOldVan: false });
+    expect(p.moves).toEqual([{ itemId: 'n1', to: 'person' }, { itemId: 'n2', to: 'person' }]);
     expect(ids(p.willHold)).toEqual(['n1', 'n2']);
   });
   it('turns "Move to old van" into "Back to yard" when there is no old van', () => {
     const p = planVanChange({ oldKit: [], newKit, mode: 'mix', mix: { n1: 'old_van' }, hasOldVan: false });
-    expect(p.moves).toEqual([{ itemId: 'n1', to: 'spare' }]);
+    expect(p.moves).toEqual([{ itemId: 'n1', to: 'spare' }, { itemId: 'n2', to: 'person' }]);
     expect(ids(p.toYard)).toEqual(['n1']);
   });
 });
