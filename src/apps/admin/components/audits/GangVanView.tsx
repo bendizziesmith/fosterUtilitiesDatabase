@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight } from 'lucide-react';
+import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import {
   listKit, listPpeForVan, lastAudit, listVanHistory, loadTeam, listVanKitLists, setVanCarried,
@@ -12,6 +12,8 @@ import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { AddKitSheet } from './AddKitSheet';
 import { FileLink } from './FileLink';
+import { ChangeVanSheet } from './ChangeVanSheet';
+import { getPersonVan, rememberPersonVan } from '../../../../lib/vanChangeService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL, TEST_MODE } from './styles';
@@ -24,9 +26,17 @@ export const GangVanView: React.FC = () => {
   const { deletions, reload: reloadDeletions } = useFileDeletions();
   const target = ref.allTargets.find((t) => t.key === key);
   const vehicleId = target?.vehicleId ?? null;
+  // the person whose van this is: the ganger, or whoever the van is assigned to
+  const person = target?.gangerId
+    ? ref.employees.find((e) => e.id === target.gangerId) ?? null
+    : vehicleId ? ref.employees.find((e) => e.assigned_vehicle_id === vehicleId) ?? null : null;
 
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
+  const [allKit, setAllKit] = useState<KitItemOverview[]>([]);
+  const [knownVan, setKnownVan] = useState<{ vehicle_id: string | null } | null | undefined>(undefined);
+  const [changing, setChanging] = useState<'change' | 'check' | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
   const [ppe, setPpe] = useState<AuditPpeItem[]>([]);
   const [lists, setLists] = useState<KitVanKitListRow[]>([]);
   const [last, setLast] = useState<SiteAuditSummary | null>(null);
@@ -41,16 +51,22 @@ export const GangVanView: React.FC = () => {
     setError(null);
     try {
       const ganger = target.gangerId ? ref.employees.find((e) => e.id === target.gangerId) ?? null : null;
-      const [team, allKit, ppeRows, vkl, lastA, hist] = await Promise.all([
+      const [team, everyKit, ppeRows, vkl, lastA, hist, known] = await Promise.all([
         loadTeam(ganger, ref.employees),
-        vehicleId ? listKit() : Promise.resolve([] as KitItemOverview[]),
+        listKit(),
         vehicleId ? listPpeForVan(vehicleId) : Promise.resolve([] as AuditPpeItem[]),
         vehicleId ? listVanKitLists() : Promise.resolve([] as KitVanKitListRow[]),
         lastAudit({ gangerId: target.gangerId, vehicleId }),
         vehicleId ? listVanHistory(vehicleId) : Promise.resolve([] as KitRecentUpdate[]),
+        person ? getPersonVan(person.id) : Promise.resolve(null),
       ]);
+      // first visit: remember the van they have now, so a later change made in
+      // Employee / Vehicle Management can be spotted ("Van changed: check kit")
+      if (person && known === null) await rememberPersonVan(person.id, vehicleId, TEST_MODE);
+      setKnownVan(person ? known ?? { vehicle_id: vehicleId } : null);
       setMembers(team);
-      setKit(allKit.filter((k) => k.status === 'on_van' && k.vehicle_id === vehicleId));
+      setAllKit(everyKit);
+      setKit(everyKit.filter((k) => k.status === 'on_van' && k.vehicle_id === vehicleId));
       setPpe(ppeRows);
       setLists(vkl.filter((l) => l.vehicle_id === vehicleId));
       setLast(lastA);
@@ -59,7 +75,7 @@ export const GangVanView: React.FC = () => {
       setError(e instanceof Error ? e.message : 'Could not load this gang / van.');
       setKit([]);
     }
-  }, [target, vehicleId, ref.employees]);
+  }, [target, vehicleId, ref.employees, person]);
 
   useEffect(() => {
     load();
@@ -75,6 +91,7 @@ export const GangVanView: React.FC = () => {
   if (!ref.loaded) return <LoadingSpinner />;
   if (!target) return <ErrorNote message="That gang or van wasn’t found. It may have been removed from Vehicle Management." />;
 
+  const vanChangedOldWay = !!person && !!knownVan && knownVan.vehicle_id !== vehicleId && !!vehicleId;
   const notCarried = new Set(lists.filter((l) => !l.carried).map((l) => l.kit_type_id));
   const expired = (kit ?? []).filter((k) => k.expiry_status === 'expired').length;
   const dueSoon = (kit ?? []).filter((k) => k.expiry_status === 'due_soon').length;
@@ -83,6 +100,18 @@ export const GangVanView: React.FC = () => {
     <div className="space-y-5 max-w-5xl mx-auto">
       <TestModeBanner />
       <ErrorNote message={error ?? ref.error} />
+      {flash && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          <Info className="h-4 w-4 mt-0.5 flex-shrink-0" /><span>{flash}</span>
+        </div>
+      )}
+      {vanChangedOldWay && (
+        <div role="alert" className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span className="flex items-start gap-2"><AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span><strong>Van changed: check kit.</strong> {person!.full_name} was on {ref.vanLabel(knownVan!.vehicle_id)} and is now on {target.reg}. Kit doesn’t move by itself.</span></span>
+          <button type="button" className={`${btn.secondary} sm:ml-auto`} onClick={() => setChanging('check')}>Check kit</button>
+        </div>
+      )}
 
       <section className={`${card} p-4 sm:p-5`}>
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -117,6 +146,11 @@ export const GangVanView: React.FC = () => {
             {vehicleId && (
               <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>
                 <Plus className="h-4 w-4" />Add kit to this van
+              </button>
+            )}
+            {person && (
+              <button type="button" className={btn.secondary} onClick={() => setChanging('change')}>
+                <ArrowLeftRight className="h-4 w-4" />Change van
               </button>
             )}
           </div>
@@ -216,6 +250,24 @@ export const GangVanView: React.FC = () => {
         </>
       )}
 
+      {changing && person && (
+        <ChangeVanSheet
+          person={{ id: person.id, name: person.full_name }}
+          oldVehicleId={changing === 'check' ? knownVan?.vehicle_id ?? null : vehicleId}
+          presetNewVehicleId={changing === 'check' ? vehicleId : null}
+          assignmentAlreadyDone={changing === 'check'}
+          targets={ref.allTargets}
+          employees={ref.employees}
+          allKit={allKit}
+          vanLabel={ref.vanLabel}
+          onClose={() => setChanging(null)}
+          onDone={(m) => {
+            setChanging(null);
+            setFlash(m);
+            load();
+          }}
+        />
+      )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && (
         <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} onClose={() => setSwapping(null)} onSaved={done} />
