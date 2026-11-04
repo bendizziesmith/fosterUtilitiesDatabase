@@ -84,3 +84,35 @@ describe('planVanChange — person had no van before', () => {
     expect(ids(p.toYard)).toEqual(['n1']);
   });
 });
+
+import { vanChangesToCheck } from './vanChange';
+
+describe('vanChangesToCheck — vans changed in Employee / Vehicle Management', () => {
+  const staff = [
+    { id: 'e1', full_name: 'Dom Oliver', assigned_vehicle_id: 'v-new' },
+    { id: 'e2', full_name: 'John Hume', assigned_vehicle_id: 'v2' },
+    { id: 'e3', full_name: 'Phil Hall', assigned_vehicle_id: null },
+    { id: 'e4', full_name: 'New Starter', assigned_vehicle_id: 'v4' },
+  ];
+  const known = [
+    { employee_id: 'e1', vehicle_id: 'v-old' },
+    { employee_id: 'e2', vehicle_id: 'v2' },
+    { employee_id: 'e3', vehicle_id: 'v3' },
+  ];
+
+  it('lists people now on a different van from the one recorded', () => {
+    expect(vanChangesToCheck(staff, known)).toEqual([
+      { employeeId: 'e1', name: 'Dom Oliver', fromVehicleId: 'v-old', toVehicleId: 'v-new' },
+    ]);
+  });
+  it('ignores people who were taken off a van (nothing to move kit onto)', () => {
+    expect(vanChangesToCheck(staff, known).some((c) => c.employeeId === 'e3')).toBe(false);
+  });
+  it('ignores people not recorded yet (they are recorded in one go first)', () => {
+    expect(vanChangesToCheck(staff, known).some((c) => c.employeeId === 'e4')).toBe(false);
+  });
+  it('spots someone who had no van and now has one', () => {
+    expect(vanChangesToCheck([{ id: 'e3', full_name: 'Phil Hall', assigned_vehicle_id: 'v9' }], [{ employee_id: 'e3', vehicle_id: null }]))
+      .toEqual([{ employeeId: 'e3', name: 'Phil Hall', fromVehicleId: null, toVehicleId: 'v9' }]);
+  });
+});

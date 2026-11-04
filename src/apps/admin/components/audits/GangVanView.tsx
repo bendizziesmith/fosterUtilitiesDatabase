@@ -13,7 +13,6 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { AddKitSheet } from './AddKitSheet';
 import { FileLink } from './FileLink';
 import { ChangeVanSheet } from './ChangeVanSheet';
-import { getPersonVan, rememberPersonVan } from '../../../../lib/vanChangeService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL, TEST_MODE } from './styles';
@@ -34,7 +33,6 @@ export const GangVanView: React.FC = () => {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
   const [allKit, setAllKit] = useState<KitItemOverview[]>([]);
-  const [knownVan, setKnownVan] = useState<{ vehicle_id: string | null } | null | undefined>(undefined);
   const [changing, setChanging] = useState<'change' | 'check' | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [ppe, setPpe] = useState<AuditPpeItem[]>([]);
@@ -51,19 +49,14 @@ export const GangVanView: React.FC = () => {
     setError(null);
     try {
       const ganger = target.gangerId ? ref.employees.find((e) => e.id === target.gangerId) ?? null : null;
-      const [team, everyKit, ppeRows, vkl, lastA, hist, known] = await Promise.all([
+      const [team, everyKit, ppeRows, vkl, lastA, hist] = await Promise.all([
         loadTeam(ganger, ref.employees),
         listKit(),
         vehicleId ? listPpeForVan(vehicleId) : Promise.resolve([] as AuditPpeItem[]),
         vehicleId ? listVanKitLists() : Promise.resolve([] as KitVanKitListRow[]),
         lastAudit({ gangerId: target.gangerId, vehicleId }),
         vehicleId ? listVanHistory(vehicleId) : Promise.resolve([] as KitRecentUpdate[]),
-        person ? getPersonVan(person.id) : Promise.resolve(null),
       ]);
-      // first visit: remember the van they have now, so a later change made in
-      // Employee / Vehicle Management can be spotted ("Van changed: check kit")
-      if (person && known === null) await rememberPersonVan(person.id, vehicleId, TEST_MODE);
-      setKnownVan(person ? known ?? { vehicle_id: vehicleId } : null);
       setMembers(team);
       setAllKit(everyKit);
       setKit(everyKit.filter((k) => k.status === 'on_van' && k.vehicle_id === vehicleId));
@@ -75,7 +68,7 @@ export const GangVanView: React.FC = () => {
       setError(e instanceof Error ? e.message : 'Could not load this gang / van.');
       setKit([]);
     }
-  }, [target, vehicleId, ref.employees, person]);
+  }, [target, vehicleId, ref.employees]);
 
   useEffect(() => {
     load();
@@ -91,7 +84,9 @@ export const GangVanView: React.FC = () => {
   if (!ref.loaded) return <LoadingSpinner />;
   if (!target) return <ErrorNote message="That gang or van wasn’t found. It may have been removed from Vehicle Management." />;
 
-  const vanChangedOldWay = !!person && !!knownVan && knownVan.vehicle_id !== vehicleId && !!vehicleId;
+  // every person's van is recorded in one go (useAuditRef); a mismatch means it was changed the old way
+  const vanChange = person ? ref.vanChanges.find((c) => c.employeeId === person.id) ?? null : null;
+  const vanChangedOldWay = !!vanChange;
   const notCarried = new Set(lists.filter((l) => !l.carried).map((l) => l.kit_type_id));
   const expired = (kit ?? []).filter((k) => k.expiry_status === 'expired').length;
   const dueSoon = (kit ?? []).filter((k) => k.expiry_status === 'due_soon').length;
@@ -108,7 +103,7 @@ export const GangVanView: React.FC = () => {
       {vanChangedOldWay && (
         <div role="alert" className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <span className="flex items-start gap-2"><AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-            <span><strong>Van changed: check kit.</strong> {person!.full_name} was on {ref.vanLabel(knownVan!.vehicle_id)} and is now on {target.reg}. Kit doesn’t move by itself.</span></span>
+            <span><strong>Van changed: check kit.</strong> {person!.full_name} was on {vanChange!.fromVehicleId ? ref.vanLabel(vanChange!.fromVehicleId) : 'no van'} and is now on {target.reg}. Kit doesn’t move by itself.</span></span>
           <button type="button" className={`${btn.secondary} sm:ml-auto`} onClick={() => setChanging('check')}>Check kit</button>
         </div>
       )}
@@ -253,7 +248,7 @@ export const GangVanView: React.FC = () => {
       {changing && person && (
         <ChangeVanSheet
           person={{ id: person.id, name: person.full_name }}
-          oldVehicleId={changing === 'check' ? knownVan?.vehicle_id ?? null : vehicleId}
+          oldVehicleId={changing === 'check' ? vanChange?.fromVehicleId ?? null : vehicleId}
           presetNewVehicleId={changing === 'check' ? vehicleId : null}
           assignmentAlreadyDone={changing === 'check'}
           targets={ref.allTargets}
@@ -264,6 +259,7 @@ export const GangVanView: React.FC = () => {
           onDone={(m) => {
             setChanging(null);
             setFlash(m);
+            ref.reload();
             load();
           }}
         />

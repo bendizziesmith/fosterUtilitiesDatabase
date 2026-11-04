@@ -83,3 +83,18 @@ describe('changeVan', () => {
     expect(H.calls.some((c) => c.table === 'kit_person_vans')).toBe(true);
   });
 });
+
+const { recordAllPersonVans } = await import('./vanChangeService');
+
+describe('recordAllPersonVans', () => {
+  beforeEach(() => (H.calls = []));
+
+  it('records every person’s current van in one database call, test-marked in a local build', async () => {
+    await recordAllPersonVans(true);
+    expect(H.calls).toEqual([{ rpc: 'kit_record_person_vans', op: 'rpc', payload: { p_is_test: true }, filters: [] }]);
+  });
+  it('never writes employees', async () => {
+    await recordAllPersonVans(false);
+    expect(H.calls.some((c) => c.table === 'employees')).toBe(false);
+  });
+});

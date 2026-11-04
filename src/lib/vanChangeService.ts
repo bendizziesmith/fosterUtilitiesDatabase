@@ -44,10 +44,18 @@ export async function changeVan(input: {
   return { vanSaved };
 }
 
-/** Last van we know the person had, to spot a change made in Employee / Vehicle Management. */
-export async function getPersonVan(employeeId: string): Promise<{ vehicle_id: string | null } | null> {
-  const rows = check(await supabase.from('kit_person_vans').select('vehicle_id').eq('employee_id', employeeId)) as { vehicle_id: string | null }[] | null;
-  return rows?.[0] ?? null;
+/**
+ * Records every person's current van in one go (only people not recorded yet;
+ * existing records are kept so a change made the old way is still spotted).
+ * Reads employees, writes only kit_person_vans.
+ */
+export async function recordAllPersonVans(isTest: boolean): Promise<void> {
+  check(await supabase.rpc('kit_record_person_vans', { p_is_test: isTest }));
+}
+
+/** The van we last recorded for each person. */
+export async function listPersonVans(): Promise<{ employee_id: string | null; vehicle_id: string | null }[]> {
+  return (check(await supabase.from('kit_person_vans').select('employee_id, vehicle_id')) as { employee_id: string | null; vehicle_id: string | null }[]) ?? [];
 }
 
 export async function rememberPersonVan(employeeId: string, vehicleId: string | null, isTest: boolean): Promise<void> {

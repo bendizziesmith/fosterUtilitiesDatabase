@@ -183,7 +183,8 @@ export const KitPlantPage: React.FC = () => {
           {view === 'type' ? (
             <ByType rows={summariseKitByType(ref.kitTypes, all)} onOpen={(id) => setParams({ type: id })} />
           ) : (
-            <ByVan rows={summariseKitByVan(ref.allTargets, all)} onOpen={(key) => navigate(`/kit/van?key=${encodeURIComponent(key)}`)} />
+            <ByVan rows={summariseKitByVan(ref.allTargets, all)} changedVans={new Set(ref.vanChanges.map((c) => c.toVehicleId))}
+              onOpen={(key) => navigate(`/kit/van?key=${encodeURIComponent(key)}`)} />
           )}
         </section>
       )}
@@ -268,7 +269,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
 
 // ---------------------------------------------------------------- By gang / van
 
-function ByVan({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByVan>; onOpen: (key: string) => void }) {
+function ByVan({ rows, changedVans, onOpen }: { rows: ReturnType<typeof summariseKitByVan>; changedVans: Set<string>; onOpen: (key: string) => void }) {
   return (
     <ul className="divide-y divide-slate-200">
       {rows.map((r) => (
@@ -280,6 +281,9 @@ function ByVan({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByVan>; o
                 <CountBadge n={r.items} label={r.items === 1 ? 'item' : 'items'} tone="slate" />
                 {r.expired > 0 && <CountBadge n={r.expired} label="expired" tone="red" />}
                 {r.dueSoon > 0 && <CountBadge n={r.dueSoon} label="due soon" tone="amber" />}
+                {r.vehicleId && changedVans.has(r.vehicleId) && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-800 border-amber-200">Van changed: check kit</span>
+                )}
               </span>
             </span>
             <ChevronRight className="h-5 w-5 text-slate-400 flex-shrink-0" />

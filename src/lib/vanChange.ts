@@ -82,3 +82,30 @@ export function planVanChange(input: {
 
   return { moves, willHold, leftInOld, toYard, duplicates };
 }
+
+export interface VanChangeToCheck {
+  employeeId: string;
+  name: string;
+  fromVehicleId: string | null;
+  toVehicleId: string;
+}
+
+/**
+ * People whose van in Employee / Vehicle Management differs from the van we
+ * recorded: their kit didn't move ("Van changed: check kit"). People not yet
+ * recorded, or taken off a van altogether, are not listed.
+ */
+export function vanChangesToCheck(
+  staff: { id: string; full_name: string; assigned_vehicle_id: string | null }[],
+  known: { employee_id: string | null; vehicle_id: string | null }[]
+): VanChangeToCheck[] {
+  const byPerson = new Map(known.filter((k) => k.employee_id).map((k) => [k.employee_id as string, k.vehicle_id]));
+  return staff
+    .filter((s) => byPerson.has(s.id) && s.assigned_vehicle_id && byPerson.get(s.id) !== s.assigned_vehicle_id)
+    .map((s) => ({
+      employeeId: s.id,
+      name: s.full_name,
+      fromVehicleId: byPerson.get(s.id) ?? null,
+      toVehicleId: s.assigned_vehicle_id as string,
+    }));
+}

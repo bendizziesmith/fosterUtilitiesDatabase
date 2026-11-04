@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadAuditReferenceData, listFileDeletions, StaffRow, VanRow } from '../../../../lib/siteAuditService';
 import { buildAuditTargets, vanLabelFor, AuditTarget, FileDeletion } from '../../../../lib/siteAuditLogic';
 import { AuditChecklistItem, KitType } from '../../../../lib/supabase';
+import { listPersonVans, recordAllPersonVans } from '../../../../lib/vanChangeService';
+import { vanChangesToCheck } from '../../../../lib/vanChange';
+import { TEST_MODE } from './styles';
 
 /** Staff, vans, checklist, kit types + the "Dom Oliver · YE24 TNL" labels built from them. */
 export function useAuditRef() {
@@ -9,6 +12,7 @@ export function useAuditRef() {
   const [vehicles, setVehicles] = useState<VanRow[]>([]);
   const [checklist, setChecklist] = useState<AuditChecklistItem[]>([]);
   const [kitTypes, setKitTypes] = useState<KitType[]>([]);
+  const [personVans, setPersonVans] = useState<{ employee_id: string | null; vehicle_id: string | null }[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,6 +23,13 @@ export function useAuditRef() {
       setVehicles(ref.vehicles);
       setChecklist(ref.checklist);
       setKitTypes(ref.kitTypes);
+      // record every person's current van in one go (new people only), then read them back
+      try {
+        await recordAllPersonVans(TEST_MODE);
+        setPersonVans(await listPersonVans());
+      } catch {
+        setPersonVans([]);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load staff and vans.');
     } finally {
@@ -42,9 +53,12 @@ export function useAuditRef() {
     [allTargets]
   );
 
+  /** people whose van was changed in Employee / Vehicle Management: their kit didn't move */
+  const vanChanges = useMemo(() => vanChangesToCheck(employees, personVans), [employees, personVans]);
+
   return {
     employees, vehicles, checklist, kitTypes, setKitTypes, targets, allTargets,
-    vanLabel, keyForVan, loaded, error, reload,
+    vanLabel, keyForVan, personVans, vanChanges, loaded, error, reload,
   };
 }
 
