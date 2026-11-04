@@ -10,8 +10,9 @@ import {
   AuditLineRow,
   KitRecentUpdate,
   KitStatus,
+  AuditPpeItem,
 } from './supabase';
-import { AttentionRow, DraftLine, TeamMember, buildTeam } from './siteAuditLogic';
+import { AttentionRow, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { getWeekEndingSunday } from './timesheetUtils';
 
 /**
@@ -58,10 +59,16 @@ export async function loadAuditReferenceData(): Promise<{
   };
 }
 
-export async function createKitType(name: string): Promise<KitType> {
+export async function createKitType(name: string, serviceIntervalMonths: number | null = null): Promise<KitType> {
   const { data: existing } = await supabase.from('kit_types').select('sort_order').order('sort_order', { ascending: false }).limit(1);
   const next = ((existing?.[0]?.sort_order as number | undefined) ?? 0) + 10;
-  return check(await supabase.from("kit_types").insert({ name: name.trim(), sort_order: next }).select("*").single()) as KitType;
+  return check(
+    await supabase
+      .from('kit_types')
+      .insert({ name: name.trim(), sort_order: next, service_interval_months: serviceIntervalMonths })
+      .select('*')
+      .single()
+  ) as KitType;
 }
 
 /** Team for a gang: ganger + latest weekly timesheet labourers, else latest HAVS week. */
@@ -344,6 +351,48 @@ export async function uploadAuditFile(file: File, folder: 'lines' | 'certificate
 export async function getAuditFileUrl(path: string): Promise<string> {
   const data = check(await supabase.storage.from(BUCKET).createSignedUrl(path, 60 * 60)) as { signedUrl: string };
   return data.signedUrl;
+}
+
+// ---------------------------------------------------------------- gang / van view
+
+export async function listVanHistory(vehicleId: string, limit = 15): Promise<KitRecentUpdate[]> {
+  return check(
+    await supabase
+      .from('kit_recent_updates')
+      .select('*')
+      .contains('related_vehicle_ids', [vehicleId])
+      .order('created_at', { ascending: false })
+      .limit(limit)
+  ) ?? [];
+}
+
+export async function listPpeForVan(vehicleId: string): Promise<AuditPpeItem[]> {
+  return check(await supabase.from('audit_ppe_items').select('*').eq('vehicle_id', vehicleId).order('item_name')) ?? [];
+}
+
+/** Latest submitted audit for a gang (by ganger) or a van. */
+export async function lastAudit(by: { gangerId?: string | null; vehicleId?: string | null }): Promise<SiteAuditSummary | null> {
+  let q = supabase.from('audit_site_audit_summary').select('*').eq('status', 'submitted');
+  if (by.gangerId) q = q.eq('ganger_id', by.gangerId);
+  else if (by.vehicleId) q = q.eq('vehicle_id', by.vehicleId);
+  else return null;
+  const rows = check(await q.order('audit_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(1)) as SiteAuditSummary[];
+  return rows?.[0] ?? null;
+}
+
+// ---------------------------------------------------------------- deleting photos / certificates
+
+export async function listFileDeletions(): Promise<FileDeletion[]> {
+  return check(await supabase.from('audit_file_deletions').select('path, deleted_by_name, deleted_at')) ?? [];
+}
+
+/**
+ * Deletes the file from storage, then records "deleted by X on date". The audit
+ * line / history entry that pointed at it is never changed.
+ */
+export async function deleteAuditFile(path: string, isTest: boolean): Promise<void> {
+  check(await supabase.storage.from(BUCKET).remove([path]));
+  check(await supabase.from('audit_file_deletions').insert({ path, is_test: isTest }));
 }
 
 // ---------------------------------------------------------------- who is auditing

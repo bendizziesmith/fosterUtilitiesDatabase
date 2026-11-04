@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { Sheet, Field, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
-import { addKit, createKitType, VanRow } from '../../../../lib/siteAuditService';
+import { addKit, createKitType } from '../../../../lib/siteAuditService';
+import { AuditTarget, ServiceExpiryState, autoExpiry } from '../../../../lib/siteAuditLogic';
 import { KitType } from '../../../../lib/supabase';
+import { TargetPicker } from './TargetPicker';
+import { ServiceExpiryFields } from './ServiceExpiryFields';
 
 export interface NewKitLine {
   kitTypeId: string;
@@ -10,19 +13,21 @@ export interface NewKitLine {
   plantNo: string | null;
   serviceDate: string | null;
   expiryDate: string | null;
+  expiryManual: boolean;
 }
 
 type Where = 'on_van' | 'spare' | 'away_for_service';
 
 /**
  * mode "page": full details, saved straight to Kit & Plant.
- * mode "audit": adds a line to the audit; it is saved to Kit & Plant when the audit is submitted.
+ * mode "audit": adds a line to the audit; saved to Kit & Plant when the audit is submitted.
  */
 export function AddKitSheet({
   mode,
   kitTypes,
-  vehicles,
+  targets,
   vanReg,
+  defaultVehicleId,
   onClose,
   onSaved,
   onAddLine,
@@ -30,8 +35,10 @@ export function AddKitSheet({
 }: {
   mode: 'page' | 'audit';
   kitTypes: KitType[];
-  vehicles: VanRow[];
+  targets: AuditTarget[];
   vanReg?: string | null;
+  /** pre-pick this van (gang / van page) */
+  defaultVehicleId?: string | null;
   onClose: () => void;
   onSaved?: () => void;
   onAddLine?: (line: NewKitLine) => void;
@@ -39,25 +46,36 @@ export function AddKitSheet({
 }) {
   const [typeId, setTypeId] = useState(kitTypes[0]?.id ?? '');
   const [newType, setNewType] = useState('');
+  const [newMonths, setNewMonths] = useState('');
   const [plantNo, setPlantNo] = useState('');
-  const [serviceDate, setServiceDate] = useState('');
-  const [expiry, setExpiry] = useState('');
+  const [dates, setDates] = useState<ServiceExpiryState>({ serviceDate: null, expiry: null, expiryManual: false });
   const [where, setWhere] = useState<Where>('on_van');
-  const [vanId, setVanId] = useState('');
+  const [vanKey, setVanKey] = useState(() => targets.find((t) => t.vehicleId && t.vehicleId === defaultVehicleId)?.key ?? '');
   const [company, setCompany] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const months =
+    typeId === '__new' ? (Number(newMonths) > 0 ? Number(newMonths) : null) : kitTypes.find((t) => t.id === typeId)?.service_interval_months ?? null;
+  const van = targets.find((t) => t.key === vanKey);
+
+  const changeType = (id: string) => {
+    setTypeId(id);
+    const m = id === '__new' ? null : kitTypes.find((t) => t.id === id)?.service_interval_months ?? null;
+    if (!dates.expiryManual) setDates({ ...dates, expiry: autoExpiry(dates.serviceDate, m) ?? dates.expiry });
+  };
+
   const save = async () => {
     setError(null);
     if (typeId === '__new' && !newType.trim()) return setError('Type the name of the new kit type.');
-    if (mode === 'page' && where === 'on_van' && !vanId) return setError('Pick the van this kit is on.');
+    if (typeId === '__new' && newMonths && !(Number(newMonths) >= 1 && Number(newMonths) <= 240)) return setError('Service interval must be between 1 and 240 months.');
+    if (mode === 'page' && where === 'on_van' && !van?.vehicleId) return setError('Pick the van this kit is on.');
     setSaving(true);
     try {
       let type = kitTypes.find((t) => t.id === typeId);
       if (typeId === '__new') {
-        type = await createKitType(newType);
+        type = await createKitType(newType, months);
         onTypeCreated?.(type);
       }
       if (!type) throw new Error('Pick a kit type.');
@@ -66,18 +84,19 @@ export function AddKitSheet({
           kitTypeId: type.id,
           typeName: type.name,
           plantNo: plantNo.trim() || null,
-          serviceDate: serviceDate || null,
-          expiryDate: expiry || null,
+          serviceDate: dates.serviceDate,
+          expiryDate: dates.expiry,
+          expiryManual: dates.expiryManual,
         });
         return;
       }
       await addKit({
         kitTypeId: type.id,
         plantNo: plantNo.trim() || null,
-        serviceDate: serviceDate || null,
-        expiryDate: expiry || null,
+        serviceDate: dates.serviceDate,
+        expiryDate: dates.expiry,
         status: where,
-        vehicleId: where === 'on_van' ? vanId : null,
+        vehicleId: where === 'on_van' ? van!.vehicleId : null,
         serviceCompany: where === 'away_for_service' ? company.trim() || null : null,
         notes: notes.trim() || null,
         isTest: TEST_MODE,
@@ -106,21 +125,25 @@ export function AddKitSheet({
     >
       <Field label="Kit type">
         {(id) => (
-          <select id={id} className={inputCls} value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+          <select id={id} className={inputCls} value={typeId} onChange={(e) => changeType(e.target.value)}>
             {kitTypes.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             <option value="__new">+ New kit type…</option>
           </select>
         )}
       </Field>
       {typeId === '__new' && (
-        <Field label="New kit type name">
-          {(id) => <input id={id} className={inputCls} value={newType} onChange={(e) => setNewType(e.target.value)} placeholder="e.g. Water pump" />}
-        </Field>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="New kit type name">
+            {(id) => <input id={id} className={inputCls} value={newType} onChange={(e) => setNewType(e.target.value)} placeholder="e.g. Water pump" />}
+          </Field>
+          <Field label="Service every … months (optional)">
+            {(id) => <input id={id} inputMode="numeric" className={inputCls} value={newMonths} onChange={(e) => setNewMonths(e.target.value.replace(/\D/g, ''))} placeholder="e.g. 12" />}
+          </Field>
+        </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={plantNo} onChange={(e) => setPlantNo(e.target.value)} />}</Field>
-        <Field label="Service date">{(id) => <input id={id} type="date" className={inputCls} value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} />}</Field>
-        <Field label="Expiry">{(id) => <input id={id} type="date" className={inputCls} value={expiry} onChange={(e) => setExpiry(e.target.value)} />}</Field>
+        <ServiceExpiryFields state={dates} onChange={setDates} months={months} />
       </div>
 
       {mode === 'page' && (
@@ -140,16 +163,7 @@ export function AddKitSheet({
               ))}
             </div>
           </fieldset>
-          {where === 'on_van' && (
-            <Field label="Van">
-              {(id) => (
-                <select id={id} className={inputCls} value={vanId} onChange={(e) => setVanId(e.target.value)}>
-                  <option value="">Pick a van…</option>
-                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.registration_number}</option>)}
-                </select>
-              )}
-            </Field>
-          )}
+          {where === 'on_van' && <TargetPicker label="Van" targets={targets} value={vanKey} onChange={setVanKey} vansOnly />}
           {where === 'away_for_service' && (
             <Field label="Service company (optional)">
               {(id) => <input id={id} className={inputCls} value={company} onChange={(e) => setCompany(e.target.value)} />}

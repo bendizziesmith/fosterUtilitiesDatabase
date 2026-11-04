@@ -32,6 +32,14 @@ vi.mock('./supabase', () => {
         H.calls.push(call);
         return builder(call);
       },
+      storage: {
+        from: (bucket: string) => ({
+          remove: (paths: string[]) => {
+            H.calls.push({ table: `storage:${bucket}`, op: 'remove', payload: paths, filters: [] });
+            return Promise.resolve({ data: [], error: null });
+          },
+        }),
+      },
       rpc: (fn: string, args: unknown) => {
         H.calls.push({ rpc: fn, op: 'rpc', payload: args, filters: [] });
         return Promise.resolve({ data: 'rpc-result', error: null });
@@ -109,5 +117,34 @@ describe('RPC actions', () => {
     expect(H.calls.map((c) => c.rpc)).toEqual(['audit_update_ppe', 'kit_update_item']);
     expect(H.calls[0].payload).toMatchObject({ p_ppe_id: 'p1', p_expiry_date: '2027-01-01' });
     expect(H.calls[1].payload).toMatchObject({ p_item_id: 'k1', p_action: 'reserviced' });
+  });
+});
+
+describe('deleteAuditFile', () => {
+  beforeEach(() => (H.calls = []));
+
+  it('removes the file from the audit-photos bucket, then records who deleted it', async () => {
+    await svc.deleteAuditFile('lines/a.jpg', true);
+    expect(H.calls.map((c) => [c.table, c.op])).toEqual([
+      ['storage:audit-photos', 'remove'],
+      ['audit_file_deletions', 'insert'],
+    ]);
+    expect(H.calls[0].payload).toEqual(['lines/a.jpg']);
+    expect(H.calls[1].payload).toEqual({ path: 'lines/a.jpg', is_test: true });
+  });
+
+  it('never touches the audit line itself', async () => {
+    await svc.deleteAuditFile('lines/a.jpg', false);
+    expect(H.calls.some((c) => c.table === 'audit_lines')).toBe(false);
+  });
+});
+
+describe('createKitType', () => {
+  beforeEach(() => (H.calls = []));
+
+  it('saves the service interval with the new type', async () => {
+    await svc.createKitType(' Water pump ', 6);
+    const ins = H.calls.find((c) => c.table === 'kit_types' && c.op === 'insert');
+    expect(ins?.payload).toMatchObject({ name: 'Water pump', service_interval_months: 6 });
   });
 });

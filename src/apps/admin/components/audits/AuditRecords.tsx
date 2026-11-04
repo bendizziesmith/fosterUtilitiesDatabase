@@ -21,6 +21,12 @@ function ResultBadges({ a }: { a: SiteAuditSummary }) {
   );
 }
 
+/** "Dom Oliver · YE24 TNL" from the audit's own snapshots, so history never changes. */
+function whoLabel(a: SiteAuditSummary) {
+  return a.ganger_name_snapshot ? `${a.ganger_name_snapshot} · ${a.vehicle_reg ?? 'no van'}` : a.team_name_snapshot;
+}
+const vanKey = (a: SiteAuditSummary) => (a.ganger_id ? `gang:${a.ganger_id}` : a.vehicle_id ? `van:${a.vehicle_id}` : null);
+
 function DraftBadge() {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 text-slate-700 border-slate-200">Draft</span>;
 }
@@ -44,12 +50,12 @@ export const AuditRecords: React.FC = () => {
       });
   }, []);
 
-  const teams = useMemo(() => [...new Set((rows ?? []).map((r) => r.team_name_snapshot))].sort(), [rows]);
+  const teams = useMemo(() => [...new Set((rows ?? []).map(whoLabel))].sort(), [rows]);
   const auditors = useMemo(() => [...new Set((rows ?? []).map((r) => r.audited_by_name))].sort(), [rows]);
 
   const filtered = (rows ?? []).filter(
     (r) =>
-      (!who || r.team_name_snapshot === who) &&
+      (!who || whoLabel(r) === who) &&
       (!from || r.audit_date >= from) &&
       (!to || r.audit_date <= to) &&
       (!expiredOnly || r.expired_count > 0) &&
@@ -115,7 +121,14 @@ export const AuditRecords: React.FC = () => {
                   {filtered.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => open(r)}>
                       <td className="px-5 py-3 whitespace-nowrap text-slate-900 font-semibold">{formatDate(r.audit_date)}</td>
-                      <td className="px-3 py-3 text-slate-800"><span className="inline-flex items-center gap-2">{r.team_name_snapshot}<TestTag show={r.is_test} /></span></td>
+                      <td className="px-3 py-3 text-slate-800">
+                        <span className="inline-flex items-center gap-2">
+                          {vanKey(r) ? (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); navigate(`/kit/van?key=${encodeURIComponent(vanKey(r)!)}`); }} className="text-left font-medium text-blue-700 hover:underline cursor-pointer min-h-[44px] sm:min-h-[36px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">{whoLabel(r)}</button>
+                          ) : whoLabel(r)}
+                          <TestTag show={r.is_test} />
+                        </span>
+                      </td>
                       <td className="px-3 py-3 text-slate-700">{r.vehicle_reg ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.site_visited ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.audited_by_name}</td>
@@ -135,7 +148,7 @@ export const AuditRecords: React.FC = () => {
                 <li key={r.id}>
                   <button type="button" onClick={() => open(r)} className="w-full text-left px-4 py-3 min-h-[64px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
                     <span className="min-w-0">
-                      <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{r.team_name_snapshot}<TestTag show={r.is_test} /></span>
+                      <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
                       <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''}</span>
                       <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</span>
                     </span>

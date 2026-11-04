@@ -19,6 +19,8 @@ import {
   buildKitLines,
   summariseAuditLines,
   todayISO,
+  applyServiceDate,
+  applyExpiry,
   AuditTarget,
   DraftLine,
   TeamMember,
@@ -26,6 +28,7 @@ import {
 import { AuditChecklistItem, KitItemOverview, KitType } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { SwapKitSheet } from './SwapKitSheet';
+import { TargetPicker } from './TargetPicker';
 import { Field, ExpiryPill, YesNo, ErrorNote, TestModeBanner, Sheet } from './ui';
 import { btn, card, inputCls, TEST_MODE } from './styles';
 
@@ -59,6 +62,7 @@ export const NewAuditForm: React.FC = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const draftParam = params.get('draft');
+  const targetParam = params.get('target');
 
   const [employees, setEmployees] = useState<StaffRow[]>([]);
   const [vehicles, setVehicles] = useState<VanRow[]>([]);
@@ -119,6 +123,15 @@ export const NewAuditForm: React.FC = () => {
       }
     })();
   }, [draftParam, navigate]);
+
+  // opened from a gang / van page: "New audit for this gang"
+  const [autoPicked, setAutoPicked] = useState(false);
+  useEffect(() => {
+    if (loading || autoPicked || draftParam || !targetParam || !allTargets.length) return;
+    setAutoPicked(true);
+    pickTarget(targetParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, autoPicked, draftParam, targetParam, allTargets]);
 
   const pickTarget = async (key: string) => {
     const touched = lines.some((l) => l.result || l.comment || l.qty);
@@ -232,19 +245,7 @@ export const NewAuditForm: React.FC = () => {
 
       {/* ------------------------------------------------ header */}
       <section className={`${card} p-4 sm:p-5 space-y-4`}>
-        <Field label="Audit who?">
-          {(id) => (
-            <select id={id} className={`${inputCls} text-base`} value={targetKey} onChange={(e) => pickTarget(e.target.value)} disabled={busy === 'target'}>
-              <option value="">Choose a gang or van…</option>
-              <optgroup label="Gangs">
-                {targets.gangs.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
-              </optgroup>
-              <optgroup label="Other vans">
-                {targets.otherVans.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
-              </optgroup>
-            </select>
-          )}
-        </Field>
+        <TargetPicker label="Audit who?" targets={allTargets} value={targetKey} onChange={pickTarget} disabled={busy === 'target'} />
 
         {busy === 'target' && <p className="text-sm text-slate-600">Loading team and kit…</p>}
 
@@ -329,6 +330,12 @@ export const NewAuditForm: React.FC = () => {
                   key={l.key}
                   line={l}
                   auditDate={auditDate}
+                  months={
+                    l.section === 'kit'
+                      ? kitTypes.find((t) => t.id === l.kit_type_id)?.service_interval_months ?? null
+                      : checklist.find((c) => c.id === l.checklist_item_id)?.service_interval_months ?? null
+                  }
+                  dateLabel={l.section === 'ppe' ? checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null : null}
                   onChange={(p) => update(l.key!, p)}
                   onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
                   onSwap={
@@ -386,7 +393,7 @@ export const NewAuditForm: React.FC = () => {
         <AddKitSheet
           mode="audit"
           kitTypes={kitTypes}
-          vehicles={vehicles}
+          targets={allTargets}
           vanReg={target?.reg}
           onClose={() => setShowAddKit(false)}
           onTypeCreated={(t) => setKitTypes((ts) => [...ts, t])}
@@ -402,6 +409,7 @@ export const NewAuditForm: React.FC = () => {
                 plant_no_snapshot: n.plantNo,
                 service_date: n.serviceDate,
                 expiry_date: n.expiryDate,
+                expiryManual: n.expiryManual,
                 result: null,
                 comment: '',
               },
@@ -411,7 +419,8 @@ export const NewAuditForm: React.FC = () => {
         />
       )}
       {swapItem && (
-        <SwapKitSheet item={swapItem} vehicles={vehicles} onClose={() => setSwapItem(null)} onSaved={reloadKitAfterSwap} />
+        <SwapKitSheet item={swapItem} targets={allTargets} months={kitTypes.find((t) => t.id === swapItem.kit_type_id)?.service_interval_months ?? null}
+          onClose={() => setSwapItem(null)} onSaved={reloadKitAfterSwap} />
       )}
       {confirmSubmit && (
         <Sheet
@@ -439,6 +448,8 @@ export const NewAuditForm: React.FC = () => {
 function LineRow({
   line,
   auditDate,
+  months,
+  dateLabel,
   onChange,
   onRemove,
   onSwap,
@@ -446,6 +457,9 @@ function LineRow({
 }: {
   line: DraftLine;
   auditDate: string;
+  /** service interval: expiry fills itself from the service date / date on hat */
+  months: number | null;
+  dateLabel: string | null;
   onChange: (p: Partial<DraftLine>) => void;
   onRemove?: () => void;
   onSwap?: () => void;
@@ -458,6 +472,15 @@ function LineRow({
   const isKit = line.section === 'kit';
   const isHs = line.section === 'hs';
   const commentOpen = showComment || line.result === 'N';
+  const setServiceDate = (v: string | null) => {
+    const next = applyServiceDate(
+      { serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual },
+      v,
+      months
+    );
+    onChange({ service_date: next.serviceDate, expiry_date: next.expiry });
+  };
+  const datedPpe = line.section === 'ppe' && !!months;
 
   const onPhoto = async (file: File | undefined) => {
     if (!file) return;
@@ -495,7 +518,7 @@ function LineRow({
                   {(id) => <input id={id} className={inputCls} value={line.plant_no_snapshot ?? ''} onChange={(e) => onChange({ plant_no_snapshot: e.target.value })} />}
                 </Field>
                 <Field label="Service date">
-                  {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => onChange({ service_date: e.target.value || null })} />}
+                  {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
                 </Field>
               </>
             ) : (
@@ -503,8 +526,13 @@ function LineRow({
                 {(id) => <input id={id} inputMode="numeric" className={inputCls} value={line.qty ?? ''} onChange={(e) => onChange({ qty: e.target.value })} />}
               </Field>
             )}
+            {datedPpe && (
+              <Field label={dateLabel ?? 'Date'}>
+                {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
+              </Field>
+            )}
             {(line.section === 'ppe' || isKit) && (
-              <ExpiryInput line={line} auditDate={auditDate} onChange={onChange} />
+              <ExpiryInput line={line} auditDate={auditDate} months={months} onChange={onChange} />
             )}
             {line.section === 'other' && (
               <Field label="Date / tag / label" className="col-span-2 sm:col-span-1">
@@ -565,7 +593,7 @@ function LineRow({
   );
 }
 
-function ExpiryInput({ line, auditDate, onChange }: { line: DraftLine; auditDate: string; onChange: (p: Partial<DraftLine>) => void }) {
+function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; auditDate: string; months: number | null; onChange: (p: Partial<DraftLine>) => void }) {
   const [open, setOpen] = useState(!!line.expiry_date);
   if (!open && !line.expiry_date) {
     return (
@@ -589,13 +617,16 @@ function ExpiryInput({ line, auditDate, onChange }: { line: DraftLine; auditDate
           type="date"
           className={inputCls}
           value={line.expiry_date ?? ''}
-          onChange={(e) => onChange({ expiry_date: e.target.value || null })}
+          onChange={(e) => {
+            const s = applyExpiry({ serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual }, e.target.value || null);
+            onChange({ expiry_date: s.expiry, expiryManual: s.expiryManual });
+          }}
         />
         <button
           type="button"
           aria-label={`Set ${line.item_name} expiry back to N/A`}
           onClick={() => {
-            onChange({ expiry_date: null });
+            onChange({ expiry_date: null, expiryManual: false });
             setOpen(false);
           }}
           className="min-w-[44px] min-h-[44px] rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
@@ -603,6 +634,9 @@ function ExpiryInput({ line, auditDate, onChange }: { line: DraftLine; auditDate
           <X className="h-4 w-4" />
         </button>
       </div>
+      {!!months && !line.expiryManual && !!line.expiry_date && (
+        <p className="text-xs text-slate-500 mt-1">Auto: {months} months, change if needed</p>
+      )}
     </div>
   );
 }

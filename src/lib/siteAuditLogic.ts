@@ -93,7 +93,7 @@ export function buildAuditTargets(
     const teamName = `${shortName(g.full_name)}'s gang`;
     return {
       key: `gang:${g.id}`,
-      label: `${teamName} · ${van ? van.registration_number : 'no van assigned'}`,
+      label: `${g.full_name} · ${van ? van.registration_number : 'no van'}`,
       gangerId: g.id,
       gangerName: g.full_name,
       vehicleId: van?.id ?? null,
@@ -110,7 +110,7 @@ export function buildAuditTargets(
       const holder = employees.find((e) => e.assigned_vehicle_id === v.id);
       return {
         key: `van:${v.id}`,
-        label: `${v.registration_number} · ${holder ? holder.full_name : 'no one assigned'}`,
+        label: `${v.registration_number} · ${holder ? holder.full_name : 'Unassigned'}`,
         gangerId: null,
         gangerName: null,
         vehicleId: v.id,
@@ -224,6 +224,8 @@ export interface DraftLine {
   photo_path?: string | null;
   /** set when the van's kit list already says this type is not carried */
   notCarriedBefore?: boolean;
+  /** local only: the person typed this expiry, so a new service date won't overwrite it */
+  expiryManual?: boolean;
   /** local-only key for React lists */
   key?: string;
 }
@@ -364,4 +366,136 @@ export function groupKitForPhone<
   if (spares.length) groups.push({ title: 'Spares · Yard', items: spares });
   if (away.length) groups.push({ title: 'Away for service', items: away });
   return groups;
+}
+
+// ---------------------------------------------------------------- labels + search (round 2)
+
+/** "Dom Oliver · YE24 TNL" / "BV23 ZHK · Kevin Noble" / "WV72 OZL · Unassigned" for any van id. */
+export function vanLabelFor(targets: { gangs: AuditTarget[]; otherVans: AuditTarget[] }, vehicleId: string | null | undefined, fallbackReg?: string | null): string {
+  if (vehicleId) {
+    const t = targets.gangs.find((g) => g.vehicleId === vehicleId) ?? targets.otherVans.find((v) => v.vehicleId === vehicleId);
+    if (t) return t.label;
+  }
+  return fallbackReg || '—';
+}
+
+const squash = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+
+/** Match a ganger's name, a reg (spaces ignored) or the person a van is assigned to. Gangs first. */
+export function searchTargets(targets: AuditTarget[], query: string, opts: { vansOnly?: boolean } = {}): AuditTarget[] {
+  const q = squash(query);
+  const list = targets.filter((t) => (!opts.vansOnly || t.vehicleId) && (!q || squash(t.label).includes(q)));
+  const gangs = list.filter((t) => t.gangerId);
+  const vans = list.filter((t) => !t.gangerId);
+  return [...gangs, ...vans];
+}
+
+// ---------------------------------------------------------------- auto expiry from service date
+
+/** Adds whole months; a day past the end of the new month lands on its last day (31 Jan + 1 = 28/29 Feb). */
+export function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const total = y * 12 + (m - 1) + months;
+  const ny = Math.floor(total / 12);
+  const nm = total % 12;
+  const lastDay = new Date(Date.UTC(ny, nm + 1, 0)).getUTCDate();
+  const nd = Math.min(d, lastDay);
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(nd).padStart(2, '0')}`;
+}
+
+export function autoExpiry(serviceDate: string | null | undefined, months: number | null | undefined): string | null {
+  if (!serviceDate || !months || months <= 0) return null;
+  return addMonths(serviceDate, months);
+}
+
+export interface ServiceExpiryState {
+  serviceDate: string | null;
+  expiry: string | null;
+  /** true once the person typed their own expiry */
+  expiryManual: boolean;
+}
+
+/** New service date: refill expiry unless the person typed their own. */
+export function applyServiceDate(state: ServiceExpiryState, serviceDate: string | null, months: number | null | undefined): ServiceExpiryState {
+  const next = { ...state, serviceDate };
+  if (!state.expiryManual && months) {
+    const auto = autoExpiry(serviceDate, months);
+    if (auto || !serviceDate) next.expiry = auto;
+  }
+  return next;
+}
+
+/** Typed expiry: keep it; clearing it hands control back to the automatic date. */
+export function applyExpiry(state: ServiceExpiryState, expiry: string | null): ServiceExpiryState {
+  return { ...state, expiry, expiryManual: !!expiry };
+}
+
+// ---------------------------------------------------------------- Kit & Plant at scale
+
+interface KitLike {
+  kit_type_id: string;
+  status: string;
+  vehicle_id: string | null;
+  expiry_status: string | null;
+}
+
+const warns = (k: KitLike) => k.status !== 'away_for_service';
+
+export function summariseKitByType(types: { id: string; name: string; sort_order: number }[], kit: KitLike[]) {
+  return [...types]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((t) => {
+      const items = kit.filter((k) => k.kit_type_id === t.id);
+      return {
+        typeId: t.id,
+        name: t.name,
+        total: items.length,
+        onVans: items.filter((k) => k.status === 'on_van').length,
+        spares: items.filter((k) => k.status === 'spare').length,
+        away: items.filter((k) => k.status === 'away_for_service').length,
+        expired: items.filter((k) => warns(k) && k.expiry_status === 'expired').length,
+        dueSoon: items.filter((k) => warns(k) && k.expiry_status === 'due_soon').length,
+      };
+    });
+}
+
+export function summariseKitByVan(targets: AuditTarget[], kit: KitLike[]) {
+  return targets.map((t) => {
+    const items = t.vehicleId ? kit.filter((k) => k.status === 'on_van' && k.vehicle_id === t.vehicleId) : [];
+    return {
+      key: t.key,
+      label: t.label,
+      vehicleId: t.vehicleId,
+      items: items.length,
+      expired: items.filter((k) => k.expiry_status === 'expired').length,
+      dueSoon: items.filter((k) => k.expiry_status === 'due_soon').length,
+    };
+  });
+}
+
+export type KitSort = 'expiry' | 'plant' | 'van';
+
+export function sortKit<T extends { plant_no: string | null; expiry_date: string | null; vehicle_label?: string | null }>(items: T[], by: KitSort): T[] {
+  const cmp = (a: string | null | undefined, b: string | null | undefined) => {
+    if (a && b) return a.localeCompare(b, undefined, { numeric: true });
+    if (a) return -1;
+    if (b) return 1;
+    return 0;
+  };
+  return [...items].sort((a, b) =>
+    by === 'expiry' ? cmp(a.expiry_date, b.expiry_date) : by === 'plant' ? cmp(a.plant_no, b.plant_no) : cmp(a.vehicle_label, b.vehicle_label)
+  );
+}
+
+// ---------------------------------------------------------------- deleted photos / certificates
+
+export interface FileDeletion {
+  path: string;
+  deleted_by_name: string | null;
+  deleted_at: string;
+}
+
+export function isFileDeleted(path: string | null | undefined, deletions: FileDeletion[]): FileDeletion | undefined {
+  if (!path) return undefined;
+  return deletions.find((d) => d.path === path);
 }

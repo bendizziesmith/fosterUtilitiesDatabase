@@ -275,6 +275,10 @@ export interface AuditChecklistItem {
   has_date_tag: boolean;
   sort_order: number;
   is_active: boolean;
+  /** auto expiry = date + this many months (Hard hats: 36) */
+  service_interval_months: number | null;
+  /** label for the date the interval counts from, e.g. "Date on hat" */
+  date_label: string | null;
 }
 
 export interface KitType {
@@ -282,6 +286,8 @@ export interface KitType {
   name: string;
   sort_order: number;
   is_active: boolean;
+  /** auto expiry = service date + this many months */
+  service_interval_months: number | null;
 }
 
 export interface KitItemOverview {
@@ -394,4 +400,19 @@ export interface KitRecentUpdate {
   is_test: boolean;
   old_values: Record<string, unknown> | null;
   new_values: Record<string, unknown> | null;
+  certificate_path: string | null;
+  related_vehicle_ids: string[];
+}
+
+export interface AuditPpeItem {
+  id: string;
+  vehicle_id: string | null;
+  vehicle_reg_snapshot: string | null;
+  checklist_item_id: string;
+  item_name: string;
+  expiry_date: string | null;
+  source: 'audit' | 'update';
+  source_audit_id: string | null;
+  is_test: boolean;
+  updated_at: string;
 }

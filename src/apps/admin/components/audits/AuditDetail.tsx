@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Lock, Image as ImageIcon } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Lock } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { getAudit, getAuditFileUrl } from '../../../../lib/siteAuditService';
-import { getExpiryStatus, summariseAuditLines } from '../../../../lib/siteAuditLogic';
+import { getAudit } from '../../../../lib/siteAuditService';
+import { getExpiryStatus, summariseAuditLines, FileDeletion } from '../../../../lib/siteAuditLogic';
+import { FileLink } from './FileLink';
+import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { AuditLineRow, AuditMemberRow, SiteAudit } from '../../../../lib/supabase';
 import { CountBadge, ErrorNote, ExpiryPill, TestTag } from './ui';
 import { card, formatDate, formatDateTime } from './styles';
@@ -29,33 +31,17 @@ function Result({ r }: { r: AuditLineRow['result'] }) {
   return <span className="text-xs text-slate-500">—</span>;
 }
 
-function PhotoLink({ path }: { path: string }) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          window.open(await getAuditFileUrl(path), '_blank', 'noopener');
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="inline-flex items-center gap-1 min-h-[36px] px-2 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-    >
-      <ImageIcon className="h-4 w-4" />Photo
-    </button>
-  );
-}
-
-function SectionTable({ title, lines, auditDate, section }: { title: string; lines: AuditLineRow[]; auditDate: string; section: AuditLineRow['section'] }) {
+function SectionTable({ title, lines, auditDate, section, deletions, onFileDeleted, dateLabelFor }: {
+  title: string; lines: AuditLineRow[]; auditDate: string; section: AuditLineRow['section'];
+  deletions: FileDeletion[]; onFileDeleted: () => void; dateLabelFor: (l: AuditLineRow) => string | null;
+}) {
   const [showAll, setShowAll] = useState(false);
   const flagged = lines.filter((l) => needsLook(l, auditDate));
   const rest = lines.filter((l) => !needsLook(l, auditDate));
   const isKit = section === 'kit';
   const hasExpiry = section === 'ppe' || section === 'kit';
+  const ppeDates = section === 'ppe' && lines.some((l) => l.service_date);
+  const photo = (l: AuditLineRow) => l.photo_path && <FileLink path={l.photo_path} kind="Photo" deletions={deletions} onDeleted={onFileDeleted} />;
   if (!lines.length) return null;
 
   const cells = (l: AuditLineRow) => (
@@ -70,6 +56,7 @@ function SectionTable({ title, lines, auditDate, section }: { title: string; lin
       ) : (
         <td className="px-3 py-2.5 text-slate-700">{l.qty ?? '—'}</td>
       )}
+      {ppeDates && <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{l.service_date ? `${dateLabelFor(l) ?? 'Date'}: ${formatDate(l.service_date)}` : ''}</td>}
       {hasExpiry && (
         <td className="px-3 py-2.5 whitespace-nowrap">
           {l.expiry_date ? <span className="text-slate-700 mr-2">{formatDate(l.expiry_date)}</span> : null}
@@ -78,7 +65,7 @@ function SectionTable({ title, lines, auditDate, section }: { title: string; lin
       )}
       {section === 'other' && <td className="px-3 py-2.5 text-slate-700">{l.date_tag ?? '—'}</td>}
       <td className="px-3 py-2.5 text-slate-700">{l.comment ?? ''}</td>
-      <td className="px-5 py-2.5 text-right">{l.photo_path && <PhotoLink path={l.photo_path} />}</td>
+      <td className="px-5 py-2.5 text-right">{photo(l)}</td>
     </>
   );
 
@@ -95,6 +82,7 @@ function SectionTable({ title, lines, auditDate, section }: { title: string; lin
               <th className="px-5 py-2.5">Item</th>
               <th className="px-3 py-2.5">Fit for purpose</th>
               {isKit ? (<><th className="px-3 py-2.5">Plant no</th><th className="px-3 py-2.5">Service</th></>) : <th className="px-3 py-2.5">Qty</th>}
+              {ppeDates && <th className="px-3 py-2.5">Date</th>}
               {hasExpiry && <th className="px-3 py-2.5">Expiry</th>}
               {section === 'other' && <th className="px-3 py-2.5">Date / tag</th>}
               <th className="px-3 py-2.5">Comment</th>
@@ -121,13 +109,14 @@ function SectionTable({ title, lines, auditDate, section }: { title: string; lin
                 isKit && l.plant_no_snapshot,
                 !isKit && l.qty && `Qty ${l.qty}`,
                 isKit && l.service_date && `Serviced ${formatDate(l.service_date)}`,
+                !isKit && l.service_date && `${dateLabelFor(l) ?? 'Date'} ${formatDate(l.service_date)}`,
                 hasExpiry && l.expiry_date && `Expiry ${formatDate(l.expiry_date)}`,
                 l.date_tag,
               ].filter(Boolean).join(' · ')}
             </p>
             {hasExpiry && l.result !== 'not_carried' && l.expiry_date && <div className="mt-1"><ExpiryPill expiry={l.expiry_date} today={auditDate} showOk={false} /></div>}
             {l.comment && <p className="text-xs text-slate-700 mt-1">“{l.comment}”</p>}
-            {l.photo_path && <PhotoLink path={l.photo_path} />}
+            {photo(l)}
           </li>
         ))}
         {rest.length > 0 && (
@@ -147,6 +136,10 @@ export const AuditDetail: React.FC = () => {
   const id = params.get('id');
   const [data, setData] = useState<{ audit: SiteAudit; members: AuditMemberRow[]; lines: AuditLineRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const ref = useAuditRef();
+  const { deletions, reload: reloadDeletions } = useFileDeletions();
+  const dateLabelFor = (l: AuditLineRow) => ref.checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null;
 
   useEffect(() => {
     if (!id) return;
@@ -164,7 +157,17 @@ export const AuditDetail: React.FC = () => {
     <div className="space-y-4 max-w-5xl mx-auto">
       <section className={`${card} p-4 sm:p-5`}>
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <h2 className="text-lg font-bold text-slate-900">{audit.team_name_snapshot}</h2>
+          <h2 className="text-lg font-bold text-slate-900">
+            {(() => {
+              const key = audit.ganger_id ? `gang:${audit.ganger_id}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : null;
+              const label = audit.ganger_name_snapshot
+                ? `${audit.ganger_name_snapshot} · ${audit.vehicle_reg_snapshot ?? 'no van'}`
+                : audit.team_name_snapshot;
+              return key && ref.allTargets.some((t) => t.key === key) ? (
+                <button type="button" onClick={() => navigate(`/kit/van?key=${encodeURIComponent(key)}`)} className="text-left hover:underline cursor-pointer">{label}</button>
+              ) : label;
+            })()}
+          </h2>
           <TestTag show={audit.is_test} />
           {audit.status === 'submitted' ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
@@ -200,7 +203,8 @@ export const AuditDetail: React.FC = () => {
       </section>
 
       {SECTIONS.map((sec) => (
-        <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)} />
+        <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)}
+          deletions={deletions} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} />
       ))}
 
       <section className={`${card} p-4 sm:p-5`}>

@@ -16,6 +16,7 @@ import { NewAuditForm } from './components/audits/NewAuditForm';
 import { AuditRecords } from './components/audits/AuditRecords';
 import { AuditDetail } from './components/audits/AuditDetail';
 import { KitPlantPage } from './components/audits/KitPlantPage';
+import { GangVanView } from './components/audits/GangVanView';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -178,6 +179,8 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Audit';
       case '/kit':
         return 'Kit & Plant';
+      case '/kit/van':
+        return 'Gang / Van';
       default:
         return 'Employer Dashboard';
     }
@@ -216,6 +219,8 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Audit record';
       case '/kit':
         return "All kit and who it's assigned to";
+      case '/kit/van':
+        return 'Kit, PPE and history for one gang or van';
       default:
         return 'Management Overview';
     }
@@ -230,6 +235,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
       navigate('/weekly-timesheets');
     } else if (path === '/audits/detail') {
       navigate('/audits/records');
+    } else if (path === '/kit/van') {
+      navigate('/kit?view=van');
+    } else if (path === '/kit' && location.search) {
+      navigate('/kit');
     } else if (path === '/audits/new' || path === '/audits/records' || path === '/kit') {
       navigate('/audits');
     } else if (path === '/') {
@@ -337,6 +346,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         <Route path="/audits/records" element={<AuditRecords />} />
         <Route path="/audits/detail" element={<AuditDetail />} />
         <Route path="/kit" element={<KitPlantPage />} />
+        <Route path="/kit/van" element={<GangVanView key={location.search} />} />
         <Route
           path="/weekly-timesheet-detail"
           element={

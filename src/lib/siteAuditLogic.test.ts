@@ -10,6 +10,16 @@ import {
   buildKitLines,
   previewSwap,
   groupKitForPhone,
+  vanLabelFor,
+  searchTargets,
+  addMonths,
+  autoExpiry,
+  applyServiceDate,
+  applyExpiry,
+  summariseKitByType,
+  summariseKitByVan,
+  sortKit,
+  isFileDeleted,
   type AttentionRow,
   type DraftLine,
 } from './siteAuditLogic';
@@ -65,28 +75,59 @@ const employees = [
   { id: 'e5', full_name: 'Tristan Rose', role: 'Labourer', assigned_vehicle_id: null },
 ];
 
-describe('buildAuditTargets — the "Audit who?" dropdown', () => {
+describe('buildAuditTargets — ganger name + van everywhere', () => {
   const targets = buildAuditTargets(employees, vehicles);
 
-  it('lists gangs labelled by ganger initial + surname and van reg', () => {
-    expect(targets.gangs.map((g) => g.label)).toEqual([
-      "D. Oliver's gang · YE24 TNL",
-      "P. Hall's gang · no van assigned",
-    ]);
+  it('labels gangs "Ganger name · reg", and "no van" when none is assigned', () => {
+    expect(targets.gangs.map((g) => g.label)).toEqual(['Dom Oliver · YE24 TNL', 'Phil Hall · no van']);
+  });
+  it('keeps the short team name for the audit record', () => {
+    expect(targets.gangs[0].teamName).toBe("D. Oliver's gang");
   });
   it('carries the ganger and van ids on each gang', () => {
     expect(targets.gangs[0]).toMatchObject({ gangerId: 'e1', vehicleId: 'v1', reg: 'YE24 TNL' });
   });
-  it('lists every van not assigned to a ganger under Other vans, with who has it', () => {
-    expect(targets.otherVans.map((v) => v.label)).toEqual([
-      'BV23 ZHK · Kevin Noble',
-      'WV72 OZL · no one assigned',
-    ]);
+  it('labels other vans "reg · person assigned" or "reg · Unassigned"', () => {
+    expect(targets.otherVans.map((v) => v.label)).toEqual(['BV23 ZHK · Kevin Noble', 'WV72 OZL · Unassigned']);
     expect(targets.otherVans.every((v) => v.gangerId === null)).toBe(true);
   });
   it('gives every option a unique key so each pick is its own audit', () => {
     const keys = [...targets.gangs, ...targets.otherVans].map((t) => t.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('vanLabelFor — label for any van id', () => {
+  const targets = buildAuditTargets(employees, vehicles);
+  it('uses the gang label for a ganger’s van', () => {
+    expect(vanLabelFor(targets, 'v1')).toBe('Dom Oliver · YE24 TNL');
+  });
+  it('uses the other-van label otherwise', () => {
+    expect(vanLabelFor(targets, 'v2')).toBe('WV72 OZL · Unassigned');
+  });
+  it('falls back to the reg snapshot for a van no longer on the fleet', () => {
+    expect(vanLabelFor(targets, 'gone', 'AB12 CDE')).toBe('AB12 CDE');
+    expect(vanLabelFor(targets, null)).toBe('—');
+  });
+});
+
+describe('searchTargets — type a ganger’s name or a reg', () => {
+  const targets = buildAuditTargets(employees, vehicles);
+  const all = [...targets.gangs, ...targets.otherVans];
+  it('matches a ganger by any part of the name, case-insensitive', () => {
+    expect(searchTargets(all, 'oliv').map((t) => t.key)).toEqual(['gang:e1']);
+  });
+  it('matches a reg ignoring spaces', () => {
+    expect(searchTargets(all, 'bv23z').map((t) => t.key)).toEqual(['van:v3']);
+  });
+  it('matches the person a van is assigned to', () => {
+    expect(searchTargets(all, 'kevin').map((t) => t.key)).toEqual(['van:v3']);
+  });
+  it('lists gangs first, then other vans, when the search is empty', () => {
+    expect(searchTargets(all, '').map((t) => t.key)).toEqual(['gang:e1', 'gang:e2', 'van:v3', 'van:v2']);
+  });
+  it('can be limited to options that have a van', () => {
+    expect(searchTargets(all, '', { vansOnly: true }).map((t) => t.key)).toEqual(['gang:e1', 'van:v3', 'van:v2']);
   });
 });
 
@@ -286,5 +327,131 @@ describe('groupKitForPhone — cards by van, then spares, then away for service'
       ['Spares · Yard', ['1']],
       ['Away for service', ['3']],
     ]);
+  });
+});
+
+describe('addMonths — service interval date maths', () => {
+  it('adds whole months', () => {
+    expect(addMonths('2026-03-15', 12)).toBe('2027-03-15');
+    expect(addMonths('2026-11-04', 3)).toBe('2027-02-04');
+  });
+  it('clamps to the last day when the month is shorter', () => {
+    expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
+    expect(addMonths('2026-08-31', 1)).toBe('2026-09-30');
+  });
+  it('lands on 29 Feb in a leap year', () => {
+    expect(addMonths('2027-01-31', 13)).toBe('2028-02-29');
+  });
+  it('moves 29 Feb to 28 Feb in a non-leap year', () => {
+    expect(addMonths('2028-02-29', 12)).toBe('2029-02-28');
+  });
+  it('handles 36 months (hard hats) across a leap day', () => {
+    expect(addMonths('2028-02-29', 36)).toBe('2031-02-28');
+    expect(addMonths('2025-02-28', 36)).toBe('2028-02-28');
+  });
+});
+
+describe('autoExpiry', () => {
+  it('is service date + interval', () => {
+    expect(autoExpiry('2026-11-04', 12)).toBe('2027-11-04');
+  });
+  it('is nothing without a date or an interval', () => {
+    expect(autoExpiry(null, 12)).toBeNull();
+    expect(autoExpiry('2026-11-04', null)).toBeNull();
+    expect(autoExpiry('2026-11-04', 0)).toBeNull();
+  });
+});
+
+describe('applyServiceDate / applyExpiry — expiry fills itself unless typed by hand', () => {
+  const blank = { serviceDate: null, expiry: null, expiryManual: false };
+
+  it('fills expiry from the service date', () => {
+    expect(applyServiceDate(blank, '2026-11-04', 12)).toEqual({ serviceDate: '2026-11-04', expiry: '2027-11-04', expiryManual: false });
+  });
+  it('recalculates when the service date changes again', () => {
+    const s1 = applyServiceDate(blank, '2026-11-04', 12);
+    expect(applyServiceDate(s1, '2026-12-01', 12).expiry).toBe('2027-12-01');
+  });
+  it('keeps an expiry the person typed', () => {
+    const typed = applyExpiry(applyServiceDate(blank, '2026-11-04', 12), '2027-06-30');
+    expect(typed.expiryManual).toBe(true);
+    expect(applyServiceDate(typed, '2026-12-01', 12).expiry).toBe('2027-06-30');
+  });
+  it('goes back to automatic when the typed expiry is cleared', () => {
+    const cleared = applyExpiry({ serviceDate: '2026-11-04', expiry: '2027-06-30', expiryManual: true }, null);
+    expect(cleared.expiryManual).toBe(false);
+    expect(applyServiceDate(cleared, '2026-11-05', 12).expiry).toBe('2027-11-05');
+  });
+  it('leaves expiry alone when there is no interval', () => {
+    expect(applyServiceDate({ serviceDate: null, expiry: '2027-01-01', expiryManual: false }, '2026-11-04', null).expiry).toBe('2027-01-01');
+  });
+});
+
+const kitRow = (over: Record<string, unknown>) => ({
+  id: Math.random().toString(), kit_type_id: 't1', type_name: 'Digger', plant_no: 'P1', status: 'on_van',
+  vehicle_id: 'v1', expiry_date: '2027-01-01', expiry_status: 'ok', days_left: 58, ...over,
+}) as never;
+
+describe('summariseKitByType — one row per kit type', () => {
+  it('counts total, on vans, spares, away, expired and due soon (expired/due ignore away for service)', () => {
+    const rows = summariseKitByType(
+      [{ id: 't1', name: 'Digger', sort_order: 20 }, { id: 't2', name: 'Trailer', sort_order: 30 }],
+      [
+        kitRow({ status: 'on_van', expiry_status: 'expired' }),
+        kitRow({ status: 'spare', expiry_status: 'due_soon' }),
+        kitRow({ status: 'away_for_service', expiry_status: 'expired' }),
+        kitRow({ status: 'on_van' }),
+      ]
+    );
+    expect(rows).toEqual([
+      { typeId: 't1', name: 'Digger', total: 4, onVans: 2, spares: 1, away: 1, expired: 1, dueSoon: 1 },
+      { typeId: 't2', name: 'Trailer', total: 0, onVans: 0, spares: 0, away: 0, expired: 0, dueSoon: 0 },
+    ]);
+  });
+});
+
+describe('summariseKitByVan — one row per gang / van', () => {
+  it('counts kit on each van with warning badges', () => {
+    const targets = buildAuditTargets(employees, vehicles);
+    const rows = summariseKitByVan([...targets.gangs, ...targets.otherVans], [
+      kitRow({ vehicle_id: 'v1', expiry_status: 'expired' }),
+      kitRow({ vehicle_id: 'v1', expiry_status: 'due_soon' }),
+      kitRow({ vehicle_id: 'v1' }),
+      kitRow({ vehicle_id: 'v3', status: 'on_van' }),
+      kitRow({ vehicle_id: null, status: 'spare' }),
+    ]);
+    expect(rows.map((r) => [r.key, r.items, r.expired, r.dueSoon])).toEqual([
+      ['gang:e1', 3, 1, 1],
+      ['gang:e2', 0, 0, 0],
+      ['van:v3', 1, 0, 0],
+      ['van:v2', 0, 0, 0],
+    ]);
+  });
+});
+
+describe('sortKit', () => {
+  const items = [
+    kitRow({ plant_no: 'B2', expiry_date: '2027-05-01', vehicle_label: 'Zed · AA11' }),
+    kitRow({ plant_no: 'A1', expiry_date: null, vehicle_label: 'Amy · BB22' }),
+    kitRow({ plant_no: 'C3', expiry_date: '2026-10-01', vehicle_label: 'Mo · CC33' }),
+  ];
+  it('puts the soonest expiry first by default, undated last', () => {
+    expect(sortKit(items, 'expiry').map((i: { plant_no: string }) => i.plant_no)).toEqual(['C3', 'B2', 'A1']);
+  });
+  it('sorts by plant no', () => {
+    expect(sortKit(items, 'plant').map((i: { plant_no: string }) => i.plant_no)).toEqual(['A1', 'B2', 'C3']);
+  });
+  it('sorts by van label', () => {
+    expect(sortKit(items, 'van').map((i: { plant_no: string }) => i.plant_no)).toEqual(['A1', 'C3', 'B2']);
+  });
+});
+
+describe('isFileDeleted', () => {
+  const deletions = [{ path: 'lines/a.jpg', deleted_by_name: 'Admin', deleted_at: '2026-11-04T10:00:00Z' }];
+  it('finds the deletion record for a path', () => {
+    expect(isFileDeleted('lines/a.jpg', deletions)?.deleted_by_name).toBe('Admin');
+  });
+  it('is undefined for a file still there', () => {
+    expect(isFileDeleted('lines/b.jpg', deletions)).toBeUndefined();
   });
 });

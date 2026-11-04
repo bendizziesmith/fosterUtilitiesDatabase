@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { Sheet, Field, ErrorNote, ExpiryPill } from './ui';
 import { btn, inputCls } from './styles';
 import { updateAttentionItem, uploadAuditFile } from '../../../../lib/siteAuditService';
-import { todayISO } from '../../../../lib/siteAuditLogic';
+import { todayISO, autoExpiry, applyExpiry, AuditTarget, ServiceExpiryState } from '../../../../lib/siteAuditLogic';
+import { ServiceExpiryFields } from './ServiceExpiryFields';
+import { DestinationFields, ReplacementFields, SwapNoteAndPreview } from './SwapFields';
+import { useSwapForm, SwapItem } from './useSwapForm';
 
 export interface UpdateTarget {
   source: 'kit' | 'ppe';
@@ -13,65 +16,83 @@ export interface UpdateTarget {
   where: string;
   serviceDate: string | null;
   expiryDate: string | null;
-  /** kit on a van can be swapped from here */
-  canSwap: boolean;
+  /** kit on a van: can be swapped with a spare from here */
+  swapItem?: SwapItem | null;
+  /** service interval in months (kit type, or Hard hats 36) */
+  months?: number | null;
+  /** label of the date the interval counts from, e.g. "Date on hat" */
+  dateLabel?: string | null;
 }
 
 type What = 'reserviced' | 'replaced' | 'swap';
 
 export function UpdateItemSheet({
   target,
+  targets,
   onClose,
   onSaved,
-  onSwap,
 }: {
   target: UpdateTarget;
+  targets: AuditTarget[];
   onClose: () => void;
   onSaved: () => void;
-  onSwap?: () => void;
 }) {
   const isPpe = target.source === 'ppe';
+  const months = target.months ?? null;
   const [what, setWhat] = useState<What>(isPpe ? 'replaced' : 'reserviced');
-  const [serviceDate, setServiceDate] = useState(todayISO());
-  const [expiry, setExpiry] = useState('');
+  const startDate = isPpe ? null : todayISO();
+  const [dates, setDates] = useState<ServiceExpiryState>({
+    serviceDate: startDate,
+    expiry: autoExpiry(startDate, months),
+    expiryManual: false,
+  });
   const [plantNo, setPlantNo] = useState(target.plantNo ?? '');
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const swapSave = useRef<(() => Promise<void>) | null>(null);
 
   const options: { value: What; label: string; hint: string }[] = isPpe
     ? [{ value: 'replaced', label: 'Replaced with new', hint: 'New PPE issued, enter the new expiry' }]
     : [
         { value: 'reserviced', label: 'Re-serviced', hint: 'Same item, new service and expiry dates' },
         { value: 'replaced', label: 'Replaced with new', hint: 'Change the plant no if it differs' },
-        ...(target.canSwap && onSwap
-          ? [{ value: 'swap' as What, label: 'Swap with a spare', hint: 'Take it off the van and put another on' }]
+        ...(target.swapItem
+          ? [{ value: 'swap' as What, label: 'Swap with a spare', hint: 'Pick a spare (or add a new one), then say where this one goes' }]
           : []),
       ];
 
   const save = async () => {
+    setError(null);
     if (what === 'swap') {
-      onSwap?.();
+      setSaving(true);
+      try {
+        await swapSave.current?.();
+        onSaved();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save the swap.');
+        setSaving(false);
+      }
       return;
     }
-    if (!expiry) {
+    if (!dates.expiry) {
       setError('Enter the new expiry date.');
       return;
     }
     setSaving(true);
-    setError(null);
     try {
       const certificatePath = file ? await uploadAuditFile(file, 'certificates') : null;
+      const hatNote = isPpe && dates.serviceDate && target.dateLabel ? `${target.dateLabel}: ${dates.serviceDate}` : null;
       await updateAttentionItem({
         source: target.source,
         itemId: target.itemId,
         action: what,
-        serviceDate: isPpe ? null : serviceDate || null,
-        expiryDate: expiry,
+        serviceDate: isPpe ? null : dates.serviceDate,
+        expiryDate: dates.expiry,
         plantNo: isPpe ? null : plantNo.trim() || null,
         certificatePath,
-        note: note.trim() || null,
+        note: [hatNote, note.trim()].filter(Boolean).join(' · ') || null,
       });
       onSaved();
     } catch (e) {
@@ -89,7 +110,7 @@ export function UpdateItemSheet({
         <>
           <button type="button" className={btn.secondary} onClick={onClose}>Cancel</button>
           <button type="button" className={btn.primary} onClick={save} disabled={saving}>
-            {what === 'swap' ? 'Next: swap' : saving ? 'Saving…' : 'Save update'}
+            {saving ? 'Saving…' : what === 'swap' ? 'Save swap' : 'Save update'}
           </button>
         </>
       }
@@ -117,17 +138,19 @@ export function UpdateItemSheet({
         </div>
       </fieldset>
 
-      {what !== 'swap' && (
+      {what === 'swap' && target.swapItem ? (
+        <InlineSwap item={target.swapItem} targets={targets} months={months} register={(fn) => (swapSave.current = fn)} />
+      ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {!isPpe && (
-              <Field label="Service date">
-                {(id) => <input id={id} type="date" className={inputCls} value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} />}
+            {isPpe && !months ? (
+              <Field label="New expiry date">
+                {(id) => <input id={id} type="date" className={inputCls} value={dates.expiry ?? ''} onChange={(e) => setDates(applyExpiry(dates, e.target.value || null))} />}
               </Field>
+            ) : (
+              <ServiceExpiryFields state={dates} onChange={setDates} months={months}
+                serviceLabel={target.dateLabel ?? 'Service date'} expiryLabel="New expiry date" />
             )}
-            <Field label="New expiry date">
-              {(id) => <input id={id} type="date" className={inputCls} value={expiry} onChange={(e) => setExpiry(e.target.value)} required />}
-            </Field>
           </div>
           {!isPpe && (
             <Field label="Plant no" hint={what === 'replaced' ? 'Change it if the new item has a different number' : undefined}>
@@ -150,5 +173,25 @@ export function UpdateItemSheet({
       )}
       <ErrorNote message={error} />
     </Sheet>
+  );
+}
+
+/** Update → "Swap with a spare": pick the replacement first, then where the old one goes. */
+function InlineSwap({ item, targets, months, register }: {
+  item: SwapItem;
+  targets: AuditTarget[];
+  months: number | null;
+  register: (fn: () => Promise<void>) => void;
+}) {
+  const f = useSwapForm(item, targets);
+  useEffect(() => register(f.save), [f.save, register]);
+  const label = item.plant_no || item.type_name;
+  return (
+    <>
+      <ReplacementFields f={f} months={months} title={`Spares of ${item.type_name}`} />
+      <DestinationFields f={f} title={`Where does ${label} go?`} />
+      <SwapNoteAndPreview f={f} />
+      <ErrorNote message={f.loadError} />
+    </>
   );
 }

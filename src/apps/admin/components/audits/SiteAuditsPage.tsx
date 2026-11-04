@@ -2,25 +2,16 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardPlus, ClipboardList, Wrench, ArrowRight, AlertTriangle, CheckCircle2, History } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import {
-  listAttention,
-  listRecentUpdates,
-  listKit,
-  loadAuditReferenceData,
-  VanRow,
-} from '../../../../lib/siteAuditService';
+import { listAttention, listRecentUpdates, listKit } from '../../../../lib/siteAuditService';
 import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview, KitRecentUpdate } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
+import { FileLink } from './FileLink';
+import { useAuditRef, useFileDeletions } from './useAuditRef';
+import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { ErrorNote, TestModeBanner, TestTag } from './ui';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL } from './styles';
-
-function where(r: AttentionRow) {
-  if (r.source === 'kit' && r.kit_status === 'spare') return 'Spare · Yard';
-  if (r.ganger_name && r.vehicle_reg) return `${r.ganger_name} · ${r.vehicle_reg}`;
-  return r.vehicle_reg ?? '—';
-}
 
 function StatusText({ r }: { r: AttentionRow }) {
   const expired = r.expiry_status === 'expired';
@@ -36,7 +27,8 @@ export const SiteAuditsPage: React.FC = () => {
   const [rows, setRows] = useState<AttentionRow[] | null>(null);
   const [recent, setRecent] = useState<KitRecentUpdate[]>([]);
   const [kit, setKit] = useState<KitItemOverview[]>([]);
-  const [vehicles, setVehicles] = useState<VanRow[]>([]);
+  const ref = useAuditRef();
+  const { deletions, reload: reloadDeletions } = useFileDeletions();
   const [tab, setTab] = useState<AttentionTab>('all');
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
@@ -44,11 +36,10 @@ export const SiteAuditsPage: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [a, r, k, ref] = await Promise.all([listAttention(), listRecentUpdates(8), listKit(), loadAuditReferenceData()]);
+      const [a, r, k] = await Promise.all([listAttention(), listRecentUpdates(8), listKit()]);
       setRows(sortAttention(a));
       setRecent(r);
       setKit(k);
-      setVehicles(ref.vehicles);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load audits.');
       setRows([]);
@@ -60,18 +51,21 @@ export const SiteAuditsPage: React.FC = () => {
   }, [load]);
 
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
+  const where = (r: AttentionRow) =>
+    r.source === 'kit' && r.kit_status === 'spare' ? 'Spare · Yard' : ref.vanLabel(r.vehicle_id, r.vehicle_reg);
+  const vanKey = (r: AttentionRow) => (r.source === 'kit' && r.kit_status === 'spare' ? null : ref.keyForVan(r.vehicle_id));
+  const whereCell = (r: AttentionRow) => {
+    const key = vanKey(r);
+    return key ? (
+      <button type="button" onClick={() => navigate(`/kit/van?key=${encodeURIComponent(key)}`)} className="text-left font-medium text-blue-700 hover:underline cursor-pointer min-h-[44px] sm:min-h-[36px] rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">{where(r)}</button>
+    ) : (
+      <span>{where(r)}</span>
+    );
+  };
   const openUpdate = (r: AttentionRow) => {
     const k = kitFor(r);
-    setUpdating({
-      source: r.source,
-      itemId: r.item_id,
-      itemName: r.item_name,
-      plantNo: r.plant_no,
-      where: where(r),
-      serviceDate: k?.service_date ?? null,
-      expiryDate: r.expiry_date,
-      canSwap: r.source === 'kit' && r.kit_status === 'on_van',
-    });
+    if (r.source === 'kit' && k) setUpdating(kitUpdateTarget(k, ref.kitTypes, ref.vanLabel));
+    else setUpdating(ppeUpdateTarget({ id: r.item_id, item_name: r.item_name, expiry_date: r.expiry_date, vehicle_id: r.vehicle_id, vehicle_reg: r.vehicle_reg }, ref.checklist, ref.vanLabel));
   };
   const done = () => {
     setUpdating(null);
@@ -182,7 +176,7 @@ export const SiteAuditsPage: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 text-slate-700">{r.source === 'kit' ? 'Kit' : 'PPE'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.plant_no ?? '—'}</td>
-                      <td className="px-3 py-3 text-slate-700">{where(r)}</td>
+                      <td className="px-3 py-3 text-slate-700">{whereCell(r)}</td>
                       <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{formatDate(r.expiry_date)}</td>
                       <td className="px-3 py-3"><StatusText r={r} /></td>
                       <td className="px-5 py-3">
@@ -209,7 +203,7 @@ export const SiteAuditsPage: React.FC = () => {
                         <span className="text-xs font-semibold text-slate-500">{r.source === 'kit' ? 'Kit' : 'PPE'}</span>
                         <TestTag show={r.is_test} />
                       </p>
-                      <p className="text-xs text-slate-600 mt-0.5">{[r.plant_no, where(r)].filter(Boolean).join(' · ')}</p>
+                      <p className="text-xs text-slate-600 mt-0.5">{r.plant_no && <>{r.plant_no} · </>}{whereCell(r)}</p>
                       <p className="text-xs text-slate-600 mt-0.5">Expiry {formatDate(r.expiry_date)}</p>
                     </div>
                     <StatusText r={r} />
@@ -248,6 +242,7 @@ export const SiteAuditsPage: React.FC = () => {
                     <TestTag show={u.is_test} />
                   </p>
                   {u.note && <p className="text-xs text-slate-600 ml-6 mt-0.5">{u.note}</p>}
+                  {u.certificate_path && <div className="ml-6"><FileLink path={u.certificate_path} kind="Certificate" deletions={deletions} onDeleted={reloadDeletions} /></div>}
                 </div>
                 <p className="text-xs text-slate-500 ml-6 sm:ml-0 whitespace-nowrap">{u.by_name ?? 'Unknown'} · {formatDateTime(u.created_at)}</p>
               </li>
@@ -256,19 +251,10 @@ export const SiteAuditsPage: React.FC = () => {
         )}
       </section>
 
-      {updating && (
-        <UpdateItemSheet
-          target={updating}
-          onClose={() => setUpdating(null)}
-          onSaved={done}
-          onSwap={() => {
-            const k = kit.find((x) => x.id === updating.itemId) ?? null;
-            setUpdating(null);
-            setSwapping(k);
-          }}
-        />
+      {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} onClose={() => setUpdating(null)} onSaved={done} />}
+      {swapping && (
+        <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} onClose={() => setSwapping(null)} onSaved={done} />
       )}
-      {swapping && <SwapKitSheet item={swapping} vehicles={vehicles} onClose={() => setSwapping(null)} onSaved={done} />}
     </div>
   );
 };
