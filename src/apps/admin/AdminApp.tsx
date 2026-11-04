@@ -11,6 +11,11 @@ import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
 import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
 import { WeeklyTimesheetDashboard } from './components/WeeklyTimesheetDashboard';
+import { SiteAuditsPage } from './components/audits/SiteAuditsPage';
+import { NewAuditForm } from './components/audits/NewAuditForm';
+import { AuditRecords } from './components/audits/AuditRecords';
+import { AuditDetail } from './components/audits/AuditDetail';
+import { KitPlantPage } from './components/audits/KitPlantPage';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -163,6 +168,16 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Weekly Timesheets';
       case '/weekly-timesheet-detail':
         return 'Timesheet Detail';
+      case '/audits':
+        return 'Site Audits';
+      case '/audits/new':
+        return location.search.includes('draft=') ? 'Continue Audit' : 'New Audit';
+      case '/audits/records':
+        return 'Audit Records';
+      case '/audits/detail':
+        return 'Audit';
+      case '/kit':
+        return 'Kit & Plant';
       default:
         return 'Employer Dashboard';
     }
@@ -191,6 +206,16 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Review and manage ganger timesheets';
       case '/weekly-timesheet-detail':
         return 'Timesheet review';
+      case '/audits':
+        return 'Gang audits: PPE, health & safety, kit';
+      case '/audits/new':
+        return 'On-site audit of a gang or van';
+      case '/audits/records':
+        return 'Every audit, newest first';
+      case '/audits/detail':
+        return 'Audit record';
+      case '/kit':
+        return "All kit and who it's assigned to";
       default:
         return 'Management Overview';
     }
@@ -203,6 +228,10 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     } else if (path === '/weekly-timesheet-detail') {
       setSelectedTimesheetId(null);
       navigate('/weekly-timesheets');
+    } else if (path === '/audits/detail') {
+      navigate('/audits/records');
+    } else if (path === '/audits/new' || path === '/audits/records' || path === '/kit') {
+      navigate('/audits');
     } else if (path === '/') {
       onBack();
     } else {
@@ -303,6 +332,11 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
             />
           }
         />
+        <Route path="/audits" element={<SiteAuditsPage />} />
+        <Route path="/audits/new" element={<NewAuditForm key={location.search} />} />
+        <Route path="/audits/records" element={<AuditRecords />} />
+        <Route path="/audits/detail" element={<AuditDetail />} />
+        <Route path="/kit" element={<KitPlantPage />} />
         <Route
           path="/weekly-timesheet-detail"
           element={

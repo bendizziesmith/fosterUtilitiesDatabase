@@ -262,3 +262,136 @@ export const getWeekStartDate = (date: Date = new Date()): Date => {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
   return new Date(d.setDate(diff));
 };
+// Site Audits + Kit & Plant (tables audit_* / kit_*; see siteAuditService.ts)
+export type KitStatus = 'on_van' | 'spare' | 'away_for_service' | 'removed';
+export type AuditLineResult = 'Y' | 'N' | 'not_carried';
+
+export interface AuditChecklistItem {
+  id: string;
+  section: 'ppe' | 'hs' | 'other';
+  name: string;
+  expected_qty: string | null;
+  has_expiry: boolean;
+  has_date_tag: boolean;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface KitType {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface KitItemOverview {
+  id: string;
+  kit_type_id: string;
+  type_name: string;
+  type_sort: number;
+  plant_no: string | null;
+  status: KitStatus;
+  vehicle_id: string | null;
+  vehicle_reg: string | null;
+  ganger_name: string | null;
+  service_company: string | null;
+  service_date: string | null;
+  expiry_date: string | null;
+  days_left: number | null;
+  expiry_status: 'expired' | 'due_soon' | 'ok' | null;
+  notes: string | null;
+  last_seen_at: string | null;
+  last_seen_source: 'audit' | 'swap' | 'update' | 'added' | 'moved' | null;
+  last_seen_audit_id: string | null;
+  removed_at: string | null;
+  is_test: boolean;
+}
+
+export interface KitVanKitListRow {
+  id: string;
+  vehicle_id: string | null;
+  kit_type_id: string;
+  carried: boolean;
+  is_test: boolean;
+}
+
+export interface SiteAuditSummary {
+  id: string;
+  audit_date: string;
+  audited_by: string | null;
+  audited_by_name: string;
+  vehicle_id: string | null;
+  vehicle_reg: string | null;
+  ganger_id: string | null;
+  ganger_name_snapshot: string | null;
+  team_name_snapshot: string;
+  site_visited: string | null;
+  status: 'draft' | 'submitted';
+  submitted_at: string | null;
+  is_test: boolean;
+  fail_count: number;
+  expired_count: number;
+  due_soon_count: number;
+  not_carried_count: number;
+  member_names: string | null;
+}
+
+export interface SiteAudit {
+  id: string;
+  audit_date: string;
+  audited_by: string | null;
+  audited_by_name: string;
+  vehicle_id: string | null;
+  vehicle_reg_snapshot: string | null;
+  ganger_id: string | null;
+  ganger_name_snapshot: string | null;
+  team_name_snapshot: string;
+  site_visited: string | null;
+  notes: string | null;
+  status: 'draft' | 'submitted';
+  submitted_at: string | null;
+  is_test: boolean;
+}
+
+export interface AuditMemberRow {
+  id: string;
+  audit_id: string;
+  employee_id: string | null;
+  name: string;
+  sort_order: number;
+}
+
+export interface AuditLineRow {
+  id: string;
+  audit_id: string;
+  section: 'ppe' | 'hs' | 'kit' | 'other';
+  checklist_item_id: string | null;
+  kit_type_id: string | null;
+  item_name: string;
+  expected_qty: string | null;
+  result: AuditLineResult | null;
+  qty: string | null;
+  expiry_date: string | null;
+  service_date: string | null;
+  plant_no_snapshot: string | null;
+  date_tag: string | null;
+  comment: string | null;
+  photo_path: string | null;
+  kit_item_id: string | null;
+  sort_order: number;
+}
+
+export interface KitRecentUpdate {
+  id: string;
+  action: string;
+  created_at: string;
+  by_name: string | null;
+  note: string | null;
+  source: 'kit' | 'ppe';
+  item_name: string | null;
+  plant_no: string | null;
+  vehicle_reg: string | null;
+  is_test: boolean;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+}

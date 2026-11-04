@@ -1,0 +1,608 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Camera, Plus, X, Ban, ArrowLeftRight, MessageSquare, Users, Truck, Save, Send } from 'lucide-react';
+import { LoadingSpinner } from '../../../../components/LoadingSpinner';
+import {
+  loadAuditReferenceData,
+  loadTeam,
+  loadVanKit,
+  saveDraftAudit,
+  submitAudit,
+  getAudit,
+  getCurrentAuditor,
+  uploadAuditFile,
+  StaffRow,
+  VanRow,
+} from '../../../../lib/siteAuditService';
+import {
+  buildAuditTargets,
+  buildKitLines,
+  summariseAuditLines,
+  todayISO,
+  AuditTarget,
+  DraftLine,
+  TeamMember,
+} from '../../../../lib/siteAuditLogic';
+import { AuditChecklistItem, KitItemOverview, KitType } from '../../../../lib/supabase';
+import { AddKitSheet } from './AddKitSheet';
+import { SwapKitSheet } from './SwapKitSheet';
+import { Field, ExpiryPill, YesNo, ErrorNote, TestModeBanner, Sheet } from './ui';
+import { btn, card, inputCls, TEST_MODE } from './styles';
+
+const SECTIONS: { key: DraftLine['section']; title: string; note: string }[] = [
+  { key: 'ppe', title: 'PPE', note: 'Qty per person' },
+  { key: 'hs', title: 'Health & safety', note: 'Expected qty shown · audit only, no dates' },
+  { key: 'kit', title: 'Kit', note: 'Pre-filled from this van’s kit list' },
+  { key: 'other', title: 'Other', note: '' },
+];
+
+let keySeq = 0;
+const newKey = (p: string) => `${p}:${Date.now()}:${keySeq++}`;
+
+function checklistLines(checklist: AuditChecklistItem[]): DraftLine[] {
+  return checklist.map((c) => ({
+    key: `c:${c.id}`,
+    section: c.section,
+    checklist_item_id: c.id,
+    item_name: c.name,
+    expected_qty: c.expected_qty,
+    result: null,
+    qty: '',
+    expiry_date: null,
+    date_tag: '',
+    comment: '',
+    photo_path: null,
+  }));
+}
+
+export const NewAuditForm: React.FC = () => {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const draftParam = params.get('draft');
+
+  const [employees, setEmployees] = useState<StaffRow[]>([]);
+  const [vehicles, setVehicles] = useState<VanRow[]>([]);
+  const [checklist, setChecklist] = useState<AuditChecklistItem[]>([]);
+  const [kitTypes, setKitTypes] = useState<KitType[]>([]);
+  const [auditor, setAuditor] = useState<{ id: string; name: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [auditId, setAuditId] = useState<string | null>(draftParam);
+  const [targetKey, setTargetKey] = useState('');
+  const [auditDate, setAuditDate] = useState(todayISO());
+  const [site, setSite] = useState('');
+  const [notes, setNotes] = useState('');
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [lines, setLines] = useState<DraftLine[]>([]);
+  const [vanItems, setVanItems] = useState<KitItemOverview[]>([]);
+  const [addMember, setAddMember] = useState('');
+  const [busy, setBusy] = useState<'draft' | 'submit' | 'target' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [showAddKit, setShowAddKit] = useState(false);
+  const [swapItem, setSwapItem] = useState<KitItemOverview | null>(null);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+
+  const targets = useMemo(() => buildAuditTargets(employees, vehicles), [employees, vehicles]);
+  const allTargets = useMemo(() => [...targets.gangs, ...targets.otherVans], [targets]);
+  const target: AuditTarget | undefined = allTargets.find((t) => t.key === targetKey);
+
+  // ---------------------------------------------------------- load
+  useEffect(() => {
+    (async () => {
+      try {
+        const [ref, who] = await Promise.all([loadAuditReferenceData(), getCurrentAuditor()]);
+        setEmployees(ref.employees);
+        setVehicles(ref.vehicles);
+        setChecklist(ref.checklist);
+        setKitTypes(ref.kitTypes);
+        setAuditor(who);
+        if (draftParam) {
+          const { audit, members: m, lines: l } = await getAudit(draftParam);
+          if (audit.status !== 'draft') {
+            navigate(`/audits/detail?id=${audit.id}`, { replace: true });
+            return;
+          }
+          setTargetKey(audit.ganger_id ? `gang:${audit.ganger_id}` : audit.vehicle_id ? `van:${audit.vehicle_id}` : '');
+          setAuditDate(audit.audit_date);
+          setSite(audit.site_visited ?? '');
+          setNotes(audit.notes ?? '');
+          setMembers(m.map((x) => ({ name: x.name, employee_id: x.employee_id })));
+          setLines(l.map((x) => ({ ...x, key: `row:${x.id}` })));
+          const vk = await loadVanKit(audit.vehicle_id);
+          setVanItems(vk.items);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not load the audit form.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [draftParam, navigate]);
+
+  const pickTarget = async (key: string) => {
+    const touched = lines.some((l) => l.result || l.comment || l.qty);
+    if (touched && !window.confirm('Change who you are auditing? What you have filled in will be cleared.')) return;
+    setTargetKey(key);
+    const t = allTargets.find((x) => x.key === key);
+    if (!t) {
+      setLines([]);
+      setMembers([]);
+      return;
+    }
+    setBusy('target');
+    setError(null);
+    try {
+      const ganger = t.gangerId ? employees.find((e) => e.id === t.gangerId) ?? null : null;
+      const [team, vk] = await Promise.all([loadTeam(ganger, employees), loadVanKit(t.vehicleId)]);
+      setMembers(team);
+      setVanItems(vk.items);
+      setLines([...checklistLines(checklist), ...buildKitLines(kitTypes, vk.list, vk.items)]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load the team.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const update = useCallback((key: string, patch: Partial<DraftLine>) => {
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }, []);
+
+  const reloadKitAfterSwap = async () => {
+    setSwapItem(null);
+    if (!target?.vehicleId) return;
+    const vk = await loadVanKit(target.vehicleId);
+    setVanItems(vk.items);
+    setLines((ls) => {
+      const kept = ls.filter((l) => l.section !== 'kit');
+      const old = ls.filter((l) => l.section === 'kit');
+      const rebuilt = buildKitLines(kitTypes, vk.list, vk.items).map((n) => {
+        const prev = old.find((o) => o.kit_type_id === n.kit_type_id && o.kit_item_id === n.kit_item_id);
+        return prev ? { ...n, result: prev.result, comment: prev.comment, photo_path: prev.photo_path } : n;
+      });
+      const extra = old.filter((o) => !o.kit_item_id && o.key?.startsWith('add:'));
+      return [...kept, ...rebuilt, ...extra];
+    });
+  };
+
+  // ---------------------------------------------------------- save
+  const header = () => ({
+    audit_date: auditDate,
+    audited_by: auditor?.id ?? null,
+    audited_by_name: auditor?.name ?? 'Admin',
+    vehicle_id: target?.vehicleId ?? null,
+    vehicle_reg_snapshot: target?.reg ?? null,
+    ganger_id: target?.gangerId ?? null,
+    ganger_name_snapshot: target?.gangerName ?? null,
+    team_name_snapshot: target?.teamName ?? '',
+    site_visited: site.trim() || null,
+    notes: notes.trim() || null,
+    is_test: TEST_MODE,
+  });
+
+  const save = async (): Promise<string | null> => {
+    if (!target) {
+      setError('Choose who you are auditing first.');
+      return null;
+    }
+    const id = await saveDraftAudit(auditId, header(), members, lines);
+    setAuditId(id);
+    return id;
+  };
+
+  const onSaveDraft = async () => {
+    setBusy('draft');
+    setError(null);
+    try {
+      if (await save()) setSavedAt(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the draft.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onSubmit = async () => {
+    setConfirmSubmit(false);
+    setBusy('submit');
+    setError(null);
+    try {
+      const id = await save();
+      if (!id) return;
+      await submitAudit(id);
+      navigate(`/audits/detail?id=${id}`, { replace: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not submit the audit.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const summary = summariseAuditLines(lines, auditDate);
+
+  if (loading) return <LoadingSpinner />;
+
+  const memberOptions = employees.filter((e) => !members.some((m) => m.employee_id === e.id));
+
+  return (
+    <div className="space-y-4 pb-28 sm:pb-6 max-w-4xl mx-auto">
+      <TestModeBanner />
+      <ErrorNote message={error} />
+
+      {/* ------------------------------------------------ header */}
+      <section className={`${card} p-4 sm:p-5 space-y-4`}>
+        <Field label="Audit who?">
+          {(id) => (
+            <select id={id} className={`${inputCls} text-base`} value={targetKey} onChange={(e) => pickTarget(e.target.value)} disabled={busy === 'target'}>
+              <option value="">Choose a gang or van…</option>
+              <optgroup label="Gangs">
+                {targets.gangs.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </optgroup>
+              <optgroup label="Other vans">
+                {targets.otherVans.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
+              </optgroup>
+            </select>
+          )}
+        </Field>
+
+        {busy === 'target' && <p className="text-sm text-slate-600">Loading team and kit…</p>}
+
+        {target && (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-semibold text-slate-600 mb-1">Van reg</p>
+                <p className="min-h-[44px] flex items-center gap-2 px-3 rounded-lg bg-slate-50 border border-slate-200 text-sm font-semibold text-slate-900">
+                  <Truck className="h-4 w-4 text-slate-500" />{target.reg ?? 'No van assigned'}
+                </p>
+              </div>
+              <Field label="Date">
+                {(id) => <input id={id} type="date" className={inputCls} value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />}
+              </Field>
+              <div>
+                <p className="text-xs font-semibold text-slate-600 mb-1">Audited by</p>
+                <p className="min-h-[44px] flex items-center px-3 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-900 truncate">{auditor?.name ?? '—'}</p>
+              </div>
+              <Field label="Site visited">
+                {(id) => <input id={id} className={inputCls} value={site} onChange={(e) => setSite(e.target.value)} placeholder="Street / job" />}
+              </Field>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-600 mb-2 flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />Team · {target.teamName}</p>
+              <ul className="flex flex-wrap gap-2" aria-label="Team members">
+                {members.map((m, i) => (
+                  <li key={`${m.name}:${i}`} className="inline-flex items-center gap-1 pl-3 pr-1 min-h-[40px] rounded-full bg-blue-50 border border-blue-200 text-sm text-blue-800">
+                    {m.name}
+                    <button type="button" aria-label={`Remove ${m.name}`} onClick={() => setMembers(members.filter((_, j) => j !== i))} className="p-2 rounded-full hover:bg-blue-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+                {members.length === 0 && <li className="text-sm text-slate-500">No members yet</li>}
+              </ul>
+              <div className="flex gap-2 mt-2">
+                <label className="sr-only" htmlFor="add-member">Add a member</label>
+                <input
+                  id="add-member"
+                  list="member-options"
+                  className={inputCls}
+                  placeholder="Add a member…"
+                  value={addMember}
+                  onChange={(e) => setAddMember(e.target.value)}
+                />
+                <datalist id="member-options">
+                  {memberOptions.map((e) => <option key={e.id} value={e.full_name} />)}
+                </datalist>
+                <button
+                  type="button"
+                  className={btn.secondary}
+                  onClick={() => {
+                    const name = addMember.trim();
+                    if (!name) return;
+                    const emp = employees.find((e) => e.full_name.toLowerCase() === name.toLowerCase());
+                    setMembers([...members, { name: emp?.full_name ?? name, employee_id: emp?.id ?? null }]);
+                    setAddMember('');
+                  }}
+                >
+                  <Plus className="h-4 w-4" />Add
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ------------------------------------------------ sections */}
+      {target && SECTIONS.map((s) => {
+        const sl = lines.filter((l) => l.section === s.key);
+        return (
+          <section key={s.key} className={card} aria-labelledby={`sec-${s.key}`}>
+            <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex flex-wrap items-baseline gap-x-2">
+              <h2 id={`sec-${s.key}`} className="text-base font-bold text-slate-900">{s.title}</h2>
+              {s.note && <span className="text-xs text-slate-500">{s.note}</span>}
+            </div>
+            <ul className="divide-y divide-slate-200">
+              {sl.map((l) => (
+                <LineRow
+                  key={l.key}
+                  line={l}
+                  auditDate={auditDate}
+                  onChange={(p) => update(l.key!, p)}
+                  onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
+                  onSwap={
+                    s.key === 'kit' && l.kit_item_id && target.vehicleId
+                      ? () => setSwapItem(vanItems.find((v) => v.id === l.kit_item_id) ?? null)
+                      : undefined
+                  }
+                  onError={setError}
+                />
+              ))}
+            </ul>
+            {s.key === 'kit' && (
+              <div className="px-4 sm:px-5 py-3 border-t border-slate-200 flex flex-col sm:flex-row gap-2">
+                <button type="button" className={btn.secondary} onClick={() => setShowAddKit(true)} disabled={!target.vehicleId}>
+                  <Plus className="h-4 w-4" />Add kit to van
+                </button>
+                {!target.vehicleId && <p className="text-xs text-slate-500 self-center">This gang has no van assigned, so kit can’t be added to a van.</p>}
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      {target && (
+        <section className={`${card} p-4 sm:p-5`}>
+          <Field label="Additional kit required / notes for Neil & Sam">
+            {(id) => <textarea id={id} rows={3} className={`${inputCls} py-2`} value={notes} onChange={(e) => setNotes(e.target.value)} />}
+          </Field>
+        </section>
+      )}
+
+      {/* ------------------------------------------------ summary + actions (sticky on phone) */}
+      {target && (
+        <div className="fixed sm:static bottom-0 inset-x-0 z-40 bg-white border-t sm:border border-slate-200 sm:rounded-xl px-4 py-3 shadow-lg sm:shadow-none">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-900" aria-live="polite">
+              <span className={summary.fails ? 'text-red-700' : ''}>{summary.fails} fail{summary.fails === 1 ? '' : 's'}</span>,{' '}
+              <span className={summary.expired ? 'text-red-700' : ''}>{summary.expired} expired</span>,{' '}
+              <span className={summary.dueSoon ? 'text-amber-800' : ''}>{summary.dueSoon} due soon</span>
+              {savedAt && <span className="ml-2 text-xs font-normal text-slate-500">Draft saved {savedAt}</span>}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" className={`${btn.secondary} flex-1 sm:flex-none`} onClick={onSaveDraft} disabled={!!busy}>
+                <Save className="h-4 w-4" />{busy === 'draft' ? 'Saving…' : 'Save draft'}
+              </button>
+              <button type="button" className={`${btn.primary} flex-1 sm:flex-none`} onClick={() => setConfirmSubmit(true)} disabled={!!busy}>
+                <Send className="h-4 w-4" />{busy === 'submit' ? 'Submitting…' : 'Submit audit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddKit && (
+        <AddKitSheet
+          mode="audit"
+          kitTypes={kitTypes}
+          vehicles={vehicles}
+          vanReg={target?.reg}
+          onClose={() => setShowAddKit(false)}
+          onTypeCreated={(t) => setKitTypes((ts) => [...ts, t])}
+          onAddLine={(n) => {
+            setLines((ls) => [
+              ...ls,
+              {
+                key: newKey('add'),
+                section: 'kit',
+                kit_type_id: n.kitTypeId,
+                item_name: n.typeName,
+                kit_item_id: null,
+                plant_no_snapshot: n.plantNo,
+                service_date: n.serviceDate,
+                expiry_date: n.expiryDate,
+                result: null,
+                comment: '',
+              },
+            ]);
+            setShowAddKit(false);
+          }}
+        />
+      )}
+      {swapItem && (
+        <SwapKitSheet item={swapItem} vehicles={vehicles} onClose={() => setSwapItem(null)} onSaved={reloadKitAfterSwap} />
+      )}
+      {confirmSubmit && (
+        <Sheet
+          title="Submit this audit?"
+          subtitle="It becomes a fixed record and can’t be edited. Kit lines update the Kit & Plant list."
+          onClose={() => setConfirmSubmit(false)}
+          footer={
+            <>
+              <button type="button" className={btn.secondary} onClick={() => setConfirmSubmit(false)}>Keep editing</button>
+              <button type="button" className={btn.primary} onClick={onSubmit}>Submit audit</button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-700">
+            {target?.teamName} · {target?.reg ?? 'no van'} · {summary.fails} fails, {summary.expired} expired, {summary.dueSoon} due soon.
+          </p>
+        </Sheet>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- one line
+
+function LineRow({
+  line,
+  auditDate,
+  onChange,
+  onRemove,
+  onSwap,
+  onError,
+}: {
+  line: DraftLine;
+  auditDate: string;
+  onChange: (p: Partial<DraftLine>) => void;
+  onRemove?: () => void;
+  onSwap?: () => void;
+  onError: (m: string | null) => void;
+}) {
+  const [showComment, setShowComment] = useState(!!line.comment);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const notCarried = line.result === 'not_carried';
+  const isKit = line.section === 'kit';
+  const isHs = line.section === 'hs';
+  const commentOpen = showComment || line.result === 'N';
+
+  const onPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    onError(null);
+    try {
+      const path = await uploadAuditFile(file, 'lines');
+      onChange({ photo_path: path });
+      setPreview(URL.createObjectURL(file));
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Photo upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <li className={`px-4 sm:px-5 py-3 ${notCarried ? 'bg-slate-50' : ''}`}>
+      <div className="flex flex-col lg:flex-row lg:items-start gap-3">
+        <div className="lg:w-48 flex-shrink-0">
+          <p className={`text-sm font-bold ${notCarried ? 'text-slate-500' : 'text-slate-900'}`}>{line.item_name}</p>
+          {line.expected_qty && <p className="text-xs text-slate-500">{line.expected_qty}</p>}
+          {notCarried && <p className="text-xs font-semibold text-slate-600 mt-0.5">Not carried on this van</p>}
+        </div>
+
+        {!notCarried && (
+          <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
+            <div className="col-span-2 sm:col-span-1">
+              <p className="text-xs font-semibold text-slate-600 mb-1">Fit for purpose</p>
+              <YesNo value={line.result} label={line.item_name} onChange={(v) => onChange({ result: v })} />
+            </div>
+            {isKit ? (
+              <>
+                <Field label="Plant no">
+                  {(id) => <input id={id} className={inputCls} value={line.plant_no_snapshot ?? ''} onChange={(e) => onChange({ plant_no_snapshot: e.target.value })} />}
+                </Field>
+                <Field label="Service date">
+                  {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => onChange({ service_date: e.target.value || null })} />}
+                </Field>
+              </>
+            ) : (
+              <Field label="Qty">
+                {(id) => <input id={id} inputMode="numeric" className={inputCls} value={line.qty ?? ''} onChange={(e) => onChange({ qty: e.target.value })} />}
+              </Field>
+            )}
+            {(line.section === 'ppe' || isKit) && (
+              <ExpiryInput line={line} auditDate={auditDate} onChange={onChange} />
+            )}
+            {line.section === 'other' && (
+              <Field label="Date / tag / label" className="col-span-2 sm:col-span-1">
+                {(id) => <input id={id} className={inputCls} value={line.date_tag ?? ''} onChange={(e) => onChange({ date_tag: e.target.value })} />}
+              </Field>
+            )}
+            {isHs && <div className="hidden sm:block" />}
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mt-2">
+        {!commentOpen && !notCarried && (
+          <button type="button" className={btn.small} onClick={() => setShowComment(true)}>
+            <MessageSquare className="h-3.5 w-3.5" />Comment
+          </button>
+        )}
+        {isKit && (
+          <button
+            type="button"
+            className={btn.small}
+            aria-pressed={notCarried}
+            onClick={() => onChange({ result: notCarried ? null : 'not_carried' })}
+          >
+            <Ban className="h-3.5 w-3.5" />{notCarried ? 'Carried on this van' : 'Not carried on this van'}
+          </button>
+        )}
+        {onSwap && !notCarried && (
+          <button type="button" className={btn.small} onClick={onSwap}>
+            <ArrowLeftRight className="h-3.5 w-3.5" />Swap kit
+          </button>
+        )}
+        {onRemove && (
+          <button type="button" className={btn.small} onClick={onRemove}>
+            <X className="h-3.5 w-3.5" />Remove line
+          </button>
+        )}
+      </div>
+
+      {commentOpen && !notCarried && (
+        <div className="mt-2 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+          <Field label={line.result === 'N' ? 'What’s wrong? (comment)' : 'Comment'}>
+            {(id) => <textarea id={id} rows={2} className={`${inputCls} py-2`} value={line.comment ?? ''} onChange={(e) => onChange({ comment: e.target.value })} />}
+          </Field>
+          {line.result === 'N' && (
+            <div className="flex items-center gap-2">
+              {preview && <img src={preview} alt={`Photo of ${line.item_name}`} className="h-11 w-11 rounded-lg object-cover border border-slate-200" />}
+              <label className={`${btn.secondary} ${uploading ? 'opacity-50' : ''}`}>
+                <Camera className="h-4 w-4" />
+                {uploading ? 'Uploading…' : line.photo_path ? 'Change photo' : 'Photo (optional)'}
+                <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => onPhoto(e.target.files?.[0])} />
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+function ExpiryInput({ line, auditDate, onChange }: { line: DraftLine; auditDate: string; onChange: (p: Partial<DraftLine>) => void }) {
+  const [open, setOpen] = useState(!!line.expiry_date);
+  if (!open && !line.expiry_date) {
+    return (
+      <div>
+        <p className="text-xs font-semibold text-slate-600 mb-1">Expiry</p>
+        <button type="button" className={`${btn.secondary} w-full`} onClick={() => setOpen(true)} aria-label={`${line.item_name} expiry: N/A, tap to add a date`}>
+          N/A · add date
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 gap-2">
+        <label htmlFor={`exp-${line.key}`} className="text-xs font-semibold text-slate-600">Expiry</label>
+        <ExpiryPill expiry={line.expiry_date} today={auditDate} />
+      </div>
+      <div className="flex gap-1">
+        <input
+          id={`exp-${line.key}`}
+          type="date"
+          className={inputCls}
+          value={line.expiry_date ?? ''}
+          onChange={(e) => onChange({ expiry_date: e.target.value || null })}
+        />
+        <button
+          type="button"
+          aria-label={`Set ${line.item_name} expiry back to N/A`}
+          onClick={() => {
+            onChange({ expiry_date: null });
+            setOpen(false);
+          }}
+          className="min-w-[44px] min-h-[44px] rounded-lg border border-slate-300 text-slate-500 hover:bg-slate-50 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}

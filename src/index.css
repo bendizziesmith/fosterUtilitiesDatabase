@@ -163,3 +163,8 @@ html.dark ::-webkit-scrollbar { width: 10px; height: 10px; }
 html.dark ::-webkit-scrollbar-track { background: #0f172a; }
 html.dark ::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
 html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+/* Violet tint (Kit & Plant card / spares badges) — same treatment as the other status tints */
+html.dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.18) !important; }
+html.dark .text-violet-700, html.dark .text-violet-800 { color: #c4b5fd !important; }
+html.dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.4) !important; }

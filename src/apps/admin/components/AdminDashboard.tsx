@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ClipboardList,
+  ClipboardCheck,
   Users,
   ArrowRight,
   Shield,
   FileText,
+  Wrench,
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
+import { getDashboardCounts } from '../../../lib/siteAuditService';
 
 interface AdminDashboardProps {
   inspections: VehicleInspection[];
@@ -59,10 +62,67 @@ const navCards = [
     hoverArrow: 'group-hover:text-slate-500',
     path: '/management',
   },
+  {
+    title: 'Site Audits',
+    subtitle: 'Gang audits: PPE, health & safety, kit',
+    icon: ClipboardCheck,
+    iconBg: 'bg-red-50',
+    iconColor: 'text-red-600',
+    hoverBorder: 'hover:border-red-300',
+    hoverShadow: 'hover:shadow-red-100/50',
+    hoverArrow: 'group-hover:text-red-500',
+    path: '/audits',
+  },
+  {
+    title: 'Kit & Plant',
+    subtitle: "All kit and who it's assigned to",
+    icon: Wrench,
+    iconBg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
+    hoverBorder: 'hover:border-violet-300',
+    hoverShadow: 'hover:shadow-violet-100/50',
+    hoverArrow: 'group-hover:text-violet-500',
+    path: '/kit',
+  },
 ];
+
+type Counts = Awaited<ReturnType<typeof getDashboardCounts>>;
+
+const Badge: React.FC<{ n: number; label: string; cls: string }> = ({ n, label, cls }) => (
+  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls}`}>
+    {n} {label}
+  </span>
+);
+
+function cardBadges(path: string, c: Counts | null) {
+  if (!c) return null;
+  if (path === '/audits') {
+    if (!c.expired && !c.dueSoon) return null;
+    return (
+      <>
+        {c.expired > 0 && <Badge n={c.expired} label="expired" cls="bg-red-50 text-red-700 border-red-200" />}
+        {c.dueSoon > 0 && <Badge n={c.dueSoon} label="due soon" cls="bg-amber-50 text-amber-800 border-amber-200" />}
+      </>
+    );
+  }
+  if (path === '/kit') {
+    return (
+      <>
+        <Badge n={c.onVans} label="on vans" cls="bg-slate-100 text-slate-700 border-slate-200" />
+        <Badge n={c.spares} label="spares" cls="bg-violet-50 text-violet-700 border-violet-200" />
+      </>
+    );
+  }
+  return null;
+}
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const navigate = useNavigate();
+  const [counts, setCounts] = useState<Counts | null>(null);
+
+  useEffect(() => {
+    getDashboardCounts().then(setCounts).catch(() => setCounts(null));
+  }, []);
 
   return (
     <div>
@@ -72,6 +132,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {navCards.map((card) => {
           const Icon = card.icon;
+          const badges = cardBadges(card.path, counts);
           return (
             <button
               key={card.path}
@@ -90,6 +151,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                     <p className="text-[11px] text-slate-400 mt-0.5">
                       {card.subtitle}
                     </p>
+                    {badges && <div className="flex flex-wrap gap-1.5 mt-1.5">{badges}</div>}
                   </div>
                 </div>
                 <ArrowRight
