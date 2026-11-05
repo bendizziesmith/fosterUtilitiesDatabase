@@ -24,6 +24,8 @@ import {
   todayISO,
   applyServiceDate,
   applyExpiry,
+  mergeKitLinesAfterSwap,
+  restoreDraftLines,
   otherAnswerFor,
   sectionProgress,
   unansweredLines,
@@ -138,7 +140,10 @@ export const NewAuditForm: React.FC = () => {
           setSite(audit.site_visited ?? '');
           setNotes(audit.notes ?? '');
           setMembers(m.map((x) => ({ name: x.name, employee_id: x.employee_id })));
-          setLines(l.map((x) => ({ ...x, key: `row:${x.id}` })));
+          // remember which expiry dates were typed, so a later service-date change doesn't overwrite them
+          setLines(restoreDraftLines(l, (x) => (x.section === 'kit'
+            ? ref.kitTypes.find((t) => t.id === x.kit_type_id)?.service_interval_months
+            : ref.checklist.find((c) => c.id === x.checklist_item_id)?.service_interval_months)));
           setPhotos(ph.map((x, i) => ({ ...x, key: `photo:${x.id ?? i}` })));
           const rec = await loadHolderRecord({ kind: person ? 'person' : 'spare_van', personId: person, vehicleId: audit.vehicle_id });
           setVanItems(rec.heldKit);
@@ -211,16 +216,8 @@ export const NewAuditForm: React.FC = () => {
     const rec = await loadHolderRecord(target);
     const vk = { list: rec.notCarried, items: rec.heldKit };
     setVanItems(rec.heldKit);
-    setLines((ls) => {
-      const kept = ls.filter((l) => l.section !== 'kit');
-      const old = ls.filter((l) => l.section === 'kit');
-      const rebuilt = buildKitLines(kitTypes, vk.list, vk.items).map((n) => {
-        const prev = old.find((o) => o.kit_type_id === n.kit_type_id && o.kit_item_id === n.kit_item_id);
-        return prev ? { ...n, result: prev.result, comment: prev.comment, photo_path: prev.photo_path } : n;
-      });
-      const extra = old.filter((o) => !o.kit_item_id && o.key?.startsWith('add:'));
-      return [...kept, ...rebuilt, ...extra];
-    });
+    // keep everything already on screen (dates, plant nos, answers); only the swapped row changes
+    setLines((ls) => [...ls.filter((l) => l.section !== 'kit'), ...mergeKitLinesAfterSwap(ls, buildKitLines(kitTypes, vk.list, vk.items))]);
   };
 
   // ---------------------------------------------------------- save

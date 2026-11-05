@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  mergeKitLinesAfterSwap,
+  restoreDraftLines,
   expiryWording,
   spareOptions,
   sectionProgress,
@@ -778,5 +780,56 @@ describe('spareOptions — replacements from the Yard Lockup AND spare vans (rou
   it('the swap preview says where the spare came from', () => {
     expect(previewSwap({ plant_no: 'C-1', type_name: 'CAT', vehicle_reg: 'Dom Oliver · YE24 TNL' }, { destination: 'spare' }, { mode: 'spare', plantNo: 'V1', from: 'WV72 OZL · spare van' }).incoming)
       .toBe('V1 (from WV72 OZL · spare van) → on Dom Oliver · YE24 TNL');
+  });
+});
+
+describe('round 12 bug: dates changed on the audit form must be what is saved', () => {
+  const kitTypes = [{ id: 't-floor', name: 'Floor saw', sort_order: 60 }, { id: 't-brk', name: 'Breaker', sort_order: 70 }, { id: 't-wp', name: 'Water pump', sort_order: 90 }];
+  const record = [
+    { id: 'k-floor', kit_type_id: 't-floor', plant_no: '1654', service_date: null, expiry_date: '2026-11-05' },
+    { id: 'k-brk', kit_type_id: 't-brk', plant_no: '166456', service_date: '2025-11-28', expiry_date: '2026-11-28' },
+    { id: 'k-wp', kit_type_id: 't-wp', plant_no: 'WP-1', service_date: null, expiry_date: null },
+  ];
+  // what the person did on screen: answered, then changed the dates
+  const onScreen = buildKitLines(kitTypes, [], record).map((l) => {
+    if (l.kit_item_id === 'k-floor') {
+      const s = applyServiceDate({ serviceDate: null, expiry: l.expiry_date, expiryManual: false }, '2026-12-05', 12);
+      return { ...l, result: 'Y' as const, service_date: s.serviceDate, expiry_date: s.expiry, expiryManual: s.expiryManual };
+    }
+    if (l.kit_item_id === 'k-brk') {
+      const s = applyExpiry({ serviceDate: l.service_date ?? null, expiry: l.expiry_date, expiryManual: false }, '2027-11-05');
+      return { ...l, result: 'Y' as const, expiry_date: s.expiry, expiryManual: s.expiryManual };
+    }
+    return { ...l, result: 'Y' as const };
+  });
+
+  it('a swap in the form (Water pump) no longer puts the record’s old dates back on the other kit rows', () => {
+    // after the swap the record has a new water pump; the other items are unchanged in the database
+    const afterSwap = buildKitLines(kitTypes, [], [record[0], record[1], { id: 'k-wp2', kit_type_id: 't-wp', plant_no: 'WP-2', service_date: '2026-11-01', expiry_date: '2027-11-01' }]);
+    const merged = mergeKitLinesAfterSwap(onScreen, afterSwap);
+    expect(merged.find((l) => l.kit_item_id === 'k-floor')).toMatchObject({ result: 'Y', service_date: '2026-12-05', expiry_date: '2027-12-05' });
+    expect(merged.find((l) => l.kit_item_id === 'k-brk')).toMatchObject({ result: 'Y', service_date: '2025-11-28', expiry_date: '2027-11-05', expiryManual: true });
+    // the swapped-in item shows its own record values
+    expect(merged.find((l) => l.kit_type_id === 't-wp')).toMatchObject({ kit_item_id: 'k-wp2', plant_no_snapshot: 'WP-2', expiry_date: '2027-11-01', result: null });
+  });
+
+  it('kit added on the form (no record yet) stays after a swap', () => {
+    const added = { key: 'add:1', section: 'kit' as const, kit_type_id: 't-brk', item_name: 'Breaker', kit_item_id: null, plant_no_snapshot: 'B-NEW', service_date: '2026-11-05', expiry_date: '2027-11-05', result: 'Y' as const, comment: '' };
+    const merged = mergeKitLinesAfterSwap([...onScreen, added], buildKitLines(kitTypes, [], record));
+    expect(merged.filter((l) => l.key === 'add:1')).toHaveLength(1);
+  });
+
+  it('Continue a draft: a typed expiry stays typed, so a later service-date change does not overwrite it', () => {
+    const months = (l: { kit_type_id?: string | null }) => (l.kit_type_id ? 12 : null);
+    const reopened = restoreDraftLines([
+      { section: 'kit', kit_type_id: 't-brk', item_name: 'Breaker', result: 'Y', service_date: '2025-11-28', expiry_date: '2027-11-05' },
+      { section: 'kit', kit_type_id: 't-floor', item_name: 'Floor saw', result: 'Y', service_date: '2026-12-05', expiry_date: '2027-12-05' },
+    ] as never[], months);
+    expect(reopened[0].expiryManual).toBe(true); // 2027-11-05 is not service + 12 months: it was typed
+    expect(reopened[1].expiryManual).toBe(false); // it is the automatic date
+    const changed = applyServiceDate({ serviceDate: reopened[0].service_date ?? null, expiry: reopened[0].expiry_date, expiryManual: !!reopened[0].expiryManual }, '2026-11-05', 12);
+    expect(changed.expiry).toBe('2027-11-05');
+    const changed2 = applyServiceDate({ serviceDate: reopened[1].service_date ?? null, expiry: reopened[1].expiry_date, expiryManual: !!reopened[1].expiryManual }, '2026-12-20', 12);
+    expect(changed2.expiry).toBe('2027-12-20');
   });
 });

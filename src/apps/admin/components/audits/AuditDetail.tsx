@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Download, Loader2 } from 'lucide-react';
+import { Lock, Download, Loader2, Check } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { getAudit, getAuditFileUrl } from '../../../../lib/siteAuditService';
+import { getAudit, getAuditFileUrl, listLineFollowups } from '../../../../lib/siteAuditService';
+import { followupText, resolutionBadges, resolutionFrom, LineFollowup } from '../../../../lib/followupLogic';
 import { downloadAuditPdf } from '../../../../lib/auditDownloads';
 import { useActor } from './useActor';
-import { getExpiryStatus, summariseAuditLines, whoName, otherAnswerFor, isFileDeleted, FileDeletion } from '../../../../lib/siteAuditLogic';
+import { getExpiryStatus, summariseAuditLines, whoName, otherAnswerFor, isFileDeleted, todayISO, FileDeletion } from '../../../../lib/siteAuditLogic';
 import { FileLink } from './FileLink';
 import { AuditEditPanel } from './AuditEditPanel';
 import { DeleteAuditSheet } from './FleetSheets';
@@ -14,7 +15,7 @@ import { ActorPicker } from './ActorPicker';
 import { btn } from './styles';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { AuditLineRow, AuditMemberRow, AuditPhotoRow, AuditPhotoSlot, Auditor, SiteAudit } from '../../../../lib/supabase';
-import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag, Sheet, Field } from './ui';
+import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag, Sheet, Field, ResolutionBadgeList } from './ui';
 import { card, inputCls, formatDate, formatDateTime } from './styles';
 
 const SECTIONS: { key: AuditLineRow['section']; title: string }[] = [
@@ -45,14 +46,29 @@ function LabelOn({ v }: { v: AuditLineRow['label_on'] }) {
   return <span className="text-xs text-slate-600">—</span>;
 }
 
-function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor, otherAnswer, isDated, hasGauge }: {
+function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor, otherAnswer, isDated, hasGauge, followups }: {
   title: string; lines: AuditLineRow[]; auditDate: string; section: AuditLineRow['section'];
   deletions: FileDeletion[]; auditors: Auditor[]; onFileDeleted: () => void; dateLabelFor: (l: AuditLineRow) => string | null;
   otherAnswer: (l: AuditLineRow) => 'label' | 'date_tag' | 'none';
   isDated: (l: AuditLineRow) => boolean;
   hasGauge: (l: AuditLineRow) => boolean;
+  /** what has happened to each line's item since the audit */
+  followups: Map<string, LineFollowup>;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const today = todayISO();
+  /** "Re-serviced 05 Nov by Christina Pearson · now OK until 20 Nov 2027", with a green Resolved badge */
+  const since = (l: AuditLineRow) => {
+    const f = followups.get(l.id);
+    const t = f ? followupText(f, today) : null;
+    if (!t) return null;
+    return (
+      <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs font-normal text-slate-700">
+        {t.resolved && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border bg-green-50 text-green-700 border-green-200"><Check className="h-3 w-3" aria-hidden="true" strokeWidth={3} />Resolved</span>}
+        <span>{t.text}</span>
+      </span>
+    );
+  };
   const flagged = lines.filter((l) => needsLook(l, auditDate));
   const rest = lines.filter((l) => !needsLook(l, auditDate));
   const isKit = section === 'kit';
@@ -69,7 +85,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
 
   const cells = (l: AuditLineRow) => (
     <>
-      <td className="px-5 py-2.5 font-semibold text-slate-900">{l.item_name}{l.expected_qty && <span className="block text-xs font-normal text-slate-600">{l.expected_qty}</span>}</td>
+      <td className="px-5 py-2.5 font-semibold text-slate-900">{l.item_name}{l.expected_qty && <span className="block text-xs font-normal text-slate-600">{l.expected_qty}</span>}{since(l)}</td>
       <td className="px-3 py-2.5"><Result r={l.result} /></td>
       {isKit ? (
         <>
@@ -146,6 +162,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
             {l.gauge && <p className="text-xs mt-1">Pressure gauge: <GaugeText v={l.gauge} /></p>}
             {l.label_on === 'N' && <p className="text-xs font-semibold text-red-700 mt-1">No label</p>}
             {l.comment && <p className="text-xs text-slate-700 mt-1">“{l.comment}”</p>}
+            {since(l)}
             {photo(l)}
           </li>
         ))}
@@ -175,6 +192,7 @@ export const AuditDetail: React.FC = () => {
   const hasGauge = (l: AuditLineRow) => l.section === 'hs' && !!ref.checklist.find((c) => c.id === l.checklist_item_id)?.has_gauge;
   const { actor } = useActor(ref.auditors);
   const [pdf, setPdf] = useState<string | null>(null);
+  const [followups, setFollowups] = useState<LineFollowup[]>([]);
   const [edits, setEdits] = useState<AuditEditRow[]>([]);
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [flash, setFlash] = useState<string | null>(null);
@@ -183,6 +201,7 @@ export const AuditDetail: React.FC = () => {
     if (!id) return;
     getAudit(id).then(setData).catch((e) => setError(e.message));
     listAuditEdits(id).then(setEdits).catch(() => setEdits([]));
+    listLineFollowups(id).then(setFollowups).catch(() => setFollowups([]));
   }, [id]);
   useEffect(() => {
     load();
@@ -193,6 +212,7 @@ export const AuditDetail: React.FC = () => {
   if (!data) return <LoadingSpinner />;
 
   const { audit, members, lines, photos } = data;
+  const followupMap = new Map(followups.map((f) => [f.line_id as string, f]));
   const s = summariseAuditLines(lines, audit.audit_date);
   const onPdf = async () => {
     setPdf('Making the PDF…');
@@ -248,10 +268,8 @@ export const AuditDetail: React.FC = () => {
           </div>
         </dl>
         <div className="flex flex-wrap gap-2 mt-4">
-          <CountBadge n={s.fails} label={s.fails === 1 ? 'fail' : 'fails'} tone={s.fails ? 'red' : 'slate'} />
-          <CountBadge n={s.expired} label="expired" tone={s.expired ? 'red' : 'slate'} />
-          <CountBadge n={s.dueSoon} label="due soon" tone={s.dueSoon ? 'amber' : 'slate'} />
-          {s.toLookAt > 0 && <CountBadge n={s.toLookAt} label="to look at" tone="amber" />}
+          {/* found on the day; "· resolved" once fixed since */}
+          <ResolutionBadgeList badges={resolutionBadges({ fail_count: s.fails, expired_count: s.expired, due_soon_count: s.dueSoon, look_count: s.toLookAt }, resolutionFrom(followups))} />
         </div>
         <div className="flex flex-wrap items-center gap-2 mt-4">
           <button type="button" className={btn.secondary} onClick={onPdf} disabled={!!pdf}>
@@ -289,7 +307,8 @@ export const AuditDetail: React.FC = () => {
 
       {mode !== 'edit' && SECTIONS.map((sec) => (
         <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)}
-          deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} otherAnswer={otherAnswer} isDated={isDated} hasGauge={hasGauge} />
+          deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} otherAnswer={otherAnswer} isDated={isDated} hasGauge={hasGauge}
+          followups={followupMap} />
       ))}
 
       <section className={`${card} p-4 sm:p-5`}>

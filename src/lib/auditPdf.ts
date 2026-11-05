@@ -271,6 +271,8 @@ export interface AuditPdfSource {
   photos: Parameters<typeof buildAuditReport>[0]['photos'];
   slots: Parameters<typeof buildAuditReport>[0]['slots'];
   edits: Parameters<typeof buildAuditReport>[0]['edits'];
+  /** what has happened since, per line id */
+  since?: Parameters<typeof buildAuditReport>[0]['since'];
 }
 
 export async function buildAuditPdfBlob(src: AuditPdfSource, company: string, generatedBy: string, getUrl: (p: string) => Promise<string>,

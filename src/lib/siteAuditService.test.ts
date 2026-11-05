@@ -94,6 +94,23 @@ describe('saveDraftAudit', () => {
     expect(H.calls.filter((c) => c.op === 'delete').map((c) => c.table).sort()).toEqual(['audit_lines', 'audit_members', 'audit_photos']);
   });
 
+  it('round 12: Save draft sends exactly the dates on screen (edited, auto-filled, or cleared)', async () => {
+    H.calls = [];
+    await svc.saveDraftAudit('a1', header, [], [
+      { section: 'kit', item_name: 'Floor saw', kit_type_id: 't-f', kit_item_id: 'k-f', result: 'Y', plant_no_snapshot: '1654', service_date: '2026-12-05', expiry_date: '2027-12-05', expiryManual: false },
+      { section: 'kit', item_name: 'Breaker', kit_type_id: 't-b', kit_item_id: 'k-b', result: 'Y', plant_no_snapshot: '166456', service_date: '2025-11-28', expiry_date: null },
+      { section: 'hs', item_name: 'Fire ext 2KG dry powder', checklist_item_id: 'c-fire', result: 'Y', service_date: '2026-11-04', expiry_date: '2027-11-04', gauge: 'green' },
+    ]);
+    const ins = H.calls.find((c) => c.table === 'audit_lines' && c.op === 'insert')!;
+    expect((ins.payload as Record<string, unknown>[]).map((r) => [r.item_name, r.service_date, r.expiry_date])).toEqual([
+      ['Floor saw', '2026-12-05', '2027-12-05'],
+      ['Breaker', '2025-11-28', null],
+      ['Fire ext 2KG dry powder', '2026-11-04', '2027-11-04'],
+    ]);
+    // the local-only "typed by hand" flag is never sent
+    expect((ins.payload as Record<string, unknown>[]).some((r) => 'expiryManual' in r)).toBe(false);
+  });
+
   it('round 9: Save draft keeps the photos already uploaded (slot photos, reasons, additional with caption)', async () => {
     H.calls = [];
     await svc.saveDraftAudit('a1', header, [], [], [

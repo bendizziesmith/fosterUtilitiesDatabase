@@ -96,3 +96,12 @@ describe('CSV columns', () => {
     expect(csv[2]).toBe('Other,Bin bags,10,,');
   });
 });
+
+describe('round 12: the PDF shows the same "Now:" line', () => {
+  it('appends what has happened since to that line, with RESOLVED in words', () => {
+    const r = buildAuditReport({ audit, lines: [{ ...(lines[3] as object), id: 'cat-line' }] as never[], photos: [], slots: [], edits: [], company: 'Foster Utilities', generatedBy: 'X',
+      now: new Date('2026-11-06T12:00:00Z'), since: new Map([['cat-line', { text: 'Re-serviced 05 Nov by Christina Pearson · now OK until 20 Nov 2027', resolved: true }]]) });
+    const cells = r.sections.find((s) => s.key === 'kit')!.rows[0].cells;
+    expect(cells[cells.length - 1]).toBe('RESOLVED · Now: Re-serviced 05 Nov by Christina Pearson · now OK until 20 Nov 2027');
+  });
+});

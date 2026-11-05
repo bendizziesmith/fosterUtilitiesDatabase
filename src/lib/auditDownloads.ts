@@ -3,7 +3,8 @@
  * Read-only: nothing here writes to the database.
  */
 import { supabase, AuditPpeItem, KitItemOverview } from './supabase';
-import { getAudit, getAuditFileUrl, listKit, loadAuditReferenceData } from './siteAuditService';
+import { getAudit, getAuditFileUrl, listKit, listLineFollowups, loadAuditReferenceData } from './siteAuditService';
+import { followupText } from './followupLogic';
 import { listAuditEdits, getCompanyName } from './fleetService';
 import { listLockup } from './lockupService';
 import { holderKey, holderLabel } from './siteAuditLogic';
@@ -12,13 +13,21 @@ import { AuditPdfSource, HolderSheet, buildAuditPdfBlob, downloadAuditsZip, down
 import { todayISO } from './siteAuditLogic';
 
 export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
-  const [{ audit, lines, photos }, edits, ref] = await Promise.all([getAudit(id), listAuditEdits(id).catch(() => []), loadAuditReferenceData()]);
+  const [{ audit, lines, photos }, edits, ref, followups] = await Promise.all([
+    getAudit(id), listAuditEdits(id).catch(() => []), loadAuditReferenceData(), listLineFollowups(id).catch(() => []),
+  ]);
+  const since = new Map<string, { text: string; resolved: boolean | null }>();
+  for (const f of followups) {
+    const t = followupText(f, todayISO());
+    if (t && f.line_id) since.set(f.line_id, t);
+  }
   return {
     audit: { ...audit, notes: audit.notes ?? null },
     lines: lines as unknown as AuditPdfSource['lines'],
     photos,
     slots: ref.photoSlots,
     edits,
+    since,
   };
 }
 

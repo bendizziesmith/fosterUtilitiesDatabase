@@ -290,3 +290,17 @@ export function StatTiles({ tiles }: { tiles: { key: string; label: string; valu
 export function PageBar({ children }: { children: React.ReactNode }) {
   return <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 [&>*]:w-full sm:[&>*]:w-auto">{children}</div>;
 }
+
+/** Badges from resolutionBadges(): red / amber while open, green "· resolved" once fixed. Words, not colour alone. */
+export function ResolutionBadgeList({ badges }: { badges: { text: string; tone: 'red' | 'amber' | 'green' }[] }) {
+  const cls = { red: 'bg-red-50 text-red-700 border-red-200', amber: 'bg-amber-50 text-amber-800 border-amber-200', green: 'bg-green-50 text-green-700 border-green-200' };
+  return (
+    <span className="flex flex-wrap gap-1">
+      {badges.map((b) => (
+        <span key={b.text} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls[b.tone]}`}>
+          {b.tone === 'green' && b.text.includes('resolved') && <Check className="h-3 w-3" aria-hidden="true" strokeWidth={3} />}{b.text}
+        </span>
+      ))}
+    </span>
+  );
+}

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ClipboardList, Download, Loader2, Pencil } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listAuditSummaries } from '../../../../lib/siteAuditService';
+import { listAuditSummaries, listResolutions } from '../../../../lib/siteAuditService';
 import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
-import { Field, CountBadge, ErrorNote, TestTag, Sheet } from './ui';
+import { Field, ErrorNote, TestTag, Sheet, ResolutionBadgeList } from './ui';
+import { resolutionBadges, AuditResolution } from '../../../../lib/followupLogic';
 import { btn, card, inputCls, formatDate } from './styles';
 import { downloadAllAudits } from '../../../../lib/auditDownloads';
 import { getCompanyName, setCompanyName } from '../../../../lib/fleetService';
@@ -13,20 +14,9 @@ import { loadAuditReferenceData } from '../../../../lib/siteAuditService';
 import { Auditor } from '../../../../lib/supabase';
 import { useActor } from './useActor';
 
-function ResultBadges({ a }: { a: SiteAuditSummary }) {
-  const look = a.look_count ?? 0;
-  const any = a.expired_count || a.due_soon_count || a.fail_count || look;
-  return (
-    <span className="flex flex-wrap gap-1">
-      {a.expired_count > 0 && <CountBadge n={a.expired_count} label="expired" tone="red" />}
-      {a.due_soon_count > 0 && <CountBadge n={a.due_soon_count} label="due soon" tone="amber" />}
-      {a.fail_count > 0 && <CountBadge n={a.fail_count} label={a.fail_count === 1 ? 'fail' : 'fails'} tone="red" />}
-      {look > 0 && <CountBadge n={look} label="to look at" tone="amber" />}
-      {!any && (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-green-50 text-green-700 border-green-200">All OK</span>
-      )}
-    </span>
-  );
+/** On-the-day counts, shown as "· resolved" once everything of that kind has been fixed since. */
+function ResultBadges({ a, res }: { a: SiteAuditSummary; res: AuditResolution | null }) {
+  return <ResolutionBadgeList badges={resolutionBadges(a, res)} />;
 }
 
 /** "Dom Oliver · YE24 TNL" from the audit's own snapshots, so history never changes. */
@@ -54,6 +44,7 @@ export const AuditRecords: React.FC = () => {
   const [expiredOnly, setExpiredOnly] = useState(false);
   const [by, setBy] = useState('');
   const [zip, setZip] = useState<string | null>(null);
+  const [resolutions, setResolutions] = useState<Map<string, AuditResolution>>(new Map());
   const [company, setCompany] = useState('Foster Utilities');
   const [editCompany, setEditCompany] = useState<string | null>(null);
   const [auditorList, setAuditorList] = useState<Auditor[]>([]);
@@ -64,6 +55,7 @@ export const AuditRecords: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    listResolutions().then(setResolutions).catch(() => undefined);
     listAuditSummaries()
       .then(setRows)
       .catch((e) => {
@@ -204,7 +196,7 @@ export const AuditRecords: React.FC = () => {
                       <td className="px-3 py-3 text-slate-700">{r.vehicle_reg ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.site_visited ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{byName(r)}</td>
-                      <td className="px-3 py-3">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</td>
+                      <td className="px-3 py-3">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} res={resolutions.get(r.id) ?? null} />}</td>
                       <td className="px-5 py-3 text-right">
                         <button type="button" onClick={(e) => { e.stopPropagation(); open(r); }} className="inline-flex items-center gap-1 min-h-[36px] px-2 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                           {r.status === 'draft' ? 'Continue' : 'View'}<ChevronRight className="h-4 w-4" />
@@ -222,7 +214,7 @@ export const AuditRecords: React.FC = () => {
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-base sm:text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
                       <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''} · {byName(r)}</span>
-                      <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</span>
+                      <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} res={resolutions.get(r.id) ?? null} />}</span>
                     </span>
                     <ChevronRight className="h-5 w-5 text-slate-400 flex-shrink-0" />
                   </button>

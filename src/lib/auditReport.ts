@@ -28,6 +28,7 @@ const dateTime = (d: Date) => `${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${d.g
 export type RowTone = 'fail' | 'expired' | 'due_soon' | 'look' | null;
 
 export interface ReportLine {
+  id?: string;
   section: 'ppe' | 'hs' | 'kit' | 'other';
   item_name: string;
   expected_qty: string | null;
@@ -108,6 +109,8 @@ export function buildAuditReport(input: {
   company: string;
   generatedBy: string;
   now?: Date;
+  /** what has happened since, per line id (followupText) */
+  since?: Map<string, { text: string; resolved: boolean | null }>;
 }) {
   const { audit, company } = input;
   const date = audit.audit_date;
@@ -118,7 +121,9 @@ export function buildAuditReport(input: {
     columns: s.columns,
     rows: lines.filter((l) => l.section === s.key).map((l) => {
       const name = l.item_name + (l.expected_qty ? ` (${l.expected_qty})` : '');
-      const comment = l.comment ?? '';
+      const later = l.id ? input.since?.get(l.id) : undefined;
+      const sinceText = later ? `${later.resolved ? 'RESOLVED · ' : ''}Now: ${later.text.replace(/^Now: /, '')}` : '';
+      const comment = [l.comment ?? '', sinceText].filter(Boolean).join('\n');
       const cells =
         s.key === 'ppe' ? [l.item_name, fitText(l.result), l.qty ?? '', longDate(l.service_date), expiryText(l, date), comment]
           : s.key === 'hs' ? [l.item_name, fitText(l.result), l.qty ?? '', expiryText(l, date), gaugeText(l.gauge), comment]

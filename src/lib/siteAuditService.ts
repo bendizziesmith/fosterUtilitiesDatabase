@@ -16,6 +16,7 @@ import {
   AuditPhotoRow,
 } from './supabase';
 import { draftsInProgress } from './draftLogic';
+import type { AuditResolution, LineFollowup } from './followupLogic';
 import { preparePhoto, StampInfo } from './photoUpload';
 import { photoPath } from './photoLogic';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
@@ -564,4 +565,19 @@ export async function getCurrentAuditor(): Promise<{ id: string; name: string } 
   const { data } = await supabase.auth.getUser();
   if (!data.user) return null;
   return { id: data.user.id, name: data.user.email ?? 'Admin' };
+}
+
+// ---------------------------------------------------------------- what has happened since (round 12)
+
+/** Per line of one audit: the item now, and whether a problem found that day is resolved. */
+export async function listLineFollowups(auditId: string): Promise<LineFollowup[]> {
+  const r = await supabase.from('audit_line_followup').select('*').eq('audit_id', auditId);
+  return r.error ? [] : ((r.data as LineFollowup[]) ?? []);
+}
+
+/** Per audit: how many fails / expired / due-soon items found on the day are now resolved. */
+export async function listResolutions(): Promise<Map<string, AuditResolution>> {
+  const r = await supabase.from('audit_resolution').select('*');
+  const rows = r.error ? [] : ((r.data as (AuditResolution & { audit_id: string })[]) ?? []);
+  return new Map(rows.map((x) => [x.audit_id, x]));
 }

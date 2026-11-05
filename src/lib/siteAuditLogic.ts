@@ -694,3 +694,48 @@ export function spareOptions<T extends SpareLike>(kit: T[], kitTypeId: string, e
     .map((k) => ({ ...k, where: `${k.vehicle_reg ?? 'Van'} · spare van` }));
   return { lockup, spareVans };
 }
+
+// ---------------------------------------------------------------- keep what's on screen (round 12 bug fix)
+
+/**
+ * After a swap in the audit form the kit rows are rebuilt from the record. Every row whose item
+ * didn't change keeps exactly what is on screen (answer, plant no, dates, comment, photo); only the
+ * swapped row takes the new item's values. Kit added on the form is kept as well.
+ */
+export function mergeKitLinesAfterSwap(onScreen: DraftLine[], rebuilt: DraftLine[]): DraftLine[] {
+  const kit = onScreen.filter((l) => l.section === 'kit');
+  const added = kit.filter((l) => l.key?.startsWith('add:'));
+  const merged = rebuilt.map((n) => {
+    const prev = kit.find((o) => !o.key?.startsWith('add:') && o.kit_type_id === n.kit_type_id && o.kit_item_id === n.kit_item_id);
+    if (!prev) return n;
+    return {
+      ...n,
+      key: prev.key ?? n.key,
+      result: prev.result,
+      plant_no_snapshot: prev.plant_no_snapshot,
+      service_date: prev.service_date,
+      expiry_date: prev.expiry_date,
+      expiryManual: prev.expiryManual,
+      comment: prev.comment,
+      photo_path: prev.photo_path,
+      photo_taken_at: prev.photo_taken_at,
+    };
+  });
+  return [...merged, ...added];
+}
+
+/**
+ * Continue a draft: lines as saved, plus whether each expiry was typed by hand (it isn't the
+ * automatic "service date + interval"), so a later service-date change doesn't overwrite it.
+ */
+export function restoreDraftLines<T extends DraftLine & { id?: string }>(rows: T[], monthsFor: (l: T) => number | null | undefined): DraftLine[] {
+  return rows.map((r, i) => {
+    const months = monthsFor(r);
+    const auto = autoExpiry(r.service_date ?? null, months);
+    return {
+      ...r,
+      key: r.id ? `row:${r.id}` : `row:${i}`,
+      expiryManual: !!r.expiry_date && !!auto && r.expiry_date !== auto,
+    };
+  });
+}
