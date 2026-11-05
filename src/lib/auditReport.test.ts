@@ -13,7 +13,7 @@ const lines = [
   L({ section: 'kit', item_name: 'CAT', plant_no_snapshot: 'C-1', service_date: '2025-11-20', expiry_date: '2026-11-20' }),
   L({ section: 'other', item_name: 'Water containers', qty: '1', label_on: 'N' }),
 ] as never[];
-const slots = [{ id: 's1', name: 'Van & reg', sort_order: 10, required: true }, { id: 's2', name: 'Van open', sort_order: 20, required: true }] as never[];
+const slots = [{ id: 's1', name: 'Van & reg', sort_order: 10, required: true }, { id: 's2', name: 'Van open', sort_order: 20, required: true }, { id: 's3', name: 'CAT', sort_order: 30, required: true }] as never[];
 const photos = [
   { slot_id: null, slot_name: null, path: 'photos/extra.jpg', caption: 'Broken step', skip_reason: null, taken_at: '2026-11-05T14:40:00Z', sort_order: 1 },
   { slot_id: 's2', slot_name: 'Van open', path: null, caption: null, skip_reason: 'Van locked', taken_at: null, sort_order: 0 },
@@ -48,10 +48,11 @@ describe('audit PDF content', () => {
   it('summary counts', () => {
     expect(report.summary).toEqual({ fails: 2, expired: 1, dueSoon: 1, toLookAt: 1 });
   });
-  it('photos: required slots in order, then additional, then photos on N answers next to the item; skipped slots say why', () => {
+  it('photos: every suggested slot in order ("Not taken" when missing; an old reason still shows), then additional, then photos on N answers', () => {
     expect(report.photos.map((p) => [p.label, p.path, p.skip])).toEqual([
       ['Van & reg', 'photos/van.jpg', null],
       ['Van open', null, 'Can’t take photo: Van locked'],
+      ['CAT', null, 'Not taken'],
       ['Broken step', 'photos/extra.jpg', null],
       ['Ear defenders (N)', 'lines/ear.jpg', null],
     ]);

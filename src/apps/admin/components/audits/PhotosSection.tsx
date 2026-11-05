@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, ImagePlus, Trash2, RotateCcw, Ban, AlertTriangle, Check, Loader2 } from 'lucide-react';
+import { Camera, ImagePlus, Trash2, RotateCcw, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { getAuditFileUrl, removeDraftFile, uploadAuditPhoto } from '../../../../lib/siteAuditService';
-import { photoProgress } from '../../../../lib/photoLogic';
+import { photoProgress, suggestedNote } from '../../../../lib/photoLogic';
 import { StampInfo } from '../../../../lib/photoUpload';
 import { AuditPhotoRow, AuditPhotoSlot } from '../../../../lib/supabase';
 import { Field, Sheet } from './ui';
@@ -60,7 +60,7 @@ function PickButtons({ onFile, takeLabel = 'Take photo', disabled }: { onFile: (
 /**
  * Standard photos on every new audit (slot list is data), then any additional photos.
  * Photos are shrunk and stamped on the phone before upload; a failed upload can be retried.
- * Required slots need a photo, or "Can't take photo" with a reason.
+ * Photos are optional (round 11): the slots are suggested, and a gentle note says how many are not taken.
  */
 export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
   slots: AuditPhotoSlot[];
@@ -71,7 +71,6 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
 }) {
   const [pending, setPending] = useState<Pending[]>([]);
   const [viewing, setViewing] = useState<DraftPhoto | null>(null);
-  const [skipping, setSkipping] = useState<Record<string, boolean>>({});
   const progress = photoProgress(slots, photos);
 
   const upload = async (p: Pending, replaceKey?: string) => {
@@ -88,11 +87,10 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
           key: newKey(), slot_id: p.slotId, slot_name: slot?.name ?? null, path, caption: old?.caption ?? null,
           skip_reason: null, taken_at: takenAt, sort_order: xs.length, localUrl,
         };
-        // a photo replaces a "Can't take photo" reason on the same slot
+        // a photo replaces any old "Can't take photo" reason on the same slot
         const kept = xs.filter((x) => x.key !== replaceKey && !(p.slotId && x.slot_id === p.slotId && !x.path));
         return [...kept, row];
       });
-      if (p.slotId) setSkipping((s) => ({ ...s, [p.slotId as string]: false }));
       setPending((xs) => xs.filter((x) => x.key !== p.key));
     } catch (e) {
       setPending((xs) => xs.map((x) => (x.key === p.key ? { ...x, status: 'error', error: e instanceof Error ? e.message : 'Upload failed' } : x)));
@@ -105,12 +103,6 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
     // a draft photo that was never submitted: remove the file too (best effort)
     if (ph.path) removeDraftFile(ph.path).catch(() => undefined);
   };
-
-  const setReason = (slot: AuditPhotoSlot, reason: string | null) =>
-    setPhotos((xs) => {
-      const rest = xs.filter((x) => !(x.slot_id === slot.id && !x.path));
-      return reason === null ? rest : [...rest, { key: newKey(), slot_id: slot.id, slot_name: slot.name, path: null, caption: null, skip_reason: reason, taken_at: null, sort_order: xs.length }];
-    });
 
   const PendingRows = ({ slotId }: { slotId: string | null }) => (
     <>
@@ -147,21 +139,19 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
         </span>
       </h2>
 
-      {!progress.complete && (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-base sm:text-sm text-amber-800">
+      {suggestedNote(progress) && (
+        <p role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-base sm:text-sm text-amber-800">
           <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0" aria-hidden="true" />
-          <span><strong>{progress.missing.length} required photo{progress.missing.length === 1 ? '' : 's'} missing:</strong> {progress.missing.map((m) => m.name).join(', ')}</span>
-        </div>
+          <span><strong>{suggestedNote(progress)}:</strong> {progress.missing.map((m) => m.name).join(', ')}. Photos are optional.</span>
+        </p>
       )}
 
       <ul className="space-y-2">
         {slots.map((slot) => {
           const mine = photos.filter((p) => p.slot_id === slot.id && p.path);
-          const reasonRow = photos.find((p) => p.slot_id === slot.id && !p.path);
-          const skipOpen = skipping[slot.id] || !!reasonRow;
-          const done = mine.length > 0 || !!reasonRow?.skip_reason?.trim();
+          const done = mine.length > 0;
           return (
-            <li key={slot.id} id={`photo-${slot.id}`} className={`scroll-mt-24 rounded-xl border bg-white p-4 ${done ? 'border-slate-200' : 'border-amber-200'}`}>
+            <li key={slot.id} id={`photo-${slot.id}`} className="scroll-mt-24 rounded-xl border border-slate-200 bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-base font-bold text-slate-900">{slot.name}</p>
@@ -169,7 +159,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
                 </div>
                 {slot.required && (
                   <span className={`flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${done ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-                    {done && <Check className="h-3.5 w-3.5" aria-hidden="true" />}Required
+                    {done && <Check className="h-3.5 w-3.5" aria-hidden="true" />}{done ? 'Taken' : 'Suggested'}
                   </span>
                 )}
               </div>
@@ -180,27 +170,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
               )}
               <div className="mt-3 space-y-2">
                 <PendingRows slotId={slot.id} />
-                {!reasonRow && <PickButtons takeLabel={mine.length ? 'Take another' : 'Take photo'} onFile={(file) => upload({ key: newKey(), slotId: slot.id, file, status: 'preparing' })} />}
-                {!mine.length && (
-                  skipOpen ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-                      <Field label="Can’t take photo: why?">
-                        {(id) => (
-                          <textarea id={id} rows={2} className={`${inputCls} py-2`} value={reasonRow?.skip_reason ?? ''} placeholder="e.g. Van in for repair"
-                            onChange={(e) => setReason(slot, e.target.value)} />
-                        )}
-                      </Field>
-                      <button type="button" className={btn.small} onClick={() => { setReason(slot, null); setSkipping((s) => ({ ...s, [slot.id]: false })); }}>
-                        Take a photo instead
-                      </button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setSkipping((s) => ({ ...s, [slot.id]: true }))}
-                      className="inline-flex items-center gap-1.5 min-h-[44px] text-sm font-semibold text-slate-700 hover:underline cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                      <Ban className="h-4 w-4" aria-hidden="true" />Can’t take photo
-                    </button>
-                  )
-                )}
+                <PickButtons takeLabel={mine.length ? 'Take another' : 'Take photo'} onFile={(file) => upload({ key: newKey(), slotId: slot.id, file, status: 'preparing' })} />
               </div>
             </li>
           );

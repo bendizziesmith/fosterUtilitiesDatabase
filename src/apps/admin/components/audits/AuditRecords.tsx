@@ -133,7 +133,7 @@ export const AuditRecords: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={btn.secondary} onClick={onZip} disabled={!!zip || !submitted.length}>
             {zip ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
-            Download all ({submitted.length})
+            Download all ({submitted.length}) as ZIP
           </button>
           {zip && <span role="status" className="text-base sm:text-sm text-slate-600">{zip}</span>}
         </div>
@@ -142,7 +142,6 @@ export const AuditRecords: React.FC = () => {
           <Pencil className="h-4 w-4" aria-hidden="true" />Company name on PDFs: {company}
         </button>
       </div>
-      <p className="text-sm text-slate-600 -mt-2">One ZIP of the submitted audits shown below (drafts are left out).</p>
 
       <ErrorNote message={error} />
 

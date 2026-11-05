@@ -11,8 +11,7 @@ import {
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
 import { getDashboardCounts } from '../../../lib/siteAuditService';
-import { lowStockBadgeText } from '../../../lib/lockupLogic';
-import { draftsBadgeText } from '../../../lib/draftLogic';
+import { dashboardBadges } from '../../../lib/dashboardLogic';
 
 interface AdminDashboardProps {
   inspections: VehicleInspection[];
@@ -90,43 +89,26 @@ const navCards = [
 
 type Counts = Awaited<ReturnType<typeof getDashboardCounts>>;
 
-const Badge: React.FC<{ n: number; label: string; cls: string }> = ({ n, label, cls }) => (
-  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls}`}>
-    {n} {label}
-  </span>
-);
+const BADGE_TONE = {
+  red: 'bg-red-50 text-red-700 border-red-200',
+  amber: 'bg-amber-50 text-amber-800 border-amber-200',
+  blue: 'bg-blue-50 text-blue-700 border-blue-200',
+  slate: 'bg-slate-100 text-slate-700 border-slate-200',
+};
 
+/** Site Audits: audits due, drafts. Kit & Plant: expired, due soon, low stock. Only counts above 0. */
 function cardBadges(path: string, c: Counts | null) {
   if (!c) return null;
-  if (path === '/audits') {
-    if (!c.expired && !c.dueSoon && !c.auditsDue && !c.drafts) return null;
-    return (
-      <>
-        {draftsBadgeText(c.drafts) && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-slate-100 text-slate-700 border-slate-200">
-            {draftsBadgeText(c.drafts)}
-          </span>
-        )}
-        {c.auditsDue > 0 && <Badge n={c.auditsDue} label={c.auditsDue === 1 ? 'audit due' : 'audits due'} cls="bg-blue-50 text-blue-700 border-blue-200" />}
-        {c.expired > 0 && <Badge n={c.expired} label="expired" cls="bg-red-50 text-red-700 border-red-200" />}
-        {c.dueSoon > 0 && <Badge n={c.dueSoon} label="due soon" cls="bg-amber-50 text-amber-800 border-amber-200" />}
-      </>
-    );
-  }
-  if (path === '/kit') {
-    return (
-      <>
-        <Badge n={c.onVans} label="on vans" cls="bg-slate-100 text-slate-700 border-slate-200" />
-        <Badge n={c.spares} label="in Yard Lockup" cls="bg-violet-50 text-violet-700 border-violet-200" />
-        {lowStockBadgeText(c.lowStock) && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-amber-50 text-amber-800 border-amber-200">
-            {lowStockBadgeText(c.lowStock)}
-          </span>
-        )}
-      </>
-    );
-  }
-  return null;
+  const b = dashboardBadges(c);
+  const list = path === '/audits' ? b.audits : path === '/kit' ? b.kit : [];
+  if (!list.length) return null;
+  return (
+    <>
+      {list.map((x) => (
+        <span key={x.text} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${BADGE_TONE[x.tone]}`}>{x.text}</span>
+      ))}
+    </>
+  );
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = () => {

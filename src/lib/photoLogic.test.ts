@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { stampLines, fitWithin, photoPath, takenAtFor, photoProgress, isStampable } from './photoLogic';
+import { stampLines, fitWithin, photoPath, takenAtFor, photoProgress, isStampable, suggestedNote } from './photoLogic';
 
 describe('stampLines — date and time stamp drawn on every photo', () => {
   const at = new Date(2026, 10, 5, 14, 32);
@@ -38,22 +38,26 @@ describe('photo file names, taken-at time, what gets stamped', () => {
   });
 });
 
-describe('photoProgress — required photos', () => {
+describe('photoProgress — suggested photos (round 11: optional)', () => {
   const slots = [
     { id: 's1', name: 'Van & reg', required: true, sort_order: 10 },
     { id: 's2', name: 'Van open', required: true, sort_order: 20 },
     { id: 's3', name: 'CAT', required: true, sort_order: 30 },
   ];
-  it('a slot is done with a photo, or "Can\'t take photo" with a reason', () => {
+  it('only a photo counts; an old "can\'t take photo" reason does not', () => {
     const p = photoProgress(slots, [
       { slot_id: 's1', path: 'a.jpg', skip_reason: null },
       { slot_id: 's2', path: null, skip_reason: 'Van in for repair' },
-      { slot_id: 's3', path: null, skip_reason: '  ' },
     ]);
-    expect(p).toMatchObject({ done: 2, total: 3, complete: false });
-    expect(p.missing.map((s) => s.name)).toEqual(['CAT']);
+    expect(p).toMatchObject({ done: 1, total: 3, complete: false });
+    expect(p.missing.map((s) => s.name)).toEqual(['Van open', 'CAT']);
   });
-  it('additional photos do not count towards required slots', () => {
+  it('additional photos do not count towards the suggested slots', () => {
     expect(photoProgress(slots, [{ slot_id: null, path: 'x.jpg', skip_reason: null }]).done).toBe(0);
+  });
+  it('the amber note text', () => {
+    expect(suggestedNote(photoProgress(slots, []))).toBe('3 suggested photos not taken');
+    expect(suggestedNote(photoProgress(slots, [{ slot_id: 's1', path: 'a', skip_reason: null }, { slot_id: 's2', path: 'b', skip_reason: null }]))).toBe('1 suggested photo not taken');
+    expect(suggestedNote(photoProgress(slots, slots.map((s) => ({ slot_id: s.id, path: 'p', skip_reason: null }))))).toBeNull();
   });
 });

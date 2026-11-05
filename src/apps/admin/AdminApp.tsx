@@ -18,6 +18,7 @@ import { AuditDetail } from './components/audits/AuditDetail';
 import { KitPlantPage } from './components/audits/KitPlantPage';
 import { GangVanView } from './components/audits/GangVanView';
 import { AuditShell } from './components/audits/AuditNavBar';
+import { Wrench, ClipboardCheck } from 'lucide-react';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -268,6 +269,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
       subtitle={getPageSubtitle()} 
       showBackButton 
       onBack={handleBackNavigation}
+      icon={location.pathname.startsWith('/kit') ? Wrench : location.pathname.startsWith('/audits') ? ClipboardCheck : undefined}
     >
       <Routes>
         <Route

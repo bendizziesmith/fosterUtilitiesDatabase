@@ -256,3 +256,37 @@ export function ErrorNote({ message }: { message: string | null }) {
   );
 }
 
+
+/**
+ * Summary tiles: even rows (2 per row on phone, all in one row on computer), large number,
+ * short label; a tile with onClick is a button.
+ */
+export function StatTiles({ tiles }: { tiles: { key: string; label: string; value: string; tone?: 'red' | 'amber' | 'blue' | 'slate'; onClick?: () => void }[] }) {
+  const cols = tiles.length >= 4 ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-2';
+  const num = (t?: string) => (t === 'red' ? 'text-red-700' : t === 'amber' ? 'text-amber-800' : 'text-slate-900');
+  return (
+    <div className={`grid ${cols} gap-3`}>
+      {tiles.map((t) => {
+        const zero = t.value === '0';
+        const body = (
+          <>
+            <span className={`block text-3xl font-bold leading-none tabular-nums ${zero ? 'text-slate-900' : num(t.tone)}`}>{t.value}</span>
+            <span className="block mt-2 text-sm font-semibold text-slate-700 leading-snug">{t.label}{t.onClick ? ' →' : ''}</span>
+          </>
+        );
+        const cls = 'bg-white border border-slate-200 rounded-xl p-4 min-h-[96px] text-left';
+        return t.onClick ? (
+          <button key={t.key} type="button" onClick={t.onClick}
+            className={`${cls} cursor-pointer hover:border-blue-300 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}>{body}</button>
+        ) : (
+          <div key={t.key} className={cls}>{body}</div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Top of a page: one primary action (and any secondary ones), full width on phone. */
+export function PageBar({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 [&>*]:w-full sm:[&>*]:w-auto">{children}</div>;
+}

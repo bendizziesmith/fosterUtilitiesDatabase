@@ -41,7 +41,7 @@ import { listLockupMovements } from '../../../../lib/lockupService';
 import { issuedSince } from '../../../../lib/lockupLogic';
 import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
 import { PhotosSection, DraftPhoto } from './PhotosSection';
-import { photoProgress } from '../../../../lib/photoLogic';
+import { photoProgress, suggestedNote } from '../../../../lib/photoLogic';
 import { StampInfo } from '../../../../lib/photoUpload';
 import { btn, card, inputCls, TEST_MODE, expiryRing } from './styles';
 
@@ -303,12 +303,16 @@ export const NewAuditForm: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    // required photos block Submit (a photo, or "Can't take photo" with a reason)
-    if (!photoState.complete) {
+    // photos are optional: just a quick "Submit without 3 photos?" first
+    if (!photoState.complete && photoSlots.length) {
       setMissingPhotos(photoState.missing);
-      setUnanswered(unansweredLines(lines));
       return;
     }
+    afterPhotos();
+  };
+  /** after the photo check: list unanswered items, else the normal confirm */
+  const afterPhotos = () => {
+    setMissingPhotos(null);
     const missing = unansweredLines(lines);
     if (missing.length) setUnanswered(missing);
     else setConfirmSubmit(true);
@@ -422,7 +426,7 @@ export const NewAuditForm: React.FC = () => {
                   type="button"
                   onClick={() => document.getElementById('sec-photos')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                   className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-full border text-sm font-semibold cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${photoState.complete ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
-                  aria-label={`Photos: ${photoState.done} of ${photoState.total} required${photoState.complete ? ', complete' : ''}`}
+                  aria-label={`Photos: ${photoState.done} of ${photoState.total} suggested taken${photoState.complete ? ', complete' : ''}`}
                 >
                   {photoState.complete && <Check className="h-4 w-4" aria-hidden="true" strokeWidth={3} />}
                   Photos {photoState.done}/{photoState.total}
@@ -525,10 +529,8 @@ export const NewAuditForm: React.FC = () => {
               <span className={summary.expired ? 'text-red-700' : ''}>{summary.expired} expired</span>,{' '}
               <span className={summary.dueSoon ? 'text-amber-800' : ''}>{summary.dueSoon} due soon</span>
               {savedAt && <span className="ml-2 text-xs font-normal text-slate-600">Draft saved {savedAt}</span>}
-              {!photoState.complete && photoSlots.length > 0 && (
-                <span className="block text-sm font-semibold text-amber-800">
-                  {photoState.missing.length} required photo{photoState.missing.length === 1 ? '' : 's'} missing
-                </span>
+              {photoSlots.length > 0 && suggestedNote(photoState) && (
+                <span className="block text-sm font-semibold text-amber-800">{suggestedNote(photoState)}</span>
               )}
             </p>
             <div className="grid grid-cols-2 sm:flex gap-2">
@@ -578,29 +580,19 @@ export const NewAuditForm: React.FC = () => {
       )}
       {missingPhotos && missingPhotos.length > 0 && (
         <Sheet
-          title={`Can’t submit yet: ${missingPhotos.length} required photo${missingPhotos.length === 1 ? '' : 's'} missing`}
-          subtitle="Take each one, or tap “Can’t take photo” and say why. Save draft always works."
-          onClose={() => { setMissingPhotos(null); setUnanswered(null); }}
+          title={`Submit without ${missingPhotos.length} photo${missingPhotos.length === 1 ? '' : 's'}?`}
+          subtitle={`Not taken: ${missingPhotos.map((m) => m.name).join(', ')}. Photos are optional.`}
+          onClose={() => setMissingPhotos(null)}
           footer={
-            <button type="button" className={btn.primary} onClick={() => { const f = missingPhotos[0]; setMissingPhotos(null); setUnanswered(null); jumpToPhoto(f.id); }}>
-              Go to the first one
-            </button>
+            <>
+              <button type="button" className={btn.secondary} onClick={() => { const f = missingPhotos[0]; setMissingPhotos(null); jumpToPhoto(f.id); }}>
+                Add photos
+              </button>
+              <button type="button" className={btn.primary} onClick={afterPhotos}>Submit anyway</button>
+            </>
           }
         >
-          <ul className="space-y-1" aria-label="Missing photos">
-            {missingPhotos.map((s) => (
-              <li key={s.id}>
-                <button type="button" onClick={() => { setMissingPhotos(null); setUnanswered(null); jumpToPhoto(s.id); }}
-                  className="w-full min-h-[44px] flex items-center justify-between gap-2 px-3 rounded-lg border border-amber-200 bg-amber-50 text-left text-base sm:text-sm text-amber-800 hover:bg-amber-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                  <span className="font-semibold">{s.name}</span>
-                  <span className="text-xs font-semibold uppercase">Photo</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          {unanswered && unanswered.length > 0 && (
-            <p className="text-base sm:text-sm text-slate-700">Also not answered yet: {unanswered.slice(0, 8).map((l) => l.item_name).join(', ')}{unanswered.length > 8 ? ` and ${unanswered.length - 8} more` : ''}.</p>
-          )}
+          <p className="text-base sm:text-sm text-slate-700">The PDF will list them as “Not taken”.</p>
         </Sheet>
       )}
       {unanswered && !missingPhotos && (

@@ -168,29 +168,32 @@ export const GangVanView: React.FC = () => {
               )}
             </dl>
           </div>
-          <div className="flex flex-col sm:items-end gap-2 sm:flex-shrink-0">
-            {(target.kind === 'spare_van' || target.vehicleId) && (
-              <button type="button" className={btn.primary} onClick={() => navigate(`/audits/new?target=${encodeURIComponent(target.key)}`)}>
-                <ClipboardPlus className="h-4 w-4" />New audit for {target.isGanger ? 'this gang' : target.kind === 'person' ? 'this person' : 'this van'}
-              </button>
-            )}
-            <DownloadMenu choices={[{ title: 'Download', kind: 'pdf', run: () => downloadOneHolder(target.label, kit ?? [], ppe, whoName(downloadActor?.name)) }]} />
-            <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" />Add kit to {target.kind === 'person' ? target.personName : 'this van'}
+        </div>
+        {/* one primary action, then short secondary ones in an even grid */}
+        <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col lg:flex-row lg:items-center gap-2">
+          {(target.kind === 'spare_van' || target.vehicleId) && (
+            <button type="button" className={`${btn.primary} lg:order-last lg:ml-auto`} onClick={() => navigate(`/audits/new?target=${encodeURIComponent(target.key)}`)}>
+              <ClipboardPlus className="h-4 w-4" aria-hidden="true" />New audit
             </button>
+          )}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+            <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" aria-hidden="true" />Add kit
+            </button>
+            <DownloadMenu choices={[{ title: 'Download', kind: 'pdf', run: () => downloadOneHolder(target.label, kit ?? [], ppe, whoName(downloadActor?.name)) }]} />
             {person && (
               <button type="button" className={btn.secondary} onClick={() => setChanging('change')}>
-                <ArrowLeftRight className="h-4 w-4" />Change van
+                <ArrowLeftRight className="h-4 w-4" aria-hidden="true" />Change van
               </button>
             )}
             {person && target.vehicleId && (
               <button type="button" className={btn.secondary} onClick={() => setFleet('takeout')}>
-                <LogOut className="h-4 w-4" />Take out of van
+                <LogOut className="h-4 w-4" aria-hidden="true" />Take out of van
               </button>
             )}
             {target.vehicleId && !offRoadRow && (
               <button type="button" className={btn.secondary} onClick={() => setFleet('offroad')}>
-                <CircleOff className="h-4 w-4" />Van off the road
+                <CircleOff className="h-4 w-4" aria-hidden="true" />Off the road
               </button>
             )}
           </div>

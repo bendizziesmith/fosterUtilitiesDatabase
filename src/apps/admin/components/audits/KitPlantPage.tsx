@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Truck, Wrench, AlertTriangle, Clock, ChevronRight, ArrowLeft, Users, X, ClipboardCheck, CalendarClock } from 'lucide-react';
+import { Plus, Search, Truck, Wrench, ChevronRight, ArrowLeft, Users, X } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listKit, moveKit, listAuditSummaries } from '../../../../lib/siteAuditService';
-import { getAuditInterval } from '../../../../lib/fleetService';
-import { auditSchedule, kitTiles } from '../../../../lib/fleetLogic';
-import { todayISO } from '../../../../lib/siteAuditLogic';
+import { listKit, moveKit, listAttention } from '../../../../lib/siteAuditService';
+import { listLockup, LockupRow } from '../../../../lib/lockupService';
+import { lowStockLines } from '../../../../lib/lockupLogic';
+import { kitPageTiles } from '../../../../lib/dashboardLogic';
+import { sortAttention, AttentionRow } from '../../../../lib/siteAuditLogic';
+import { NeedsAttention } from './NeedsAttention';
 import { searchTargets, sortKit, summariseKitByType, summariseKitByHolder, holderKey, holderLabel, AuditTarget, KitSort } from '../../../../lib/siteAuditLogic';
 import { Auditor } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
@@ -19,7 +21,7 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { useAuditRef } from './useAuditRef';
 import { kitUpdateTarget, kitWhere, monthsForType } from './updateTargets';
-import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge } from './ui';
+import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge, PageBar, StatTiles } from './ui';
 import { DownloadMenu } from './DownloadMenu';
 import { downloadByHolder, downloadLockup, downloadPlantRegister } from '../../../../lib/auditDownloads';
 import { whoName } from '../../../../lib/siteAuditLogic';
@@ -46,8 +48,8 @@ export const KitPlantPage: React.FC = () => {
   const { actor: downloadActor } = useActor(ref.auditors);
 
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
-  const [audits, setAudits] = useState<Awaited<ReturnType<typeof listAuditSummaries>>>([]);
-  const [interval, setIntervalMonths] = useState(6);
+  const [attention, setAttention] = useState<AttentionRow[] | null>(null);
+  const [lowStock, setLowStock] = useState<LockupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
   const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
@@ -59,10 +61,10 @@ export const KitPlantPage: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [k, a, months] = await Promise.all([listKit(), listAuditSummaries(), getAuditInterval().catch(() => 6)]);
+      const [k, a, lockup] = await Promise.all([listKit(), listAttention(), listLockup().catch(() => [] as LockupRow[])]);
       setKit(k);
-      setAudits(a);
-      setIntervalMonths(months);
+      setAttention(sortAttention(a));
+      setLowStock(lowStockLines(lockup));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load kit.');
       setKit([]);
@@ -84,7 +86,6 @@ export const KitPlantPage: React.FC = () => {
 
   const { auditors } = ref;
   const all = useMemo(() => kit ?? [], [kit]);
-  const schedule = useMemo(() => auditSchedule(ref.auditTargets, audits, interval, todayISO()), [ref.auditTargets, audits, interval]);
   const labelled = useMemo(
     () => all.map((k) => ({ ...k, vehicle_label: k.status === 'on_van' ? holderLabel(k) : null })),
     [all]
@@ -95,14 +96,7 @@ export const KitPlantPage: React.FC = () => {
     if (key) navigate(`/kit/van?key=${encodeURIComponent(key)}`);
   };
 
-  const t = kitTiles(schedule, all);
-  const tiles: { label: string; n: string | number; icon: typeof Truck; tone: string; onClick?: () => void; span?: boolean }[] = [
-    { label: `Gangs / vans audited in the last ${interval} months`, n: `${t.audited} of ${t.auditTargets}`, icon: ClipboardCheck, tone: 'text-green-600 bg-green-50', span: true },
-    { label: 'Needs auditing', n: t.needsAuditing, icon: CalendarClock, tone: 'text-red-600 bg-red-50', onClick: () => navigate('/audits#upcoming') },
-    { label: 'Away for service', n: t.away, icon: Wrench, tone: 'text-slate-600 bg-slate-100' },
-    { label: 'Expired', n: t.expired, icon: AlertTriangle, tone: 'text-red-600 bg-red-50' },
-    { label: 'Due within 30 days', n: t.dueSoon, icon: Clock, tone: 'text-amber-600 bg-amber-50' },
-  ];
+  const tiles = kitPageTiles(all, attention ?? [], lowStock.length);
 
   // ---------------------------------------------------------- top search
   const q = topQ.trim().toLowerCase();
@@ -119,9 +113,7 @@ export const KitPlantPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <TestModeBanner />
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-base sm:text-sm text-slate-600">Every item of kit and where it is. Audits add kit here automatically.</p>
-        <div className="flex flex-wrap gap-2">
+      <PageBar>
           <DownloadMenu choices={[
             { title: 'Full plant register', kind: 'pdf', hint: 'Every item by kit type: plant no, who / where, service, expiry, status', run: () => downloadPlantRegister('pdf', who) },
             { title: 'Full plant register', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadPlantRegister('csv', who) },
@@ -132,8 +124,7 @@ export const KitPlantPage: React.FC = () => {
           <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
             <Plus className="h-4 w-4" />Add kit
           </button>
-        </div>
-      </div>
+      </PageBar>
 
       <ErrorNote message={error ?? ref.error} />
 
@@ -174,26 +165,9 @@ export const KitPlantPage: React.FC = () => {
         )}
       </section>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {tiles.map((tile) => {
-          const Icon = tile.icon;
-          const body = (
-            <>
-              <div className="flex items-center gap-2">
-                <span className={`p-1.5 rounded-lg ${tile.tone}`}><Icon className="h-4 w-4" /></span>
-                <span className="text-xl font-bold text-slate-900">{tile.n}</span>
-              </div>
-              <p className="text-xs font-semibold text-slate-600 mt-1">{tile.label}{tile.onClick ? ' →' : ''}</p>
-            </>
-          );
-          const cls = `${card} p-3 min-h-[72px] text-left ${tile.span ? 'col-span-2 sm:col-span-1' : ''}`;
-          return tile.onClick ? (
-            <button key={tile.label} type="button" onClick={tile.onClick} className={`${cls} hover:border-slate-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}>{body}</button>
-          ) : (
-            <div key={tile.label} className={cls}>{body}</div>
-          );
-        })}
-      </div>
+      <StatTiles tiles={tiles} />
+
+      {!type && <NeedsAttention rows={attention} lowStock={lowStock} kit={all} refData={ref} onChanged={load} />}
 
       {type ? (
         <TypeItems

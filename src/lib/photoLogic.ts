@@ -35,10 +35,16 @@ export const isStampable = (file: { type: string }): boolean => file.type.starts
 export interface PhotoSlotLike { id: string; name: string; required: boolean; sort_order: number }
 export interface PhotoLike { slot_id: string | null; path: string | null; skip_reason: string | null }
 
-/** Required slots: done with a photo, or "Can't take photo" with a reason typed. */
+/** Suggested slots (round 11: photos are optional): done when it has a photo. */
 export function photoProgress<S extends PhotoSlotLike>(slots: S[], photos: PhotoLike[]) {
   const required = [...slots].filter((s) => s.required).sort((a, b) => a.sort_order - b.sort_order);
-  const ok = (s: S) => photos.some((p) => p.slot_id === s.id && (!!p.path || !!p.skip_reason?.trim()));
+  const ok = (s: S) => photos.some((p) => p.slot_id === s.id && !!p.path);
   const missing = required.filter((s) => !ok(s));
   return { done: required.length - missing.length, total: required.length, missing, complete: missing.length === 0 };
+}
+
+/** "3 suggested photos not taken" (gentle amber note); null when all are taken. */
+export function suggestedNote(p: { missing: unknown[] }): string | null {
+  const n = p.missing.length;
+  return n ? `${n} suggested photo${n === 1 ? '' : 's'} not taken` : null;
 }

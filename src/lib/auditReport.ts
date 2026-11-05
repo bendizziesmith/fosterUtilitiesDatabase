@@ -130,18 +130,22 @@ export function buildAuditReport(input: {
 
   const s = summariseAuditLines(lines as unknown as DraftLine[], date);
 
-  // photos: required / standard slots in order, then additional, then photos on N answers
-  const slotOrder = new Map(input.slots.map((x) => [x.id, x.sort_order]));
-  const slotPhotos = input.photos.filter((p) => p.slot_id)
-    .sort((a, b) => (slotOrder.get(a.slot_id!) ?? 999) - (slotOrder.get(b.slot_id!) ?? 999) || a.sort_order - b.sort_order);
+  // photos: every suggested slot in order ("Not taken" when it has none), then additional, then photos on N answers
+  const slotIds = new Set(input.slots.map((x) => x.id));
+  const slotPhotos: ReportPhoto[] = [...input.slots].sort((a, b) => a.sort_order - b.sort_order).flatMap((slot): ReportPhoto[] => {
+    const mine = input.photos.filter((p) => p.slot_id === slot.id).sort((a, b) => a.sort_order - b.sort_order);
+    const taken = mine.filter((p) => p.path);
+    if (taken.length) return taken.map((p) => ({ label: slot.name, path: p.path, skip: null, takenAt: p.taken_at }));
+    const old = mine.find((p) => p.skip_reason?.trim());
+    return [{ label: slot.name, path: null, skip: old ? `Can’t take photo: ${old.skip_reason?.trim()}` : 'Not taken', takenAt: null }];
+  });
+  // a photo in a slot that has since been retired from the list
+  const retired = input.photos.filter((p) => p.slot_id && !slotIds.has(p.slot_id) && p.path)
+    .map((p) => ({ label: p.slot_name ?? 'Photo', path: p.path, skip: null, takenAt: p.taken_at }));
   const extra = input.photos.filter((p) => !p.slot_id && p.path).sort((a, b) => a.sort_order - b.sort_order);
   const photos: ReportPhoto[] = [
-    ...slotPhotos.map((p) => ({
-      label: p.slot_name ?? 'Photo',
-      path: p.path,
-      skip: p.path ? null : `Can’t take photo: ${p.skip_reason ?? ''}`.trim(),
-      takenAt: p.taken_at,
-    })),
+    ...slotPhotos,
+    ...retired,
     ...extra.map((p) => ({ label: p.caption?.trim() || 'Additional photo', path: p.path, skip: null, takenAt: p.taken_at })),
     ...lines.filter((l) => l.photo_path).map((l) => ({ label: `${l.item_name} (N)`, path: l.photo_path, skip: null, takenAt: l.photo_taken_at ?? null })),
   ];
