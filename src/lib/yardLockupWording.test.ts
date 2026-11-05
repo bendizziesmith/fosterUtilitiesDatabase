@@ -31,7 +31,7 @@ describe('wording: nobody sees "Spare in yard" any more', () => {
     const hits: string[] = [];
     for (const f of files) {
       for (const t of visibleText(readFileSync(f, 'utf8'))) {
-        const s = t.toLowerCase().replace(/spare[ -]van(s)?/g, '').replace(/spare_vehicle/g, '').replace(/(the )?yard lockup/g, '');
+        const s = t.toLowerCase().replace(/spare[ -]van(s)?/g, '').replace(/spare_vehicle/g, '').replace(/(the )?yard lockup/g, '').replace(/take a spare/g, ''); // round 10: Justin's own button name
         if (s.trim() === 'spare' || s.trim() === 'moved_to_spare') continue; // status values, never shown
         if (/\bspares?\b|\bin (the )?yard\b|\bto (the )?yard\b|· yard/.test(s)) hits.push(`${f.split('/src/')[1]}: "${t.trim()}"`);
       }

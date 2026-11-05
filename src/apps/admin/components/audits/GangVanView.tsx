@@ -332,6 +332,8 @@ export const GangVanView: React.FC = () => {
           targets={ref.allTargets}
           employees={ref.employees}
           allKit={allKit}
+          kitTypes={ref.kitTypes}
+          notCarriedTypeIds={[...notCarried]}
           vanLabel={ref.vanLabel}
           auditors={ref.auditors}
           onClose={() => setChanging(null)}

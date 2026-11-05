@@ -136,3 +136,13 @@ describe('Audit interval setting', () => {
     await expect(svc.setAuditInterval(0, 'x')).rejects.toThrow('between 1 and 60');
   });
 });
+
+describe('round 10: photo caption on a submitted audit', () => {
+  beforeEach(() => { H.calls = []; });
+  it('goes through audit_photo_caption (logged, the lock stays on for everything else)', async () => {
+    H.rpcData = 'Photo caption: Broken step → Broken step, left side';
+    const s = await svc.setPhotoCaption('ph1', ' Broken step, left side ', 'a1');
+    expect(s).toBe('Photo caption: Broken step → Broken step, left side');
+    expect(H.calls).toEqual([expect.objectContaining({ rpc: 'audit_photo_caption', payload: { p_photo_id: 'ph1', p_caption: 'Broken step, left side', p_actor_id: 'a1' } })]);
+  });
+});

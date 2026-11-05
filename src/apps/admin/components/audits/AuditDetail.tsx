@@ -9,12 +9,13 @@ import { getExpiryStatus, summariseAuditLines, whoName, otherAnswerFor, isFileDe
 import { FileLink } from './FileLink';
 import { AuditEditPanel } from './AuditEditPanel';
 import { DeleteAuditSheet } from './FleetSheets';
-import { listAuditEdits, AuditEditRow } from '../../../../lib/fleetService';
+import { listAuditEdits, setPhotoCaption, AuditEditRow } from '../../../../lib/fleetService';
+import { ActorPicker } from './ActorPicker';
 import { btn } from './styles';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { AuditLineRow, AuditMemberRow, AuditPhotoRow, AuditPhotoSlot, Auditor, SiteAudit } from '../../../../lib/supabase';
-import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag } from './ui';
-import { card, formatDate, formatDateTime } from './styles';
+import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag, Sheet, Field } from './ui';
+import { card, inputCls, formatDate, formatDateTime } from './styles';
 
 const SECTIONS: { key: AuditLineRow['section']; title: string }[] = [
   { key: 'ppe', title: 'PPE' },
@@ -296,15 +297,18 @@ export const AuditDetail: React.FC = () => {
         <p className="text-base sm:text-sm text-slate-700 whitespace-pre-wrap">{audit.notes || 'None.'}</p>
       </section>
 
-      <AuditGallery photos={photos} slots={ref.photoSlots} deletions={deletions} auditors={ref.auditors} onDeleted={reloadDeletions} />
+      <AuditGallery photos={photos} slots={ref.photoSlots} deletions={deletions} auditors={ref.auditors} onDeleted={reloadDeletions}
+        onCaptionSaved={(summary) => { setFlash(`Saved: ${summary}`); load(); }} />
     </div>
   );
 };
 
 /** Photos on the audit: standard slots in order (with any "Can't take photo" reason), then additional ones. */
-function AuditGallery({ photos, slots, deletions, auditors, onDeleted }: {
+function AuditGallery({ photos, slots, deletions, auditors, onDeleted, onCaptionSaved }: {
   photos: AuditPhotoRow[]; slots: AuditPhotoSlot[]; deletions: FileDeletion[]; auditors: Auditor[]; onDeleted: () => void;
+  onCaptionSaved: (summary: string) => void;
 }) {
+  const [captioning, setCaptioning] = useState<AuditPhotoRow | null>(null);
   if (!photos.length) return null;
   const order = new Map(slots.map((x) => [x.id, x.sort_order]));
   const standard = photos.filter((p) => p.slot_id).sort((a, b) => (order.get(a.slot_id!) ?? 999) - (order.get(b.slot_id!) ?? 999) || a.sort_order - b.sort_order);
@@ -316,7 +320,12 @@ function AuditGallery({ photos, slots, deletions, auditors, onDeleted }: {
         <>
           <GalleryThumb path={p.path} label={label} gone={!!isFileDeleted(p.path, deletions)} />
           <p className="text-xs text-slate-600 mt-1">{p.taken_at ? `Taken ${formatDateTime(p.taken_at)}` : ''}</p>
-          <FileLink path={p.path} kind="Photo" deletions={deletions} auditors={auditors} onDeleted={onDeleted} />
+          <div className="flex flex-wrap items-center gap-1">
+            <FileLink path={p.path} kind="Photo" deletions={deletions} auditors={auditors} onDeleted={onDeleted} />
+            {!p.slot_id && p.id && (
+              <button type="button" className={btn.small} onClick={() => setCaptioning(p)}>Edit caption</button>
+            )}
+          </div>
         </>
       ) : (
         <p className="mt-1 text-base sm:text-sm font-semibold text-amber-800">Can’t take photo: {p.skip_reason}</p>
@@ -330,6 +339,10 @@ function AuditGallery({ photos, slots, deletions, auditors, onDeleted }: {
         {standard.map((p, i) => <Card key={p.id ?? `s${i}`} p={p} label={p.slot_name ?? 'Photo'} />)}
         {extra.map((p, i) => <Card key={p.id ?? `e${i}`} p={p} label={p.caption?.trim() || 'Additional photo'} />)}
       </ul>
+      {captioning && (
+        <CaptionSheet photo={captioning} auditors={auditors} onClose={() => setCaptioning(null)}
+          onSaved={(summary) => { setCaptioning(null); onCaptionSaved(summary); }} />
+      )}
     </section>
   );
 }
@@ -349,5 +362,37 @@ function GalleryThumb({ path, label, gone }: { path: string; label: string; gone
     <a href={url ?? undefined} target="_blank" rel="noopener noreferrer" className="mt-2 block aspect-[4/3] rounded-lg overflow-hidden bg-slate-100 border border-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
       {url ? <img src={url} alt={`${label} photo`} className="h-full w-full object-cover" loading="lazy" /> : <Loader2 className="h-6 w-6 m-auto mt-10 text-slate-500 animate-spin" />}
     </a>
+  );
+}
+
+/** Change an additional photo's caption on a submitted audit: logged like Edit audit. */
+function CaptionSheet({ photo, auditors, onClose, onSaved }: { photo: AuditPhotoRow; auditors: Auditor[]; onClose: () => void; onSaved: (summary: string) => void }) {
+  const [caption, setCaption] = useState(photo.caption ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { actorId, setActorId } = useActor(auditors);
+  const save = async () => {
+    if (!actorId) return setError('Pick who’s doing this.');
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await setPhotoCaption(photo.id as string, caption, actorId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the caption.');
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet title="Edit caption" subtitle="The change is logged on the audit." onClose={onClose}
+      footer={
+        <>
+          <button type="button" className={btn.secondary} onClick={onClose}>Cancel</button>
+          <button type="button" className={btn.primary} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save caption'}</button>
+        </>
+      }>
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
+      <Field label="Caption">{(id) => <input id={id} className={inputCls} value={caption} onChange={(e) => setCaption(e.target.value)} />}</Field>
+      <ErrorNote message={error} />
+    </Sheet>
   );
 }

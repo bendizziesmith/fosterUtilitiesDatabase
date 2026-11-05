@@ -18,6 +18,8 @@ export async function changeVan(input: {
   oldVehicleId: string | null;
   newVehicleId: string;
   moves: KitMove[];
+  /** "Anything missing?": spares taken (Yard Lockup / spare van) or new items, saved in the same call */
+  takes?: ({ item_id: string; to: 'take' } | { to: 'new'; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null })[];
   note: string | null;
   testMode: boolean;
   /** "Who's doing this?" (audit_auditors.id) */
@@ -30,7 +32,7 @@ export async function changeVan(input: {
       p_person_id: input.personId,
       p_old_vehicle_id: input.oldVehicleId,
       p_new_vehicle_id: input.newVehicleId,
-      p_moves: input.moves.map((m) => ({ item_id: m.itemId, to: m.to })),
+      p_moves: [...input.moves.map((m) => ({ item_id: m.itemId, to: m.to })), ...(input.takes ?? [])],
       p_note: input.note,
       p_is_test: input.testMode,
       p_actor_id: input.actorId,

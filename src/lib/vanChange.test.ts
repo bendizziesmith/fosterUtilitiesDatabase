@@ -154,3 +154,63 @@ describe('occupiedWarning — who is on the new van now', () => {
     expect(occupiedWarning('OW72 SKV', ['A', 'B'])).toMatch(/assigned to A and B/);
   });
 });
+
+import { vanShortfall, bestSpare, takeMoves, takeSummary } from './vanChange';
+
+describe('Change van "Anything missing?" — the shortfall list (round 10)', () => {
+  const held: VanKit[] = [
+    { id: 'o1', kit_type_id: 'saw', type_name: 'STIHL saw', plant_no: 'SS-1' },
+    { id: 'o2', kit_type_id: 'dig', type_name: 'Digger', plant_no: 'D-1' },
+    { id: 'o3', kit_type_id: 'dig', type_name: 'Digger', plant_no: 'D-2' },
+  ];
+  it('kit types they carried before but will not hold now', () => {
+    expect(vanShortfall({ oldKit: held, willHold: [held[1]], notCarried: [] })).toEqual([{ kit_type_id: 'saw', type_name: 'STIHL saw' }]);
+  });
+  it('one line per type; nothing when they still hold one of that type', () => {
+    expect(vanShortfall({ oldKit: held, willHold: [], notCarried: [] }).map((s) => s.type_name)).toEqual(['STIHL saw', 'Digger']);
+  });
+  it('types marked "not carried" are not missing', () => {
+    expect(vanShortfall({ oldKit: held, willHold: [], notCarried: ['saw'] }).map((s) => s.type_name)).toEqual(['Digger']);
+  });
+});
+
+describe('bestSpare — the pre-selected spare', () => {
+  const o = (id: string, expiry: string | null) => ({ id, plant_no: id, expiry_date: expiry, where: '' });
+  const today = '2026-11-05';
+  it('in date with the longest expiry, Yard Lockup first', () => {
+    expect(bestSpare({ lockup: [o('L1', '2027-01-01'), o('L2', '2027-09-01'), o('L3', null)], spareVans: [o('V1', '2028-01-01')] }, today)?.id).toBe('L2');
+  });
+  it('spare vans only when nothing in the Yard Lockup is in date', () => {
+    expect(bestSpare({ lockup: [o('L1', '2026-10-01')], spareVans: [o('V1', '2027-02-01'), o('V2', '2027-06-01')] }, today)?.id).toBe('V2');
+  });
+  it('no date counts as in date, after the dated ones', () => {
+    expect(bestSpare({ lockup: [o('L3', null)], spareVans: [] }, today)?.id).toBe('L3');
+  });
+  it('nothing in date anywhere, or no spares at all: nothing pre-selected', () => {
+    expect(bestSpare({ lockup: [o('L1', '2026-10-01')], spareVans: [] }, today)).toBeNull();
+    expect(bestSpare({ lockup: [], spareVans: [] }, today)).toBeNull();
+  });
+});
+
+describe('takeMoves / takeSummary — saved with the van change, shown in step 3', () => {
+  it('taking from the Yard Lockup', () => {
+    const c = { kit_type_id: 'saw', type_name: 'STIHL saw', kind: 'spare' as const, itemId: 'k1', plantNo: 'SS-311', from: 'Yard Lockup' };
+    expect(takeMoves([c])).toEqual([{ item_id: 'k1', to: 'take' }]);
+    expect(takeSummary(c)).toBe('Takes SS-311 from the Yard Lockup');
+  });
+  it('taking from a spare van', () => {
+    const c = { kit_type_id: 'saw', type_name: 'STIHL saw', kind: 'spare' as const, itemId: 'k2', plantNo: 'SS-9', from: 'WV72 OZL · spare van' };
+    expect(takeMoves([c])).toEqual([{ item_id: 'k2', to: 'take' }]);
+    expect(takeSummary(c)).toBe('Takes SS-9 from WV72 OZL · spare van');
+  });
+  it('leaving it: no move, and the summary says so', () => {
+    const c = { kit_type_id: 'saw', type_name: 'STIHL saw', kind: 'leave' as const };
+    expect(takeMoves([c])).toEqual([]);
+    expect(takeSummary(c)).toBe('No STIHL saw for now');
+  });
+  it('no spares: add a new one', () => {
+    const c = { kit_type_id: 'saw', type_name: 'STIHL saw', kind: 'new' as const, plantNo: ' SS-400 ', serviceDate: '2026-11-01', expiry: '2027-11-01' };
+    expect(takeMoves([c])).toEqual([{ to: 'new', kit_type_id: 'saw', plant_no: 'SS-400', service_date: '2026-11-01', expiry_date: '2027-11-01' }]);
+    expect(takeSummary(c)).toBe('Adds a new STIHL saw SS-400');
+  });
+});

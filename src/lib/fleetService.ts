@@ -150,3 +150,8 @@ export async function deletePlant(itemId: string, confirm: string, actorId: stri
   const paths = (check(await supabase.rpc('kit_delete_item', { p_item_id: itemId, p_confirm: confirm, p_actor_id: actorId })) as string[]) ?? [];
   if (paths.length) check(await supabase.storage.from(BUCKET).remove(paths));
 }
+
+/** Caption of a photo on a submitted audit: through the database so the change is allowed past the lock and logged. */
+export async function setPhotoCaption(photoId: string, caption: string, actorId: string | null): Promise<string> {
+  return check(await supabase.rpc('audit_photo_caption', { p_photo_id: photoId, p_caption: caption.trim(), p_actor_id: actorId })) as string;
+}

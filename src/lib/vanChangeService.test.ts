@@ -57,6 +57,21 @@ describe('changeVan', () => {
     });
   });
 
+  it('round 10: spares taken and new items go in the same save, after the kit moves', async () => {
+    await changeVan({ ...input, testMode: true, takes: [
+      { item_id: 'sp1', to: 'take' },
+      { to: 'new', kit_type_id: 't-saw', plant_no: 'SS-400', service_date: '2026-11-01', expiry_date: '2027-11-01' },
+    ] });
+    const rpcs = H.calls.filter((c) => c.rpc);
+    expect(rpcs).toHaveLength(1);
+    expect((rpcs[0].payload as { p_moves: unknown[] }).p_moves).toEqual([
+      { item_id: 'k1', to: 'person' },
+      { item_id: 'sp1', to: 'take' },
+      { to: 'new', kit_type_id: 't-saw', plant_no: 'SS-400', service_date: '2026-11-01', expiry_date: '2027-11-01' },
+    ]);
+    expect(H.calls.some((c) => c.table === 'employees' || c.table === 'vehicles')).toBe(false);
+  });
+
   it('in test mode does not record the person’s van either (it did not change)', async () => {
     await changeVan({ ...input, testMode: true });
     expect(H.calls.some((c) => c.table === 'kit_person_vans')).toBe(false);

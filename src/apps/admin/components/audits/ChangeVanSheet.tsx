@@ -1,12 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { AlertTriangle, Truck, Warehouse, User } from 'lucide-react';
+import { AlertTriangle, Truck, Warehouse, User, PackagePlus } from 'lucide-react';
 import { Sheet, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
 import { TargetPicker } from './TargetPicker';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
-import { planVanChange, vanModeOptions, kitOnHandText, occupiedWarning, MixChoice, VanChangeMode, VanKit } from '../../../../lib/vanChange';
+import { planVanChange, vanModeOptions, kitOnHandText, occupiedWarning, vanShortfall, bestSpare, takeMoves, takeSummary, MixChoice, TakeChoice, VanChangeMode, VanKit } from '../../../../lib/vanChange';
+import { spareOptions, todayISO } from '../../../../lib/siteAuditLogic';
+import { TakeSpareLine, TakeOtherButton, TakeState } from './TakeSpare';
 import { changeVan } from '../../../../lib/vanChangeService';
-import { Auditor, KitItemOverview } from '../../../../lib/supabase';
+import { Auditor, KitItemOverview, KitType } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { StaffRow } from '../../../../lib/siteAuditService';
@@ -28,6 +30,8 @@ export function ChangeVanSheet({
   targets,
   employees,
   allKit,
+  kitTypes = [],
+  notCarriedTypeIds = [],
   vanLabel,
   auditors,
   onClose,
@@ -41,6 +45,10 @@ export function ChangeVanSheet({
   targets: AuditTarget[];
   employees: StaffRow[];
   allKit: KitItemOverview[];
+  /** for "Take a spare" of any type, and the auto expiry of a new item */
+  kitTypes?: KitType[];
+  /** kit types marked "not carried" for this person: never "missing" */
+  notCarriedTypeIds?: string[];
   vanLabel: (id: string | null, reg?: string | null) => string;
   auditors: Auditor[];
   onClose: () => void;
@@ -71,6 +79,39 @@ export function ChangeVanSheet({
     () => planVanChange({ oldKit, newKit, mode, mix, hasOldVan: !!oldVehicleId }),
     [oldKit, newKit, mode, mix, oldVehicleId]
   );
+  // ---------------------------------------------- "Anything missing?": spares taken in the same Save
+  const [takeState, setTakeState] = useState<Record<string, TakeState>>({});
+  const [extraTypes, setExtraTypes] = useState<string[]>([]);
+  const shortfall = useMemo(
+    () => vanShortfall({ oldKit, willHold: plan.willHold, notCarried: notCarriedTypeIds }),
+    [oldKit, plan.willHold, notCarriedTypeIds]
+  );
+  const inPlan = useMemo(() => new Set([...oldKit, ...newKit].map((k) => k.id)), [oldKit, newKit]);
+  const groupsFor = (typeId: string) => {
+    const g = spareOptions(allKit, typeId, '');
+    // never the kit this change already moves, nor kit on the old / new van itself
+    const ok = (k: KitItemOverview) => !inPlan.has(k.id) && k.vehicle_id !== oldVehicleId && k.vehicle_id !== newVehicleId;
+    return { lockup: g.lockup.filter(ok), spareVans: g.spareVans.filter(ok) };
+  };
+  const stateFor = (typeId: string): TakeState => {
+    if (takeState[typeId]) return takeState[typeId];
+    const best = bestSpare(groupsFor(typeId), todayISO());
+    return { mode: best ? 'take' : 'leave', itemId: best?.id ?? null, picking: false, plant: '', dates: { serviceDate: null, expiry: null, expiryManual: false } };
+  };
+  const takeTypes = [
+    ...shortfall,
+    ...extraTypes.filter((t) => !shortfall.some((x) => x.kit_type_id === t)).map((t) => ({ kit_type_id: t, type_name: kitTypes.find((k) => k.id === t)?.name ?? 'Kit' })),
+  ];
+  const choices: TakeChoice[] = takeTypes.map(({ kit_type_id, type_name }) => {
+    const st = stateFor(kit_type_id);
+    const g = groupsFor(kit_type_id);
+    const item = [...g.lockup, ...g.spareVans].find((o) => o.id === st.itemId);
+    if (st.mode === 'take' && item) return { kit_type_id, type_name, kind: 'spare', itemId: item.id, plantNo: item.plant_no, from: item.where };
+    if (st.mode === 'new') return { kit_type_id, type_name, kind: 'new', plantNo: st.plant, serviceDate: st.dates.serviceDate, expiry: st.dates.expiry };
+    return { kit_type_id, type_name, kind: 'leave' };
+  });
+  const otherTypes = kitTypes.filter((t) => !takeTypes.some((x) => x.kit_type_id === t.id));
+
   const oldHolders = holdersOf(oldVehicleId);
   const newHolders = holdersOf(newVehicleId);
   const oldLabel = oldVehicleId ? vanLabel(oldVehicleId) : 'no van';
@@ -101,6 +142,7 @@ export function ChangeVanSheet({
         oldVehicleId,
         newVehicleId,
         moves: plan.moves,
+        takes: takeMoves(choices),
         note: `Van change: ${person.name} ${oldLabel} → ${newLabel}`,
         testMode: TEST_MODE,
         assignmentAlreadyDone,
@@ -206,6 +248,34 @@ export function ChangeVanSheet({
               {!oldKit.length && !newKit.length && <p className="text-base sm:text-sm text-slate-600">Neither van has any kit recorded.</p>}
             </div>
           )}
+
+          <section aria-labelledby="missing-h" className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+            <div>
+              <h3 id="missing-h" className="text-base sm:text-sm font-bold text-slate-900">Anything missing?</h3>
+              <p className="text-sm text-slate-600">
+                {shortfall.length
+                  ? 'Kit they had before but won’t have now. The best replacement is picked for you: in date, longest expiry, Yard Lockup first, then spare vans.'
+                  : 'Nothing missing: they keep every kit type they had. You can still add kit from the Yard Lockup or a spare van.'}
+              </p>
+            </div>
+            {takeTypes.length > 0 && (
+              <ul className="space-y-2">
+                {takeTypes.map(({ kit_type_id, type_name }) => (
+                  <TakeSpareLine
+                    key={kit_type_id}
+                    title={shortfall.some((x) => x.kit_type_id === kit_type_id) ? `No ${type_name} on ${newLabel}` : `Take a spare: ${type_name}`}
+                    typeName={type_name}
+                    groups={groupsFor(kit_type_id)}
+                    state={stateFor(kit_type_id)}
+                    onChange={(st) => setTakeState((m) => ({ ...m, [kit_type_id]: st }))}
+                    months={kitTypes.find((k) => k.id === kit_type_id)?.service_interval_months}
+                    onRemove={shortfall.some((x) => x.kit_type_id === kit_type_id) ? undefined : () => setExtraTypes((xs) => xs.filter((x) => x !== kit_type_id))}
+                  />
+                ))}
+              </ul>
+            )}
+            <TakeOtherButton types={otherTypes} onPick={(t) => setExtraTypes((xs) => [...xs, t])} />
+          </section>
         </>
       )}
 
@@ -224,6 +294,12 @@ export function ChangeVanSheet({
               items={plan.leftInOld} empty="Nothing." />
           )}
           <Summary icon={<Warehouse className="h-4 w-4 text-violet-600" />} title="Back to the Yard Lockup" items={plan.toYard} empty="Nothing." />
+          {choices.length > 0 && (
+            <section className="rounded-lg border border-slate-200 p-3">
+              <h3 className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2 mb-1"><PackagePlus className="h-4 w-4 text-blue-600" />Spares for {person.name}</h3>
+              <ul className="text-base sm:text-sm text-slate-800 space-y-0.5">{choices.map((c) => <li key={c.kit_type_id}>• {c.type_name}: {takeSummary(c)}</li>)}</ul>
+            </section>
+          )}
           {newHolders.length > 0 && !assignmentAlreadyDone && (
             <p className="text-xs text-slate-600">{newHolders.join(', ')} is also assigned to {newLabel}; that doesn’t change.</p>
           )}
