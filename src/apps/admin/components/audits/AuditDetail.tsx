@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { getAudit } from '../../../../lib/siteAuditService';
-import { getExpiryStatus, summariseAuditLines, whoName, FileDeletion } from '../../../../lib/siteAuditLogic';
+import { getExpiryStatus, summariseAuditLines, whoName, otherAnswerFor, FileDeletion } from '../../../../lib/siteAuditLogic';
 import { FileLink } from './FileLink';
 import { AuditEditPanel } from './AuditEditPanel';
 import { DeleteAuditSheet } from './FleetSheets';
@@ -22,7 +22,7 @@ const SECTIONS: { key: AuditLineRow['section']; title: string }[] = [
 ];
 
 function needsLook(l: AuditLineRow, auditDate: string) {
-  if (l.result === 'N') return true;
+  if (l.result === 'N' || l.label_on === 'N') return true;
   if (l.result === 'not_carried' || (l.section !== 'ppe' && l.section !== 'kit')) return false;
   const s = getExpiryStatus(l.expiry_date, auditDate).status;
   return s === 'expired' || s === 'due_soon';
@@ -35,9 +35,17 @@ function Result({ r }: { r: AuditLineRow['result'] }) {
   return <span className="text-xs text-slate-500">—</span>;
 }
 
-function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor }: {
+/** "Label on?" answer: words as well as colour */
+function LabelOn({ v }: { v: AuditLineRow['label_on'] }) {
+  if (v === 'Y') return <span className="text-slate-700">Label on</span>;
+  if (v === 'N') return <span className="font-semibold text-red-700">No label</span>;
+  return <span className="text-xs text-slate-500">—</span>;
+}
+
+function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor, otherAnswer }: {
   title: string; lines: AuditLineRow[]; auditDate: string; section: AuditLineRow['section'];
   deletions: FileDeletion[]; auditors: Auditor[]; onFileDeleted: () => void; dateLabelFor: (l: AuditLineRow) => string | null;
+  otherAnswer: (l: AuditLineRow) => 'label' | 'date_tag' | 'none';
 }) {
   const [showAll, setShowAll] = useState(false);
   const flagged = lines.filter((l) => needsLook(l, auditDate));
@@ -45,6 +53,9 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
   const isKit = section === 'kit';
   const hasExpiry = section === 'ppe' || section === 'kit';
   const ppeDates = section === 'ppe' && lines.some((l) => l.service_date);
+  // Other: "Label on?" where the item asks it; the old date / tag text only where an audit has some
+  const showLabel = section === 'other' && lines.some((l) => l.label_on || otherAnswer(l) === 'label');
+  const showTag = section === 'other' && lines.some((l) => l.date_tag);
   const photo = (l: AuditLineRow) => l.photo_path && <FileLink path={l.photo_path} kind="Photo" deletions={deletions} auditors={auditors} onDeleted={onFileDeleted} />;
   if (!lines.length) return null;
 
@@ -67,7 +78,8 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
           {l.result !== 'not_carried' && <ExpiryPill expiry={l.expiry_date} today={auditDate} showOk={false} />}
         </td>
       )}
-      {section === 'other' && <td className="px-3 py-2.5 text-slate-700">{l.date_tag ?? '—'}</td>}
+      {showLabel && <td className="px-3 py-2.5">{otherAnswer(l) === 'label' || l.label_on ? <LabelOn v={l.label_on} /> : ''}</td>}
+      {showTag && <td className="px-3 py-2.5 text-slate-700">{l.date_tag ?? ''}</td>}
       <td className="px-3 py-2.5 text-slate-700">{l.comment ?? ''}</td>
       <td className="px-5 py-2.5 text-right">{photo(l)}</td>
     </>
@@ -88,7 +100,8 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
               {isKit ? (<><th className="px-3 py-2.5">Plant no</th><th className="px-3 py-2.5">Service</th></>) : <th className="px-3 py-2.5">Qty</th>}
               {ppeDates && <th className="px-3 py-2.5">Date</th>}
               {hasExpiry && <th className="px-3 py-2.5">Expiry</th>}
-              {section === 'other' && <th className="px-3 py-2.5">Date / tag</th>}
+              {showLabel && <th className="px-3 py-2.5">Label on?</th>}
+              {showTag && <th className="px-3 py-2.5">Date / tag</th>}
               <th className="px-3 py-2.5">Comment</th>
               <th className="px-5 py-2.5"><span className="sr-only">Photo</span></th>
             </tr>
@@ -115,10 +128,12 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
                 isKit && l.service_date && `Serviced ${formatDate(l.service_date)}`,
                 !isKit && l.service_date && `${dateLabelFor(l) ?? 'Date'} ${formatDate(l.service_date)}`,
                 hasExpiry && l.expiry_date && `Expiry ${formatDate(l.expiry_date)}`,
+                l.label_on === 'Y' && 'Label on',
                 l.date_tag,
               ].filter(Boolean).join(' · ')}
             </p>
             {hasExpiry && l.result !== 'not_carried' && l.expiry_date && <div className="mt-1"><ExpiryPill expiry={l.expiry_date} today={auditDate} showOk={false} /></div>}
+            {l.label_on === 'N' && <p className="text-xs font-semibold text-red-700 mt-1">No label</p>}
             {l.comment && <p className="text-xs text-slate-700 mt-1">“{l.comment}”</p>}
             {photo(l)}
           </li>
@@ -144,6 +159,7 @@ export const AuditDetail: React.FC = () => {
   const ref = useAuditRef();
   const { deletions, reload: reloadDeletions } = useFileDeletions();
   const dateLabelFor = (l: AuditLineRow) => ref.checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null;
+  const otherAnswer = (l: AuditLineRow) => otherAnswerFor(ref.checklist.find((c) => c.id === l.checklist_item_id));
   const [edits, setEdits] = useState<AuditEditRow[]>([]);
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [flash, setFlash] = useState<string | null>(null);
@@ -230,7 +246,7 @@ export const AuditDetail: React.FC = () => {
       </section>
 
       {mode === 'edit' && (
-        <AuditEditPanel auditId={audit.id} lines={lines} auditors={ref.auditors} onCancel={() => setMode('view')}
+        <AuditEditPanel auditId={audit.id} lines={lines} auditors={ref.auditors} otherAnswer={otherAnswer} onCancel={() => setMode('view')}
           onSaved={(summary) => { setMode('view'); setFlash(`Saved: ${summary.join('; ')}`); load(); }} />
       )}
       {mode === 'delete' && (
@@ -240,7 +256,7 @@ export const AuditDetail: React.FC = () => {
 
       {mode !== 'edit' && SECTIONS.map((sec) => (
         <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)}
-          deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} />
+          deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} otherAnswer={otherAnswer} />
       ))}
 
       <section className={`${card} p-4 sm:p-5`}>

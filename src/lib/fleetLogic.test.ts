@@ -148,3 +148,13 @@ describe('diffAuditLines — what an edit changed, for the log', () => {
     expect(diffAuditLines(before, after).changes).toEqual([]);
   });
 });
+
+describe('diffAuditLines — "Label on?" is editable (round 7)', () => {
+  it('logs "Water containers label on: N → Y"', () => {
+    const before = [{ id: 'w', item_name: 'Water containers', result: 'Y', qty: '1', comment: null, expiry_date: null, service_date: null, plant_no_snapshot: null, date_tag: null, label_on: 'N' }] as never[];
+    const after = [{ ...(before[0] as object), label_on: 'Y' }] as never[];
+    const d = diffAuditLines(before, after);
+    expect(d.changes).toEqual([{ line_id: 'w', field: 'label_on', from: 'N', to: 'Y' }]);
+    expect(d.summary).toEqual(['Water containers label on: N → Y']);
+  });
+});

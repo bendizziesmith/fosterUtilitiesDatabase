@@ -24,6 +24,7 @@ import {
   todayISO,
   applyServiceDate,
   applyExpiry,
+  otherAnswerFor,
   AuditTarget,
   DraftLine,
   TeamMember,
@@ -45,6 +46,15 @@ const SECTIONS: { key: DraftLine['section']; title: string; note: string }[] = [
   { key: 'kit', title: 'Kit', note: 'Pre-filled from their Kit & Plant record' },
   { key: 'other', title: 'Other', note: '' },
 ];
+
+/** "Continue" reopens a draft where it was left: the scroll position saved with the draft (this browser only) */
+const scrollKey = (id: string) => `foster.audit.draftScroll.${id}`;
+const rememberScroll = (id: string) => {
+  try { localStorage.setItem(scrollKey(id), String(Math.round(window.scrollY))); } catch { /* storage blocked */ }
+};
+const savedScroll = (id: string): number => {
+  try { return Number(localStorage.getItem(scrollKey(id))) || 0; } catch { return 0; }
+};
 
 let keySeq = 0;
 const newKey = (p: string) => `${p}:${Date.now()}:${keySeq++}`;
@@ -126,6 +136,13 @@ export const NewAuditForm: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftParam, navigate]);
+
+  // reopened draft: back to where it was left
+  useEffect(() => {
+    if (loading || !draftParam) return;
+    const y = savedScroll(draftParam);
+    if (y > 0) requestAnimationFrame(() => window.scrollTo({ top: y }));
+  }, [loading, draftParam]);
 
   // opened from a gang / van page: "New audit for this gang"
   const [autoPicked, setAutoPicked] = useState(false);
@@ -223,7 +240,9 @@ export const NewAuditForm: React.FC = () => {
     setBusy('draft');
     setError(null);
     try {
-      if (await save()) setSavedAt(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+      const id = await save();
+      if (id) rememberScroll(id);
+      if (id) setSavedAt(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the draft.');
     } finally {
@@ -348,6 +367,7 @@ export const NewAuditForm: React.FC = () => {
                       : checklist.find((c) => c.id === l.checklist_item_id)?.service_interval_months ?? null
                   }
                   dateLabel={l.section === 'ppe' ? checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null : null}
+                  otherAnswer={otherAnswerFor(checklist.find((c) => c.id === l.checklist_item_id))}
                   issued={l.checklist_item_id ? issuedMap.get(l.checklist_item_id) ?? 0 : 0}
                   onChange={(p) => update(l.key!, p)}
                   onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
@@ -469,6 +489,7 @@ function LineRow({
   auditDate,
   months,
   dateLabel,
+  otherAnswer = 'none',
   issued = 0,
   onChange,
   onRemove,
@@ -480,6 +501,8 @@ function LineRow({
   /** service interval: expiry fills itself from the service date / date on hat */
   months: number | null;
   dateLabel: string | null;
+  /** Other section: "Label on?" Y/N, the free-text date / tag box, or nothing (from the checklist item) */
+  otherAnswer?: 'label' | 'date_tag' | 'none';
   /** issued from the Yard Lockup since their last audit */
   issued?: number;
   onChange: (p: Partial<DraftLine>) => void;
@@ -557,7 +580,13 @@ function LineRow({
             {(line.section === 'ppe' || isKit) && (
               <ExpiryInput line={line} auditDate={auditDate} months={months} onChange={onChange} />
             )}
-            {line.section === 'other' && (
+            {line.section === 'other' && otherAnswer === 'label' && (
+              <div className="col-span-2 sm:col-span-1">
+                <p className="text-xs font-semibold text-slate-600 mb-1">Label on?</p>
+                <YesNo value={line.label_on ?? null} label={line.item_name} question="label on" onChange={(v) => onChange({ label_on: v })} />
+              </div>
+            )}
+            {line.section === 'other' && otherAnswer === 'date_tag' && (
               <Field label="Date / tag / label" className="col-span-2 sm:col-span-1">
                 {(id) => <input id={id} className={inputCls} value={line.date_tag ?? ''} onChange={(e) => onChange({ date_tag: e.target.value })} />}
               </Field>

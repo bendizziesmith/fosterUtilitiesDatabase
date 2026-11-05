@@ -279,6 +279,8 @@ export interface AuditChecklistItem {
   service_interval_months: number | null;
   /** label for the date the interval counts from, e.g. "Date on hat" */
   date_label: string | null;
+  /** Other section: ask "Label on?" Y/N (round 7) */
+  has_label_check?: boolean;
 }
 
 export interface KitType {
@@ -350,6 +352,9 @@ export interface SiteAuditSummary {
   status: 'draft' | 'submitted';
   submitted_at: string | null;
   is_test: boolean;
+  created_at?: string;
+  /** last saved (drafts) */
+  updated_at?: string;
   fail_count: number;
   expired_count: number;
   due_soon_count: number;
@@ -402,6 +407,8 @@ export interface AuditLineRow {
   service_date: string | null;
   plant_no_snapshot: string | null;
   date_tag: string | null;
+  /** "Label on?" Y / N (Other section, round 7) */
+  label_on?: 'Y' | 'N' | null;
   comment: string | null;
   photo_path: string | null;
   kit_item_id: string | null;

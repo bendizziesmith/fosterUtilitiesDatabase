@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  otherAnswerFor,
   getExpiryStatus,
   formatExpiryStatus,
   buildAuditTargets,
@@ -591,5 +592,41 @@ describe('buildAuditTargets — vans off the road', () => {
     const t = buildAuditTargets(emp, veh, new Set(['v1']));
     expect(t.gangs[0].label).toBe('Dom Oliver · YE24 TNL (off the road)');
     expect(auditTargetsOf(t).map((x) => x.key)).toEqual(['van:v3', 'van:v2']); // spare vans by reg
+  });
+});
+
+describe('otherAnswerFor — what the "Other" section asks, from the checklist item (round 7)', () => {
+  it('"Label on?" Y/N for items with the label check (Water containers, Gerry cans, Fuel cans)', () => {
+    expect(otherAnswerFor({ section: 'other', has_date_tag: false, has_label_check: true })).toBe('label');
+  });
+  it('no box at all when neither is set (NSF folder, Powercare checklist)', () => {
+    expect(otherAnswerFor({ section: 'other', has_date_tag: false, has_label_check: false })).toBe('none');
+  });
+  it('the old free-text box only where an item still asks for it', () => {
+    expect(otherAnswerFor({ section: 'other', has_date_tag: true, has_label_check: false })).toBe('date_tag');
+  });
+  it('the label check wins over the text box if both are set', () => {
+    expect(otherAnswerFor({ section: 'other', has_date_tag: true, has_label_check: true })).toBe('label');
+  });
+  it('only the Other section asks either', () => {
+    expect(otherAnswerFor({ section: 'ppe', has_date_tag: true, has_label_check: true })).toBe('none');
+    expect(otherAnswerFor(undefined)).toBe('none');
+  });
+});
+
+describe('buildAuditPrefill — "Label on?" carries over like quantities (round 7)', () => {
+  const checklist = [
+    { id: 'c-water', section: 'other', name: 'Water containers', expected_qty: 'x1', sort_order: 10 },
+    { id: 'c-nsf', section: 'other', name: 'NSF folder', expected_qty: 'x1', sort_order: 40 },
+  ];
+  const lines = buildAuditPrefill({
+    checklist, kitTypes: [], heldKit: [], ppe: [], notCarried: [],
+    lastLines: [{ section: 'other', checklist_item_id: 'c-water', qty: '1', service_date: null, date_tag: null, label_on: 'N' }],
+  });
+  it('the last answer is pre-filled', () => {
+    expect(lines.find((l) => l.checklist_item_id === 'c-water')).toMatchObject({ qty: '1', label_on: 'N' });
+  });
+  it('never answered = blank', () => {
+    expect(lines.find((l) => l.checklist_item_id === 'c-nsf')!.label_on).toBeNull();
   });
 });

@@ -112,3 +112,41 @@ export function vanChangesToCheck(
       toVehicleId: s.assigned_vehicle_id as string,
     }));
 }
+
+// ---------------------------------------------------------------- step 2 wording (round 7)
+
+/** Step 2 always offers all three, even with no kit on either side: the choice still decides what the old van keeps. */
+export function vanModeOptions(hasOldVan: boolean): { mode: VanChangeMode; title: string; hint: string }[] {
+  return [
+    {
+      mode: 'take_all',
+      title: 'Swap vans: my kit goes with me into the new van, and the old van becomes a spare van',
+      hint: hasOldVan
+        ? 'Everything they hold goes with them (and any spare-van kit in the new van becomes theirs).'
+        : 'No old van, so everything they hold, and the new van’s spare-van kit, is theirs.',
+    },
+    {
+      mode: 'use_new',
+      title: 'Use the kit already in the new van',
+      hint: hasOldVan ? 'The kit they hold stays with the old van.' : 'Takes over the kit in the new van.',
+    },
+    { mode: 'mix', title: 'Mix', hint: 'Choose item by item.' },
+  ];
+}
+
+const kitList = (items: VanKit[]) => items.map((k) => `${k.type_name}${k.plant_no ? ` ${k.plant_no}` : ''}`).join(', ');
+
+/** "You hold no kit" / "OW72 SKV has: Digger DG-005, …" / "OW72 SKV has no kit". */
+export function kitOnHandText(input: { oldKit: VanKit[]; newKit: VanKit[]; newLabel: string }): { held: string; newVan: string } {
+  return {
+    held: input.oldKit.length ? `You hold: ${kitList(input.oldKit)}` : 'You hold no kit',
+    newVan: input.newKit.length ? `${input.newLabel} has: ${kitList(input.newKit)}` : `${input.newLabel} has no kit`,
+  };
+}
+
+/** Shown before step 2 when someone is already on the new van. */
+export function occupiedWarning(newLabel: string, holders: string[]): string | null {
+  if (!holders.length) return null;
+  const names = holders.length === 1 ? holders[0] : `${holders.slice(0, -1).join(', ')} and ${holders[holders.length - 1]}`;
+  return `${newLabel} is already assigned to ${names}. They stay on it too; only their own kit stays theirs.`;
+}

@@ -12,6 +12,7 @@ import {
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
 import { getDashboardCounts } from '../../../lib/siteAuditService';
 import { lowStockBadgeText } from '../../../lib/lockupLogic';
+import { draftsBadgeText } from '../../../lib/draftLogic';
 
 interface AdminDashboardProps {
   inspections: VehicleInspection[];
@@ -98,9 +99,14 @@ const Badge: React.FC<{ n: number; label: string; cls: string }> = ({ n, label, 
 function cardBadges(path: string, c: Counts | null) {
   if (!c) return null;
   if (path === '/audits') {
-    if (!c.expired && !c.dueSoon && !c.auditsDue) return null;
+    if (!c.expired && !c.dueSoon && !c.auditsDue && !c.drafts) return null;
     return (
       <>
+        {draftsBadgeText(c.drafts) && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-slate-100 text-slate-700 border-slate-200">
+            {draftsBadgeText(c.drafts)}
+          </span>
+        )}
         {c.auditsDue > 0 && <Badge n={c.auditsDue} label={c.auditsDue === 1 ? 'audit due' : 'audits due'} cls="bg-blue-50 text-blue-700 border-blue-200" />}
         {c.expired > 0 && <Badge n={c.expired} label="expired" cls="bg-red-50 text-red-700 border-red-200" />}
         {c.dueSoon > 0 && <Badge n={c.dueSoon} label="due soon" cls="bg-amber-50 text-amber-800 border-amber-200" />}

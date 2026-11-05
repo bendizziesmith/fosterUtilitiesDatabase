@@ -4,7 +4,7 @@ import { Sheet, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
 import { TargetPicker } from './TargetPicker';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
-import { planVanChange, MixChoice, VanChangeMode, VanKit } from '../../../../lib/vanChange';
+import { planVanChange, vanModeOptions, kitOnHandText, occupiedWarning, MixChoice, VanChangeMode, VanKit } from '../../../../lib/vanChange';
 import { changeVan } from '../../../../lib/vanChangeService';
 import { Auditor, KitItemOverview } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
@@ -75,6 +75,17 @@ export function ChangeVanSheet({
   const newHolders = holdersOf(newVehicleId);
   const oldLabel = oldVehicleId ? vanLabel(oldVehicleId) : 'no van';
   const newLabel = newVehicleId ? vanLabel(newVehicleId) : '';
+  const newReg = targets.find((t) => t.key === newKey)?.reg ?? newLabel;
+  const onHand = kitOnHandText({ oldKit, newKit, newLabel: newReg });
+  const warning = newVehicleId ? occupiedWarning(newReg, newHolders) : null;
+  /** who is on the new van now: shown before step 2 (and on step 2 when the van was preset) */
+  const occupied =
+    warning ? (
+      <div role="alert" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+        <span>{warning}</span>
+      </div>
+    ) : null;
 
   const save = async () => {
     if (!newVehicleId) return;
@@ -148,6 +159,7 @@ export function ChangeVanSheet({
                 <User className="h-4 w-4 text-slate-500" />
                 {newHolders.length ? `Has it now: ${newHolders.join(', ')}` : 'Spare van (nobody assigned)'}
               </p>
+              {occupied}
               <p className="text-xs font-semibold text-slate-600">Spare-van kit in this van</p>
               <KitList items={newKit} empty="No spare-van kit in this van." />
             </div>
@@ -157,28 +169,25 @@ export function ChangeVanSheet({
 
       {step === 2 && (
         <>
+          {occupied}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1" aria-live="polite">
+            <p className="text-sm text-slate-800 flex items-start gap-2"><User className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />{onHand.held}</p>
+            <p className="text-sm text-slate-800 flex items-start gap-2"><Truck className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />{onHand.newVan}</p>
+          </div>
           <fieldset>
             <legend className="text-sm font-bold text-slate-900 mb-2">How does the kit move?</legend>
             <div className="space-y-2">
-              {oldVehicleId && (
-                <label className={radio(mode === 'take_all')}>
-                  <input type="radio" name="mode" checked={mode === 'take_all'} onChange={() => setMode('take_all')} className="mt-1 h-4 w-4" />
-                  <span><span className="block text-sm font-semibold text-slate-900">Swap vans: my kit goes with me into the new van, and the old van becomes a spare van</span>
-                    <span className="block text-xs text-slate-600">Everything {person.name} holds goes with them (and any spare-van kit in the new van becomes theirs).</span></span>
+              {vanModeOptions(!!oldVehicleId).map((o) => (
+                <label key={o.mode} className={radio(mode === o.mode)}>
+                  <input type="radio" name="mode" checked={mode === o.mode} onChange={() => setMode(o.mode)} className="mt-1 h-4 w-4" />
+                  <span><span className="block text-sm font-semibold text-slate-900">{o.title}</span>
+                    <span className="block text-xs text-slate-600">
+                      {o.mode === 'use_new' && oldVehicleId
+                        ? `The kit they hold stays with ${oldLabel}${oldHolders.length ? ` (${oldHolders.join(', ')})` : ' as spare-van kit'}.`
+                        : o.hint}
+                    </span></span>
                 </label>
-              )}
-              <label className={radio(mode === 'use_new')}>
-                <input type="radio" name="mode" checked={mode === 'use_new'} onChange={() => setMode('use_new')} className="mt-1 h-4 w-4" />
-                <span><span className="block text-sm font-semibold text-slate-900">Use the kit already in the new van</span>
-                  <span className="block text-xs text-slate-600">
-                    {oldVehicleId ? `The old kit stays with ${oldLabel}${oldHolders.length ? ` (${oldHolders.join(', ')})` : ' as spare-van kit'}.` : 'Takes over the kit in the new van.'}
-                  </span></span>
-              </label>
-              <label className={radio(mode === 'mix')}>
-                <input type="radio" name="mode" checked={mode === 'mix'} onChange={() => setMode('mix')} className="mt-1 h-4 w-4" />
-                <span><span className="block text-sm font-semibold text-slate-900">Mix</span>
-                  <span className="block text-xs text-slate-600">Choose item by item.</span></span>
-              </label>
+              ))}
             </div>
           </fieldset>
 

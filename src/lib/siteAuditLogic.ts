@@ -241,6 +241,8 @@ export interface DraftLine {
   service_date?: string | null;
   plant_no_snapshot?: string | null;
   date_tag?: string | null;
+  /** "Label on?" (Other section): Y / N / blank */
+  label_on?: 'Y' | 'N' | null;
   comment?: string | null;
   photo_path?: string | null;
   /** set when the van's kit list already says this type is not carried */
@@ -441,6 +443,20 @@ export function holderKey(k: HolderLike): string | null {
 /** The "Who's doing this?" name. Rows that only recorded a login email show "Office login". */
 export const whoName = (name: string | null | undefined): string => (name && name.trim() ? name : 'Office login');
 
+// ---------------------------------------------------------------- "Other" section answers (round 7)
+
+/**
+ * What an Other-section line asks besides Fit for purpose / Qty / Comment, from the
+ * checklist item's settings: "Label on?" Y/N, the old free-text date / tag box, or nothing.
+ */
+export function otherAnswerFor(
+  item: { section: string; has_date_tag: boolean; has_label_check?: boolean | null } | undefined
+): 'label' | 'date_tag' | 'none' {
+  if (!item || item.section !== 'other') return 'none';
+  if (item.has_label_check) return 'label';
+  return item.has_date_tag ? 'date_tag' : 'none';
+}
+
 // ---------------------------------------------------------------- audit pre-fill from the holder's record
 
 export function buildAuditPrefill(input: {
@@ -449,7 +465,7 @@ export function buildAuditPrefill(input: {
   heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null }[];
   ppe: { checklist_item_id: string; expiry_date: string | null }[];
   notCarried: { kit_type_id: string; carried: boolean }[];
-  lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null }[];
+  lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null; label_on?: string | null }[];
 }): DraftLine[] {
   const last = new Map(input.lastLines.filter((l) => l.checklist_item_id).map((l) => [l.checklist_item_id as string, l]));
   const ppe = new Map(input.ppe.map((p) => [p.checklist_item_id, p.expiry_date]));
@@ -470,6 +486,7 @@ export function buildAuditPrefill(input: {
         expiryManual: false,
         service_date: c.section === 'ppe' ? prev?.service_date ?? null : null,
         date_tag: prev?.date_tag ?? '',
+        label_on: prev?.label_on === 'Y' || prev?.label_on === 'N' ? prev.label_on : null,
         comment: '',
         photo_path: null,
       };

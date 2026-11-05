@@ -13,6 +13,7 @@ import {
   AuditPpeItem,
   Auditor,
 } from './supabase';
+import { draftsInProgress } from './draftLogic';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { listLockup } from './lockupService';
 import { listOffRoad, getAuditInterval } from './fleetService';
@@ -172,7 +173,7 @@ export type AuditHeader = Omit<SiteAudit, 'id' | 'status' | 'submitted_at'>;
 
 const LINE_COLUMNS = [
   'section', 'checklist_item_id', 'kit_type_id', 'item_name', 'expected_qty', 'result', 'qty',
-  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'comment', 'photo_path', 'kit_item_id',
+  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'label_on', 'comment', 'photo_path', 'kit_item_id',
 ] as const;
 
 function lineToRow(auditId: string, line: DraftLine, index: number) {
@@ -259,6 +260,8 @@ export async function getDashboardCounts(): Promise<{
   lowStock: number;
   /** gangs / spare vans overdue, never audited, or due within 30 days */
   auditsDue: number;
+  /** audits saved as a draft, not submitted yet */
+  drafts: number;
 }> {
   const [att, kit, lockup] = await Promise.all([
     supabase.from('audit_needs_attention').select('expiry_status'),
@@ -266,12 +269,14 @@ export async function getDashboardCounts(): Promise<{
     listLockup().catch(() => []),
   ]);
   let auditsDue = 0;
+  let drafts = 0;
   try {
     const [ref, offRoad, interval, audits] = await Promise.all([
       loadAuditReferenceData(), listOffRoad().catch(() => []), getAuditInterval().catch(() => 6), listAuditSummaries(),
     ]);
     const off = new Set(offRoad.map((r) => r.vehicle_id).filter((v): v is string => !!v));
     const targets = auditTargetsOf(buildAuditTargets(ref.employees, ref.vehicles, off));
+    drafts = draftsInProgress(audits).length;
     auditsDue = auditSchedule(targets, audits, interval, todayISO()).filter((r) => r.status !== 'ok').length;
   } catch {
     auditsDue = 0;
@@ -285,6 +290,7 @@ export async function getDashboardCounts(): Promise<{
     spares: k.filter((r) => r.status === 'spare').length,
     lowStock: lowStockLines(lockup).length,
     auditsDue,
+    drafts,
   };
 }
 

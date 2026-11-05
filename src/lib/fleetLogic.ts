@@ -128,6 +128,7 @@ export interface EditableLine {
   service_date: string | null;
   plant_no_snapshot: string | null;
   date_tag: string | null;
+  label_on?: string | null;
 }
 
 const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
@@ -137,6 +138,7 @@ const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
   { key: 'service_date', label: 'service date' },
   { key: 'plant_no_snapshot', label: 'plant no' },
   { key: 'date_tag', label: 'date/tag' },
+  { key: 'label_on', label: 'label on' },
   { key: 'comment', label: 'comment' },
 ];
 

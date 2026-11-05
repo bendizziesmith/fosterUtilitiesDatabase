@@ -120,3 +120,37 @@ describe('vanChangesToCheck — vans changed in Employee / Vehicle Management', 
       .toEqual([{ employeeId: 'e3', name: 'Phil Hall', fromVehicleId: null, toVehicleId: 'v9' }]);
   });
 });
+
+import { vanModeOptions, kitOnHandText, occupiedWarning } from './vanChange';
+
+describe('Change van step 2 always shows all three options (round 7)', () => {
+  it('three options even when the person had no van before', () => {
+    expect(vanModeOptions(false).map((o) => o.mode)).toEqual(['take_all', 'use_new', 'mix']);
+    expect(vanModeOptions(true).map((o) => o.mode)).toEqual(['take_all', 'use_new', 'mix']);
+  });
+  it('keeps the round 6 wording for the swap option', () => {
+    expect(vanModeOptions(true)[0].title).toBe('Swap vans: my kit goes with me into the new van, and the old van becomes a spare van');
+  });
+});
+
+describe('kitOnHandText — say what kit is there', () => {
+  it('nothing held, new van empty', () => {
+    expect(kitOnHandText({ oldKit: [], newKit: [], newLabel: 'OW72 SKV' })).toEqual({ held: 'You hold no kit', newVan: 'OW72 SKV has no kit' });
+  });
+  it('lists the kit', () => {
+    expect(kitOnHandText({ oldKit, newKit, newLabel: 'OW72 SKV' })).toEqual({
+      held: 'You hold: Digger D-1, Breaker B-1',
+      newVan: 'OW72 SKV has: Digger D-9, STIHL saw S-1',
+    });
+  });
+});
+
+describe('occupiedWarning — who is on the new van now', () => {
+  it('none when nobody is on it', () => {
+    expect(occupiedWarning('OW72 SKV', [])).toBeNull();
+  });
+  it('names who is on it and that they stay on it', () => {
+    expect(occupiedWarning('OW72 SKV', ['Phil Hall'])).toBe('OW72 SKV is already assigned to Phil Hall. They stay on it too; only their own kit stays theirs.');
+    expect(occupiedWarning('OW72 SKV', ['A', 'B'])).toMatch(/assigned to A and B/);
+  });
+});

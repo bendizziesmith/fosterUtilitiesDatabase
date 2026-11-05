@@ -84,16 +84,19 @@ export function YesNo({
   onChange,
   label,
   disabled,
+  question = 'fit for purpose',
 }: {
   value: 'Y' | 'N' | 'not_carried' | null;
   onChange: (v: 'Y' | 'N' | null) => void;
   label: string;
   disabled?: boolean;
+  /** read out with the item name, e.g. "Water containers: label on" */
+  question?: string;
 }) {
   const base =
     'min-h-[44px] min-w-[52px] px-3 rounded-lg text-sm font-bold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed';
   return (
-    <div role="group" aria-label={`${label}: fit for purpose`} className="flex gap-2">
+    <div role="group" aria-label={`${label}: ${question}`} className="flex gap-2">
       <button
         type="button"
         disabled={disabled}

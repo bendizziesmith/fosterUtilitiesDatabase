@@ -11,6 +11,7 @@ import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { FileLink } from './FileLink';
 import { UpcomingAudits } from './UpcomingAudits';
+import { DraftsInProgress } from './DraftsInProgress';
 import { HomeSheet } from './FleetSheets';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
@@ -145,6 +146,8 @@ export const SiteAuditsPage: React.FC = () => {
       </div>
 
       <ErrorNote message={error} />
+
+      <DraftsInProgress />
 
       <section className={card} aria-labelledby="attention-h">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-slate-200">

@@ -10,12 +10,14 @@ import { editAudit } from '../../../../lib/fleetService';
 const SECTION_TITLE: Record<string, string> = { ppe: 'PPE', hs: 'Health & safety', kit: 'Kit', other: 'Other' };
 
 /** "Edit audit": change answers on a submitted audit. Logged, and written back like submit. */
-export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved }: {
+export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, otherAnswer }: {
   auditId: string; lines: AuditLineRow[]; auditors: Auditor[]; onCancel: () => void; onSaved: (summary: string[]) => void;
+  /** what an Other line asks besides Fit for purpose / Qty / Comment */
+  otherAnswer: (l: AuditLineRow) => 'label' | 'date_tag' | 'none';
 }) {
   const before = useMemo<EditableLine[]>(() => lines.map((l) => ({
     id: l.id, item_name: l.item_name, result: l.result, qty: l.qty, comment: l.comment, expiry_date: l.expiry_date,
-    service_date: l.service_date, plant_no_snapshot: l.plant_no_snapshot, date_tag: l.date_tag,
+    service_date: l.service_date, plant_no_snapshot: l.plant_no_snapshot, date_tag: l.date_tag, label_on: l.label_on ?? null,
   })), [lines]);
   const [edited, setEdited] = useState<EditableLine[]>(before);
   const { actorId, setActorId } = useActor(auditors);
@@ -24,6 +26,10 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved }: 
   const diff = diffAuditLines(before, edited);
   const set = (id: string, patch: Partial<EditableLine>) => setEdited((xs) => xs.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const sectionOf = (id: string) => lines.find((l) => l.id === id)?.section ?? 'other';
+  const answerOf = (id: string) => {
+    const l = lines.find((x) => x.id === id);
+    return l ? otherAnswer(l) : 'none';
+  };
 
   const save = async () => {
     setError(null);
@@ -69,6 +75,13 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved }: 
                   )}
                   {(sec === 'ppe' || sec === 'kit') ? (
                     <Field label="Expiry">{(id) => <input id={id} type="date" className={inputCls} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
+                  ) : sec === 'other' && answerOf(l.id) === 'label' ? (
+                    <div>
+                      <p className="text-xs font-semibold text-slate-600 mb-1">Label on?</p>
+                      <YesNo value={(l.label_on as 'Y' | 'N' | null) ?? null} label={l.item_name} question="label on" onChange={(v) => set(l.id, { label_on: v })} />
+                    </div>
+                  ) : sec === 'other' && answerOf(l.id) === 'date_tag' ? (
+                    <Field label="Date / tag / label">{(id) => <input id={id} className={inputCls} value={l.date_tag ?? ''} onChange={(e) => set(l.id, { date_tag: e.target.value })} />}</Field>
                   ) : <div className="hidden sm:block" />}
                   <Field label="Comment" className="col-span-2 sm:col-span-1">{(id) => <input id={id} className={inputCls} value={l.comment ?? ''} onChange={(e) => set(l.id, { comment: e.target.value })} />}</Field>
                 </li>
