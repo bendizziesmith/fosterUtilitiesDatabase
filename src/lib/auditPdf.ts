@@ -10,6 +10,7 @@ import { AuditReport, RowTone, auditPdfFileName, auditsZipName, buildAuditReport
 import { expiryWording, todayISO } from './siteAuditLogic';
 import { uniqueName } from './timesheetBulkExport';
 import { LockupLine } from './lockupLogic';
+import nsfLogoUrl from '../assets/brand/nsf-logo.png';
 
 type Doc = import('jspdf').jsPDF;
 type RGB = [number, number, number];
@@ -17,7 +18,8 @@ type RGB = [number, number, number];
 const SLATE: RGB = [15, 23, 42]; // slate-900
 const MUTED: RGB = [71, 85, 105]; // slate-600
 const LINE: RGB = [203, 213, 225]; // slate-300
-const BLUE: RGB = [37, 99, 235]; // blue-600 (the app's primary)
+/** NSF navy, from the NSF audit sheet header (header rule, titles, table heads) */
+const NAVY: RGB = [0, 36, 92];
 const TONE: Record<Exclude<RowTone, null>, { fill: RGB; text: RGB }> = {
   fail: { fill: [254, 226, 226], text: [153, 27, 27] },
   expired: { fill: [254, 226, 226], text: [153, 27, 27] },
@@ -26,36 +28,77 @@ const TONE: Record<Exclude<RowTone, null>, { fill: RGB; text: RGB }> = {
 };
 const MARGIN = 40;
 
-async function newDoc() {
+// ---------------------------------------------------------------- brand (NSF Utilities Limited)
+
+/** The NSF logo (164×78 px) as a data URL; null if it can't be loaded (the PDF then shows the name). */
+async function defaultLogoLoader(): Promise<LoadedImage | null> {
+  try {
+    const blob = await (await fetch(nsfLogoUrl)).blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(blob);
+    });
+    return dataUrl.startsWith('data:image/') ? { dataUrl, width: 164, height: 78 } : null;
+  } catch {
+    return null;
+  }
+}
+let logoLoader: () => Promise<LoadedImage | null> = defaultLogoLoader;
+let logoCache: Promise<LoadedImage | null> | null = null;
+/** For tests (and to swap the logo later): how the logo is loaded. */
+export function setBrandLogoLoader(fn: () => Promise<LoadedImage | null>) {
+  logoLoader = fn;
+  logoCache = null;
+}
+const brandLogo = () => (logoCache ??= logoLoader().catch(() => null));
+
+async function newDoc(title: string, company: string) {
   const { jsPDF } = await import('jspdf');
   const autoTable = (await import('jspdf-autotable')).default;
   const doc = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait' });
-  return { doc, autoTable };
+  doc.setProperties({ title, subject: title, author: company, creator: company });
+  return { doc, autoTable, logo: await brandLogo() };
 }
 
-/** Company name, title, subtitle and a rule; returns the y to carry on from. */
-function header(doc: Doc, company: string, title: string, subtitle?: string): number {
+/** Logo top-left (about 38 mm wide, proportions kept), title on the right, a navy rule; returns the y to carry on from. */
+function header(doc: Doc, company: string, title: string, subtitle: string | undefined, logo: LoadedImage | null): number {
   const w = doc.internal.pageSize.getWidth();
-  let y = MARGIN;
+  const top = MARGIN - 10;
+  const logoW = 108; // ≈ 38 mm
+  const logoH = logo ? (logoW * logo.height) / logo.width : 0;
+  let drawn = false;
+  if (logo) {
+    try {
+      doc.addImage(logo.dataUrl, 'PNG', MARGIN, top, logoW, logoH);
+      drawn = true;
+    } catch {
+      drawn = false; // a bad image never breaks the PDF: the name is used instead
+    }
+  }
+  if (!drawn) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(...NAVY);
+    doc.text(company.toUpperCase(), MARGIN, top + 16);
+  }
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...BLUE);
-  doc.text(company.toUpperCase(), MARGIN, y);
-  y += 18;
   doc.setFontSize(18);
-  doc.setTextColor(...SLATE);
-  doc.text(title, MARGIN, y);
+  doc.setTextColor(...NAVY);
+  doc.text(title, w - MARGIN, top + 22, { align: 'right' });
   if (subtitle) {
-    y += 15;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(...MUTED);
-    doc.text(subtitle, MARGIN, y);
+    doc.text(subtitle, w - MARGIN, top + 38, { align: 'right' });
   }
-  y += 10;
-  doc.setDrawColor(...LINE);
+  const y = top + Math.max(drawn ? logoH : 0, 44) + 8;
+  doc.setDrawColor(...NAVY);
+  doc.setLineWidth(1.5);
   doc.line(MARGIN, y, w - MARGIN, y);
-  return y + 16;
+  doc.setLineWidth(0.5);
+  return y + 18;
 }
 
 function heading(doc: Doc, text: string, y: number): number {
@@ -75,8 +118,8 @@ function ensure(doc: Doc, y: number, needed: number): number {
   return y;
 }
 
-/** Page numbers and the "Generated … by …" line on every page. */
-function footer(doc: Doc, text: string) {
+/** Page numbers and "NSF Utilities Limited · Generated … by …" on every page. */
+function footer(doc: Doc, text: string, company: string) {
   const n = doc.getNumberOfPages();
   const w = doc.internal.pageSize.getWidth();
   const h = doc.internal.pageSize.getHeight();
@@ -85,7 +128,7 @@ function footer(doc: Doc, text: string) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(...MUTED);
-    doc.text(text, MARGIN, h - 22);
+    doc.text(`${company} · ${text}`, MARGIN, h - 22);
     doc.text(`Page ${i} of ${n}`, w - MARGIN, h - 22, { align: 'right' });
   }
 }
@@ -102,7 +145,7 @@ function table(doc: Doc, autoTable: AutoTable, y: number, head: string[], body: 
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
     styles: { font: 'helvetica', fontSize: 8.5, textColor: SLATE, cellPadding: 4, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak' },
-    headStyles: { fillColor: BLUE, textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' },
     didParseCell: (d) => {
       if (d.section !== 'body') return;
       const t = tones[d.row.index];
@@ -208,8 +251,8 @@ async function photoPages(doc: Doc, report: AuditReport, load: (path: string) =>
 // ---------------------------------------------------------------- the audit PDF
 
 export async function renderAuditPdf(report: AuditReport, load: (path: string) => Promise<LoadedImage | null>, onProgress?: (done: number, total: number) => void): Promise<Doc> {
-  const { doc, autoTable } = await newDoc();
-  let y = header(doc, report.company, report.title, report.header.find(([k]) => k === 'Date')?.[1]);
+  const { doc, autoTable, logo } = await newDoc(report.title, report.company);
+  let y = header(doc, report.company, report.title, report.header.find(([k]) => k === 'Date')?.[1], logo);
   const w = doc.internal.pageSize.getWidth();
   // header like the paper sheet: two columns of label / value
   doc.setFontSize(9.5);
@@ -247,7 +290,7 @@ export async function renderAuditPdf(report: AuditReport, load: (path: string) =
     for (const e of report.edits) y = paragraph(doc, e, y);
   }
   await photoPages(doc, report, load, onProgress);
-  footer(doc, report.footer);
+  footer(doc, report.footer, report.company);
   return doc;
 }
 
@@ -313,10 +356,10 @@ const today = () => todayISO();
 const genLine = (by: string) => `Generated ${longDate(today())} ${new Date().toTimeString().slice(0, 5)} by ${by}`;
 const fileDate = () => longDate(today());
 
-export async function downloadPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string) {
-  const { doc, autoTable } = await newDoc();
+export async function renderPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string): Promise<Doc> {
+  const { doc, autoTable, logo } = await newDoc('Plant Register', company);
   const rows = plantRegisterRows(kit);
-  let y = header(doc, company, 'Plant register', `${rows.length} items · ${longDate(today())}`);
+  let y = header(doc, company, 'Plant Register', `${rows.length} items · ${longDate(today())}`, logo);
   const types = [...new Set(rows.map((r) => r.type))];
   for (const t of types) {
     const tr = rows.filter((r) => r.type === t);
@@ -326,8 +369,12 @@ export async function downloadPlantRegisterPdf<T extends RegisterItem>(kit: T[],
       tr.map((r) => [r.plantNo || '—', r.where, r.service, r.expiry, r.status, r.expiryText]),
       tr.map((r) => (r.tone === 'expired' ? 'expired' : r.tone === 'due_soon' ? 'due_soon' : null)));
   }
-  footer(doc, genLine(by));
-  saveBlob(blobOf(doc), `Plant register ${fileDate()}.pdf`);
+  footer(doc, genLine(by), company);
+  return doc;
+}
+
+export async function downloadPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string) {
+  saveBlob(blobOf(await renderPlantRegisterPdf(kit, company, by)), `Plant register ${fileDate()}.pdf`);
 }
 
 export interface HolderSheet {
@@ -353,17 +400,18 @@ function holderSection(doc: Doc, autoTable: AutoTable, y: number, h: HolderSheet
 
 /** By person / spare van: one section per holder; or a single person / van ("Download" on their page). */
 export async function downloadHolderSheetsPdf(holders: HolderSheet[], company: string, by: string, single?: string) {
-  const { doc, autoTable } = await newDoc();
-  let y = header(doc, company, single ? `Kit & Plant: ${single}` : 'Kit & Plant by person / spare van', longDate(today()));
+  const title = single ? `Kit & Plant: ${single}` : 'Kit & Plant by Person / Spare Van';
+  const { doc, autoTable, logo } = await newDoc(title, company);
+  let y = header(doc, company, title, longDate(today()), logo);
   for (const h of holders) y = holderSection(doc, autoTable, y, h);
-  footer(doc, genLine(by));
+  footer(doc, genLine(by), company);
   saveBlob(blobOf(doc), single ? `${single.replace(/[/\\:*?"<>|]/g, ' ')} kit ${fileDate()}.pdf` : `Kit by person and spare van ${fileDate()}.pdf`);
 }
 
 export async function downloadLockupPdf<T extends LockupLine>(lines: T[], company: string, by: string) {
-  const { doc, autoTable } = await newDoc();
+  const { doc, autoTable, logo } = await newDoc('Yard Lockup Stock', company);
   const rows = lockupRows(lines);
-  let y = header(doc, company, 'Yard Lockup stock', `${rows.filter((r) => r.low).length} low · ${longDate(today())}`);
+  let y = header(doc, company, 'Yard Lockup Stock', `${rows.filter((r) => r.low).length} low · ${longDate(today())}`, logo);
   for (const sec of [...new Set(rows.map((r) => r.section))]) {
     const sr = rows.filter((r) => r.section === sec);
     y = ensure(doc, y, 60);
@@ -372,7 +420,7 @@ export async function downloadLockupPdf<T extends LockupLine>(lines: T[], compan
       sr.map((r) => [r.name, String(r.quantity), r.lowAt === null ? '' : String(r.lowAt), r.low ? 'LOW' : '']),
       sr.map((r) => (r.low ? 'due_soon' : null)));
   }
-  footer(doc, genLine(by));
+  footer(doc, genLine(by), company);
   saveBlob(blobOf(doc), `Yard Lockup stock ${fileDate()}.pdf`);
 }
 

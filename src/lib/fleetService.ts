@@ -88,11 +88,11 @@ export async function getAuditInterval(): Promise<number> {
   return rows?.[0]?.audit_interval_months ?? 6;
 }
 
-/** Company name printed on the PDFs (default "Foster Utilities"). */
+/** Company name printed on the PDFs (default "NSF Utilities Limited"). */
 export async function getCompanyName(): Promise<string> {
   const r = await supabase.from('audit_settings').select('company_name').limit(1);
   const name = !r.error && (r.data as { company_name?: string }[])?.[0]?.company_name;
-  return name || 'Foster Utilities';
+  return name || 'NSF Utilities Limited';
 }
 
 export async function setCompanyName(name: string, byName: string | null): Promise<void> {
