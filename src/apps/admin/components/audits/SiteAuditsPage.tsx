@@ -60,7 +60,7 @@ export const SiteAuditsPage: React.FC = () => {
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
   /** "Dom Oliver · YE24 TNL", "WV72 OZL · spare van", "Spare · Yard" or "Unassigned, needs a home" */
   const where = (r: AttentionRow) => {
-    if (r.source === 'kit' && r.kit_status === 'spare') return 'Spare · Yard';
+    if (r.source === 'kit' && r.kit_status === 'spare') return 'Yard Lockup';
     if (r.holder_kind === 'person') return `${r.holder_name ?? 'Unknown'} · ${r.vehicle_reg ?? 'no van'}`;
     if (r.holder_kind === 'spare_van') return `${r.vehicle_reg ?? 'Van'} · spare van`;
     return r.expiry_status === 'no_home' ? 'Unassigned, needs a home' : r.vehicle_reg ?? '—';

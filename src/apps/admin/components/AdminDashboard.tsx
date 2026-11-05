@@ -109,7 +109,7 @@ function cardBadges(path: string, c: Counts | null) {
     return (
       <>
         <Badge n={c.onVans} label="on vans" cls="bg-slate-100 text-slate-700 border-slate-200" />
-        <Badge n={c.spares} label="spares" cls="bg-violet-50 text-violet-700 border-violet-200" />
+        <Badge n={c.spares} label="in Yard Lockup" cls="bg-violet-50 text-violet-700 border-violet-200" />
       </>
     );
   }

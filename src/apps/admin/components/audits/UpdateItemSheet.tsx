@@ -65,7 +65,7 @@ export function UpdateItemSheet({
         { value: 'reserviced', label: 'Re-serviced', hint: 'Same item, new service and expiry dates' },
         { value: 'replaced', label: 'Replaced with new', hint: 'Change the plant no if it differs' },
         ...(target.swapItem
-          ? [{ value: 'swap' as What, label: 'Swap with a spare', hint: 'Pick a spare (or add a new one), then say where this one goes' }]
+          ? [{ value: 'swap' as What, label: 'Swap with one from Yard Lockup', hint: 'Pick one from the Yard Lockup (or add a new one), then say where this one goes' }]
           : []),
       ];
 
@@ -201,7 +201,7 @@ function InlineSwap({ item, targets, months, register }: {
   const label = item.plant_no || item.type_name;
   return (
     <>
-      <ReplacementFields f={f} months={months} title={`Spares of ${item.type_name}`} />
+      <ReplacementFields f={f} months={months} title={`${item.type_name} in the Yard Lockup`} />
       <DestinationFields f={f} title={`Where does ${label} go?`} />
       <SwapNoteAndPreview f={f} />
       <ErrorNote message={f.loadError} />

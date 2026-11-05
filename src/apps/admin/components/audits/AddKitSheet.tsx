@@ -31,6 +31,7 @@ export function AddKitSheet({
   auditors = [],
   vanReg,
   defaultHolderKey,
+  defaultWhere = 'on_van',
   onClose,
   onSaved,
   onAddLine,
@@ -44,6 +45,8 @@ export function AddKitSheet({
   vanReg?: string | null;
   /** pre-pick this holder (person:<id> / van:<id>) */
   defaultHolderKey?: string | null;
+  /** e.g. 'spare' from the Yard Lockup tab */
+  defaultWhere?: Where;
   onClose: () => void;
   onSaved?: () => void;
   onAddLine?: (line: NewKitLine) => void;
@@ -54,7 +57,7 @@ export function AddKitSheet({
   const [newMonths, setNewMonths] = useState('');
   const [plantNo, setPlantNo] = useState('');
   const [dates, setDates] = useState<ServiceExpiryState>({ serviceDate: null, expiry: null, expiryManual: false });
-  const [where, setWhere] = useState<Where>('on_van');
+  const [where, setWhere] = useState<Where>(defaultWhere);
   const [holderKeyValue, setHolderKey] = useState(defaultHolderKey ?? '');
   const { actorId, setActorId } = useActor(auditors);
   const [company, setCompany] = useState('');
@@ -163,7 +166,7 @@ export function AddKitSheet({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {([
                 ['on_van', 'Held by someone'],
-                ['spare', 'Spare in yard'],
+                ['spare', 'Yard Lockup'],
                 ['away_for_service', 'Away for service'],
               ] as [Where, string][]).map(([v, l]) => (
                 <label key={v} className={`flex items-center gap-2 min-h-[44px] px-3 rounded-lg border cursor-pointer text-sm font-medium ${where === v ? 'border-blue-500 bg-blue-50 text-slate-900' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}>

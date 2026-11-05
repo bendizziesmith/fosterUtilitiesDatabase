@@ -346,7 +346,7 @@ export function previewSwap(
         : 'Away for service';
       break;
     case 'spare':
-      where = 'Spare · Yard';
+      where = 'Yard Lockup';
       break;
     case 'on_van':
       where = dest.vanReg;
@@ -355,7 +355,7 @@ export function previewSwap(
       where = 'Scrapped / removed';
   }
   let incoming: string;
-  if (repl.mode === 'spare') incoming = `${repl.plantNo || 'Spare'} (spare) → on ${van}`;
+  if (repl.mode === 'spare') incoming = `${repl.plantNo || 'Item'} (from Yard Lockup) → on ${van}`;
   else if (repl.mode === 'new') incoming = `New ${item.type_name}${repl.plantNo ? ` ${repl.plantNo}` : ''} → on ${van}`;
   else incoming = `Nothing for now: ${van} will have no ${item.type_name}`;
   return { outgoing: `${label} → ${where}`, incoming };
@@ -379,7 +379,7 @@ export function groupKitForPhone<
     else if (i.status === 'away_for_service') away.push(i);
   }
   const groups = [...vans.values()].sort((a, b) => a.title.localeCompare(b.title));
-  if (spares.length) groups.push({ title: 'Spares · Yard', items: spares });
+  if (spares.length) groups.push({ title: 'Yard Lockup', items: spares });
   if (away.length) groups.push({ title: 'Away for service', items: away });
   return groups;
 }
@@ -417,7 +417,7 @@ export interface HolderLike {
 }
 
 export function holderLabel(k: HolderLike): string {
-  if (k.status === 'spare') return 'Spare · Yard';
+  if (k.status === 'spare') return 'Yard Lockup';
   if (k.status === 'away_for_service') return `Away for service${k.service_company ? ` · ${k.service_company}` : ''}`;
   if (k.status === 'removed') return 'Removed';
   if (k.holder_kind === 'person') return `${k.holder_name ?? 'Unknown'} · ${k.holder_reg ?? 'no van'}`;

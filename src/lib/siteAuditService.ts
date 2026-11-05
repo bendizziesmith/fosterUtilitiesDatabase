@@ -128,9 +128,11 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
   notCarried: KitVanKitListRow[];
   lastLines: AuditLineRow[];
   lastAuditId: string | null;
+  /** when their last audit was submitted (for "Issued since last audit") */
+  lastAuditAt: string | null;
 }> {
   const { holderEmployeeId, vehicleId } = holderParams(t);
-  if (!holderEmployeeId && !vehicleId) return { heldKit: [], ppe: [], notCarried: [], lastLines: [], lastAuditId: null };
+  if (!holderEmployeeId && !vehicleId) return { heldKit: [], ppe: [], notCarried: [], lastLines: [], lastAuditId: null, lastAuditAt: null };
   // rows held by this person, or (no person) by this spare van
   const own = (table: string, cols = '*') => {
     const q = supabase.from(table).select(cols);
@@ -145,7 +147,7 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
     own('audit_site_audits', 'id, audit_date, submitted_at').eq('status', 'submitted')
       .order('audit_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(1),
   ]);
-  const last = (check(audits) as unknown as { id: string }[] | null)?.[0] ?? null;
+  const last = (check(audits) as unknown as { id: string; submitted_at: string | null }[] | null)?.[0] ?? null;
   const lastLines = last
     ? ((check(await supabase.from('audit_lines').select('*').eq('audit_id', last.id).order('sort_order')) as AuditLineRow[]) ?? [])
     : [];
@@ -155,6 +157,7 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
     notCarried: (check(vkl) as unknown as KitVanKitListRow[]) ?? [],
     lastLines,
     lastAuditId: last?.id ?? null,
+    lastAuditAt: last?.submitted_at ?? null,
   };
 }
 

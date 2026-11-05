@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info } from 'lucide-react';
+import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info, Warehouse, Undo2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, lastAudit, listHolderHistory, loadTeam, loadHolderRecord, setCarried, holderParams } from '../../../../lib/siteAuditService';
 import { TeamMember, whoName } from '../../../../lib/siteAuditLogic';
@@ -11,6 +11,8 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { AddKitSheet } from './AddKitSheet';
 import { FileLink } from './FileLink';
 import { ChangeVanSheet } from './ChangeVanSheet';
+import { ReturnSheet } from './LockupSheets';
+import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL, TEST_MODE } from './styles';
@@ -41,19 +43,27 @@ export const GangVanView: React.FC = () => {
   const [adding, setAdding] = useState(false);
   const [changing, setChanging] = useState<'change' | 'check' | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [issues, setIssues] = useState<PersonIssue[]>([]);
+  const [issueMoves, setIssueMoves] = useState<LockupMovementRow[]>([]);
+  const [returning, setReturning] = useState<PersonIssue | null>(null);
 
   const load = useCallback(async () => {
     if (!target) return;
     setError(null);
     try {
       const ganger = target.isGanger ? ref.employees.find((e) => e.id === target.personId) ?? null : null;
-      const [team, record, everyKit, lastA, hist] = await Promise.all([
+      const pid = target.kind === 'person' ? target.personId : null;
+      const [team, record, everyKit, lastA, hist, held, moves] = await Promise.all([
         loadTeam(ganger, ref.employees),
         loadHolderRecord(target),
         listKit(),
         lastAudit(target),
         listHolderHistory(target),
+        pid ? listPersonIssues(pid) : Promise.resolve([] as PersonIssue[]),
+        pid ? listLockupMovements(pid) : Promise.resolve([] as LockupMovementRow[]),
       ]);
+      setIssues(held);
+      setIssueMoves(moves.filter((m) => m.kind === 'issued' || m.kind === 'returned').slice(0, 15));
       setMembers(team);
       setKit(record.heldKit);
       setPpe(record.ppe);
@@ -204,6 +214,47 @@ export const GangVanView: React.FC = () => {
         )}
       </section>
 
+      {target.kind === 'person' && (
+        <section className={card} aria-labelledby="gv-lockup">
+          <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center gap-2">
+            <Warehouse className="h-5 w-5 text-violet-600" />
+            <h2 id="gv-lockup" className="text-base font-bold text-slate-900">Issued from Yard Lockup</h2>
+          </div>
+          {issues.length === 0 && issueMoves.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-600">Nothing issued from the Yard Lockup.</p>
+          ) : (
+            <>
+              <ul className="divide-y divide-slate-200">
+                {issues.map((i) => (
+                  <li key={i.stock_id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
+                    <span className="text-sm font-semibold text-slate-900 flex items-center gap-2 min-w-[8rem]">{i.item_name}<TestTag show={i.is_test} /></span>
+                    <span className="text-sm text-slate-700">Holds {i.quantity_held}</span>
+                    {i.last_issued_at && <span className="text-xs text-slate-500">last issued {formatDate(i.last_issued_at.slice(0, 10))}</span>}
+                    <button type="button" className={`${btn.small} ml-auto`} onClick={() => setReturning(i)}>
+                      <Undo2 className="h-3.5 w-3.5" />Return to lockup
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {issueMoves.length > 0 && (
+                <ul className="border-t border-slate-200 divide-y divide-slate-100 bg-slate-50 rounded-b-xl">
+                  {issueMoves.map((m) => (
+                    <li key={m.id} className="px-4 sm:px-5 py-2 flex flex-col sm:flex-row sm:justify-between gap-1 text-xs text-slate-700">
+                      <span>
+                        <strong>{m.kind === 'issued' ? 'Issued' : 'Returned'}</strong> {m.quantity} × {m.item_name}
+                        {m.date_on_hat && <> · date on hat {formatDate(m.date_on_hat)}</>}
+                        {m.note && <> · {m.note}</>}
+                      </span>
+                      <span className="text-slate-500">{whoName(m.actor_name)} · {formatDateTime(m.created_at)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
       <CarriedList holder={holderParams(target)} kitTypes={ref.kitTypes} notCarried={notCarried} onChanged={load} onError={setError} />
 
       <section className={card} aria-labelledby="gv-hist">
@@ -253,6 +304,10 @@ export const GangVanView: React.FC = () => {
             load();
           }}
         />
+      )}
+      {returning && person && (
+        <ReturnSheet issue={returning} personId={person.id} personName={person.full_name} auditors={ref.auditors}
+          onClose={() => setReturning(null)} onSaved={() => { setReturning(null); setFlash(`${returning.item_name} returned to the Yard Lockup.`); load(); }} />
       )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={ref.auditors} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && (

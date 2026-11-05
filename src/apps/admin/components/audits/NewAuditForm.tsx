@@ -34,6 +34,8 @@ import { useActor } from './useActor';
 import { AddKitSheet } from './AddKitSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
+import { listLockupMovements } from '../../../../lib/lockupService';
+import { issuedSince } from '../../../../lib/lockupLogic';
 import { Field, ExpiryPill, YesNo, ErrorNote, TestModeBanner, Sheet } from './ui';
 import { btn, card, inputCls, TEST_MODE } from './styles';
 
@@ -71,6 +73,8 @@ export const NewAuditForm: React.FC = () => {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [vanItems, setVanItems] = useState<KitItemOverview[]>([]);
+  /** issued from the Yard Lockup since their last audit, per audit-sheet item */
+  const [issuedMap, setIssuedMap] = useState<Map<string, number>>(new Map());
   const [addMember, setAddMember] = useState('');
   const [busy, setBusy] = useState<'draft' | 'submit' | 'target' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,10 +150,12 @@ export const NewAuditForm: React.FC = () => {
     setError(null);
     try {
       const person = t.kind === 'person' ? employees.find((e) => e.id === t.personId) ?? null : null;
-      const [team, rec] = await Promise.all([
+      const [team, rec, moves] = await Promise.all([
         t.isGanger ? loadTeam(person, employees) : Promise.resolve(person ? [{ name: person.full_name, employee_id: person.id }] : []),
         loadHolderRecord(t),
+        person ? listLockupMovements(person.id) : Promise.resolve([]),
       ]);
+      setIssuedMap(person ? issuedSince(moves, person.id, rec.lastAuditAt) : new Map());
       setMembers(team);
       setVanItems(rec.heldKit);
       // pre-filled from their record (kit, PPE dates, last quantities, not carried); Y/N start blank
@@ -342,6 +348,7 @@ export const NewAuditForm: React.FC = () => {
                       : checklist.find((c) => c.id === l.checklist_item_id)?.service_interval_months ?? null
                   }
                   dateLabel={l.section === 'ppe' ? checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null : null}
+                  issued={l.checklist_item_id ? issuedMap.get(l.checklist_item_id) ?? 0 : 0}
                   onChange={(p) => update(l.key!, p)}
                   onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
                   onSwap={
@@ -462,6 +469,7 @@ function LineRow({
   auditDate,
   months,
   dateLabel,
+  issued = 0,
   onChange,
   onRemove,
   onSwap,
@@ -472,6 +480,8 @@ function LineRow({
   /** service interval: expiry fills itself from the service date / date on hat */
   months: number | null;
   dateLabel: string | null;
+  /** issued from the Yard Lockup since their last audit */
+  issued?: number;
   onChange: (p: Partial<DraftLine>) => void;
   onRemove?: () => void;
   onSwap?: () => void;
@@ -516,6 +526,7 @@ function LineRow({
           <p className={`text-sm font-bold ${notCarried ? 'text-slate-500' : 'text-slate-900'}`}>{line.item_name}</p>
           {line.expected_qty && <p className="text-xs text-slate-500">{line.expected_qty}</p>}
           {notCarried && <p className="text-xs font-semibold text-slate-600 mt-0.5">Not carried on this van</p>}
+          {issued > 0 && <p className="text-xs font-semibold text-violet-700 mt-0.5">Issued since last audit: {issued}</p>}
         </div>
 
         {!notCarried && (

@@ -21,6 +21,10 @@ DELETE FROM public.kit_van_kit_list WHERE is_test;
 DELETE FROM public.audit_file_deletions WHERE is_test;
 DELETE FROM public.kit_person_vans WHERE is_test;
 
+-- Yard Lockup: test movements, then test stock lines
+DELETE FROM public.kit_lockup_movements WHERE is_test;
+DELETE FROM public.kit_lockup_stock WHERE is_test;
+
 -- check: every count should be 0
 SELECT
   (SELECT count(*) FROM public.audit_site_audits WHERE is_test) AS test_audits,
@@ -29,6 +33,8 @@ SELECT
   (SELECT count(*) FROM public.audit_ppe_items WHERE is_test)   AS test_ppe,
   (SELECT count(*) FROM public.kit_van_kit_list WHERE is_test)  AS test_van_lists,
   (SELECT count(*) FROM public.audit_file_deletions WHERE is_test) AS test_file_deletions,
-  (SELECT count(*) FROM public.kit_person_vans WHERE is_test)   AS test_person_vans;
+  (SELECT count(*) FROM public.kit_person_vans WHERE is_test)   AS test_person_vans,
+  (SELECT count(*) FROM public.kit_lockup_movements WHERE is_test) AS test_lockup_moves,
+  (SELECT count(*) FROM public.kit_lockup_stock WHERE is_test)  AS test_lockup_lines;
 
 COMMIT;

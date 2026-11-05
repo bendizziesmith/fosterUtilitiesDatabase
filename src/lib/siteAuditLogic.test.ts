@@ -152,7 +152,7 @@ describe('holderLabel / holderKey — who a kit item belongs to', () => {
     expect(holderKey(k)).toBeNull();
   });
   it('yard and service as before', () => {
-    expect(holderLabel({ status: 'spare', holder_kind: 'none', holder_employee_id: null, holder_name: null, holder_reg: null, vehicle_id: null })).toBe('Spare · Yard');
+    expect(holderLabel({ status: 'spare', holder_kind: 'none', holder_employee_id: null, holder_name: null, holder_reg: null, vehicle_id: null })).toBe('Yard Lockup');
   });
 });
 
@@ -329,12 +329,12 @@ describe('previewSwap — what the van ends up with', () => {
     expect(previewSwap(item, { destination: 'away_for_service', serviceCompany: 'Speedy' },
       { mode: 'spare', plantNo: 'P-200' })).toEqual({
       outgoing: 'P-101 → Away for service (Speedy)',
-      incoming: 'P-200 (spare) → on YE24 TNL',
+      incoming: 'P-200 (from Yard Lockup) → on YE24 TNL',
     });
   });
   it('describes back to yard + a new item', () => {
     expect(previewSwap(item, { destination: 'spare' }, { mode: 'new', plantNo: 'P-300' })).toEqual({
-      outgoing: 'P-101 → Spare · Yard',
+      outgoing: 'P-101 → Yard Lockup',
       incoming: 'New Digger P-300 → on YE24 TNL',
     });
   });
@@ -349,7 +349,7 @@ describe('previewSwap — what the van ends up with', () => {
   });
   it('uses "no plant no" when the item has none', () => {
     expect(previewSwap({ ...item, plant_no: null }, { destination: 'spare' }, { mode: 'none' }).outgoing)
-      .toBe('Digger (no plant no) → Spare · Yard');
+      .toBe('Digger (no plant no) → Yard Lockup');
   });
 });
 
@@ -365,7 +365,7 @@ describe('groupKitForPhone — cards by van, then spares, then away for service'
     expect(groups.map((g) => [g.title, g.items.map((i) => i.id)])).toEqual([
       ['BV23 ZHK', ['4']],
       ['Dom Oliver · YE24 TNL', ['2']],
-      ['Spares · Yard', ['1']],
+      ['Yard Lockup', ['1']],
       ['Away for service', ['3']],
     ]);
   });

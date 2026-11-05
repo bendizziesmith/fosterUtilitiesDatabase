@@ -9,6 +9,7 @@ import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
+import { LockupView } from './LockupView';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
@@ -32,14 +33,14 @@ const tabCls = (on: boolean) =>
 export const KitPlantPage: React.FC = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'van' ? 'van' : 'type';
+  const view = params.get('view') === 'van' ? 'van' : params.get('view') === 'lockup' ? 'lockup' : 'type';
   const typeId = params.get('type');
   const ref = useAuditRef();
 
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
   const [assigning, setAssigning] = useState<{ item: KitItemOverview; back: boolean } | null>(null);
@@ -80,7 +81,7 @@ export const KitPlantPage: React.FC = () => {
 
   const tiles = [
     { label: 'On vans', n: all.filter((k) => k.status === 'on_van').length, icon: Truck, tone: 'text-blue-600 bg-blue-50' },
-    { label: 'Spares in yard', n: all.filter((k) => k.status === 'spare').length, icon: Warehouse, tone: 'text-violet-600 bg-violet-50' },
+    { label: 'In Yard Lockup', n: all.filter((k) => k.status === 'spare').length, icon: Warehouse, tone: 'text-violet-600 bg-violet-50' },
     { label: 'Away for service', n: all.filter((k) => k.status === 'away_for_service').length, icon: Wrench, tone: 'text-slate-600 bg-slate-100' },
     { label: 'Expired', n: all.filter((k) => k.expiry_status === 'expired' && k.status !== 'away_for_service').length, icon: AlertTriangle, tone: 'text-red-600 bg-red-50' },
     { label: 'Due within 30 days', n: all.filter((k) => k.expiry_status === 'due_soon' && k.status !== 'away_for_service').length, icon: Clock, tone: 'text-amber-600 bg-amber-50' },
@@ -102,7 +103,7 @@ export const KitPlantPage: React.FC = () => {
       <TestModeBanner />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-sm text-slate-600">Every item of kit and where it is. Audits add kit here automatically.</p>
-        <button type="button" className={btn.primary} onClick={() => setAdding(true)}>
+        <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
           <Plus className="h-4 w-4" />Add kit
         </button>
       </div>
@@ -179,12 +180,24 @@ export const KitPlantPage: React.FC = () => {
       ) : (
         <section className={card}>
           <div className="px-4 sm:px-5 py-3 border-b border-slate-200">
-            <div role="tablist" aria-label="View" className="inline-flex gap-1 bg-slate-100 p-1 rounded-lg">
+            <div role="tablist" aria-label="View" className="inline-flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg">
               <button type="button" role="tab" aria-selected={view === 'type'} className={tabCls(view === 'type')} onClick={() => setParams({})}>By kit type</button>
               <button type="button" role="tab" aria-selected={view === 'van'} className={tabCls(view === 'van')} onClick={() => setParams({ view: 'van' })}>By person / spare van</button>
+              <button type="button" role="tab" aria-selected={view === 'lockup'} className={tabCls(view === 'lockup')} onClick={() => setParams({ view: 'lockup' })}>Yard Lockup</button>
             </div>
           </div>
-          {view === 'type' ? (
+          {view === 'lockup' ? (
+            <div className="p-3 sm:p-4 bg-slate-50 rounded-b-xl">
+              <LockupView
+                checklist={ref.checklist}
+                auditors={auditors}
+                people={ref.allTargets.filter((t) => t.kind === 'person')}
+                plantKit={all.filter((k) => k.status === 'spare')}
+                onAddPlantKit={() => setAdding('lockup')}
+                onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : setRemoving(k))}
+              />
+            </div>
+          ) : view === 'type' ? (
             <ByType rows={summariseKitByType(ref.kitTypes, all)} onOpen={(id) => setParams({ type: id })} />
           ) : (
             <ByVan
@@ -199,7 +212,7 @@ export const KitPlantPage: React.FC = () => {
       )}
 
       {adding && (
-        <AddKitSheet mode="page" kitTypes={ref.kitTypes} targets={ref.allTargets} auditors={auditors} onClose={() => setAdding(false)} onSaved={done}
+        <AddKitSheet mode="page" kitTypes={ref.kitTypes} targets={ref.allTargets} auditors={auditors} defaultWhere={adding === 'lockup' ? 'spare' : 'on_van'} onClose={() => setAdding(false)} onSaved={done}
           onTypeCreated={(t) => ref.setKitTypes((ts) => [...ts, t])} />
       )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={auditors} onClose={() => setUpdating(null)} onSaved={done} />}
@@ -222,7 +235,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
               <th className="px-5 py-3">Kit type</th>
               <th className="px-3 py-3 text-right">Total</th>
               <th className="px-3 py-3 text-right">On vans</th>
-              <th className="px-3 py-3 text-right">Spares</th>
+              <th className="px-3 py-3 text-right">Yard Lockup</th>
               <th className="px-3 py-3 text-right">Away</th>
               <th className="px-3 py-3">Warnings</th>
               <th className="px-5 py-3"><span className="sr-only">Open</span></th>
@@ -259,7 +272,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
             <button type="button" onClick={() => onOpen(r.typeId)} className="w-full text-left px-4 py-3 min-h-[64px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-600">· {r.total}</span></span>
-                <span className="block text-xs text-slate-600 mt-0.5">{r.onVans} on vans · {r.spares} spares · {r.away} away</span>
+                <span className="block text-xs text-slate-600 mt-0.5">{r.onVans} on vans · {r.spares} in Yard Lockup · {r.away} away</span>
                 {(r.expired > 0 || r.dueSoon > 0) && (
                   <span className="flex flex-wrap gap-1 mt-1.5">
                     {r.expired > 0 && <CountBadge n={r.expired} label="expired" tone="red" />}
@@ -368,7 +381,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
         <div className="flex flex-col lg:flex-row lg:items-end gap-3 justify-between">
           <div role="tablist" aria-label="Filter" className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg self-start">
             {([
-              ['all', 'All'], ['on_van', 'On vans'], ['spare', 'Spares'], ['away_for_service', 'Away'], ['attention', 'Expired or due'],
+              ['all', 'All'], ['on_van', 'On vans'], ['spare', 'Yard Lockup'], ['away_for_service', 'Away'], ['attention', 'Expired or due'],
             ] as [Filter, string][]).map(([v, l]) => (
               <button key={v} type="button" role="tab" aria-selected={filter === v} className={tabCls(filter === v)} onClick={() => { setFilter(v); setShown(PAGE); }}>{l}</button>
             ))}
@@ -489,7 +502,7 @@ function AssignSheet({ item, back, targets, auditors, onClose, onSaved }: { item
         <fieldset>
           <legend className="block text-xs font-semibold text-slate-600 mb-2">Where does it go now?</legend>
           <div className="grid grid-cols-2 gap-2">
-            {([['spare', 'Spare in yard'], ['on_van', 'To someone']] as const).map(([v, l]) => (
+            {([['spare', 'Yard Lockup'], ['on_van', 'To someone']] as const).map(([v, l]) => (
               <label key={v} className={`flex items-center gap-2 min-h-[44px] px-3 rounded-lg border cursor-pointer text-sm font-medium ${to === v ? 'border-blue-500 bg-blue-50' : 'border-slate-200'}`}>
                 <input type="radio" checked={to === v} onChange={() => setTo(v)} className="h-4 w-4" />{l}
               </label>

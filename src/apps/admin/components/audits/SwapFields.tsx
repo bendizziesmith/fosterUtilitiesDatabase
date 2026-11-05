@@ -13,16 +13,16 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
     <fieldset>
       <legend className="text-sm font-bold text-slate-900 mb-2">{title}</legend>
       {f.spares === null ? (
-        <p className="text-sm text-slate-500">Looking for spares…</p>
+        <p className="text-sm text-slate-500">Looking in the Yard Lockup…</p>
       ) : (
         <div className="space-y-2">
-          {f.spares.length === 0 && <p className="text-xs text-slate-600">No spare {f.item.type_name} in the yard.</p>}
+          {f.spares.length === 0 && <p className="text-xs text-slate-600">No {f.item.type_name} in the Yard Lockup.</p>}
           {f.spares.map((s) => (
             <label key={s.id} className={radio(f.repl === s.id)}>
               <input type="radio" name="repl" checked={f.repl === s.id} onChange={() => f.setRepl(s.id)} className="mt-1 h-4 w-4" />
               <span className="flex-1 flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-slate-900">{s.plant_no || 'No plant no'}</span>
-                <span className="text-xs text-slate-600">Spare · expiry {s.expiry_date ?? 'N/A'}</span>
+                <span className="text-xs text-slate-600">Yard Lockup · expiry {s.expiry_date ?? 'N/A'}</span>
                 <ExpiryPill expiry={s.expiry_date} />
               </span>
             </label>
@@ -50,7 +50,7 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
 export function DestinationFields({ f, title }: { f: SwapForm; title: string }) {
   const options: { value: Dest; label: string }[] = [
     { value: 'away_for_service', label: 'Away for service' },
-    { value: 'spare', label: 'Back to yard as spare' },
+    { value: 'spare', label: 'Back to Yard Lockup' },
     { value: 'holder', label: 'Someone else (person or spare van)' },
     { value: 'removed', label: 'Scrapped / remove' },
   ];

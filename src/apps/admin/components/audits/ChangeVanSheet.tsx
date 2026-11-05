@@ -186,13 +186,13 @@ export function ChangeVanSheet({
             <div className="space-y-4">
               {oldKit.length > 0 && (
                 <MixList title={`${person.name}’s kit`} items={oldKit} mix={mix} setMix={setMix}
-                  options={[['new_van', 'Move to new van'], ['old_van', 'Leave in old van'], ['spare', 'Back to yard as spare']]} fallback="new_van" />
+                  options={[['new_van', 'Move to new van'], ['old_van', 'Leave in old van'], ['spare', 'Back to Yard Lockup']]} fallback="new_van" />
               )}
               {newKit.length > 0 && (
                 <MixList title={`Already in the new van (${newLabel})`} items={newKit} mix={mix} setMix={setMix}
                   options={oldVehicleId
-                    ? [['keep', 'Keep (now theirs)'], ['old_van', 'Move to old van'], ['spare', 'Back to yard']]
-                    : [['keep', 'Keep (now theirs)'], ['spare', 'Back to yard']]} fallback="keep" />
+                    ? [['keep', 'Keep (now theirs)'], ['old_van', 'Move to old van'], ['spare', 'Back to Yard Lockup']]
+                    : [['keep', 'Keep (now theirs)'], ['spare', 'Back to Yard Lockup']]} fallback="keep" />
               )}
               {!oldKit.length && !newKit.length && <p className="text-sm text-slate-600">Neither van has any kit recorded.</p>}
             </div>
@@ -214,7 +214,7 @@ export function ChangeVanSheet({
               title={`Left in the old van (${oldLabel}) · ${oldHolders.length ? oldHolders.join(', ') : 'spare-van kit'}`}
               items={plan.leftInOld} empty="Nothing." />
           )}
-          <Summary icon={<Warehouse className="h-4 w-4 text-violet-600" />} title="Back to the yard as spares" items={plan.toYard} empty="Nothing." />
+          <Summary icon={<Warehouse className="h-4 w-4 text-violet-600" />} title="Back to the Yard Lockup" items={plan.toYard} empty="Nothing." />
           {newHolders.length > 0 && !assignmentAlreadyDone && (
             <p className="text-xs text-slate-600">{newHolders.join(', ')} is also assigned to {newLabel}; that doesn’t change.</p>
           )}

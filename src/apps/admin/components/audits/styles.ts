@@ -32,7 +32,7 @@ export function formatDateTime(d: string | null | undefined): string {
 
 export const KIT_STATUS_LABEL: Record<string, string> = {
   on_van: 'On van',
-  spare: 'Spare · Yard',
+  spare: 'Yard Lockup',
   away_for_service: 'Away for service',
   removed: 'Removed',
 };
@@ -48,6 +48,6 @@ export const ACTION_LABEL: Record<string, string> = {
   assigned: 'Assigned to van',
   sent_for_service: 'Sent for service',
   back_from_service: 'Back from service',
-  moved_to_spare: 'Back to yard as spare',
+  moved_to_spare: 'Back to Yard Lockup',
   removed: 'Removed',
 };
