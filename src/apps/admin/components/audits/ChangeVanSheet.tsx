@@ -136,9 +136,9 @@ export function ChangeVanSheet({
 
   const KitList = ({ items, empty }: { items: VanKit[]; empty: string }) =>
     items.length ? (
-      <ul className="text-sm text-slate-800 space-y-0.5">{items.map((k) => <li key={k.id}>• {kitLabel(k)}</li>)}</ul>
+      <ul className="text-base sm:text-sm text-slate-800 space-y-0.5">{items.map((k) => <li key={k.id}>• {kitLabel(k)}</li>)}</ul>
     ) : (
-      <p className="text-sm text-slate-500">{empty}</p>
+      <p className="text-sm text-slate-600">{empty}</p>
     );
 
   return (
@@ -155,8 +155,8 @@ export function ChangeVanSheet({
           <p className="text-xs text-slate-600">{person.name}’s own kit goes with them. Next you choose what happens to it and to any spare-van kit in the new van.</p>
           {newVehicleId && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-              <p className="text-sm text-slate-800 flex items-center gap-2">
-                <User className="h-4 w-4 text-slate-500" />
+              <p className="text-base sm:text-sm text-slate-800 flex items-center gap-2">
+                <User className="h-4 w-4 text-slate-600" />
                 {newHolders.length ? `Has it now: ${newHolders.join(', ')}` : 'Spare van (nobody assigned)'}
               </p>
               {occupied}
@@ -171,16 +171,16 @@ export function ChangeVanSheet({
         <>
           {occupied}
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1" aria-live="polite">
-            <p className="text-sm text-slate-800 flex items-start gap-2"><User className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />{onHand.held}</p>
-            <p className="text-sm text-slate-800 flex items-start gap-2"><Truck className="h-4 w-4 mt-0.5 text-slate-500 flex-shrink-0" />{onHand.newVan}</p>
+            <p className="text-base sm:text-sm text-slate-800 flex items-start gap-2"><User className="h-4 w-4 mt-0.5 text-slate-600 flex-shrink-0" />{onHand.held}</p>
+            <p className="text-base sm:text-sm text-slate-800 flex items-start gap-2"><Truck className="h-4 w-4 mt-0.5 text-slate-600 flex-shrink-0" />{onHand.newVan}</p>
           </div>
           <fieldset>
-            <legend className="text-sm font-bold text-slate-900 mb-2">How does the kit move?</legend>
+            <legend className="text-base sm:text-sm font-bold text-slate-900 mb-2">How does the kit move?</legend>
             <div className="space-y-2">
               {vanModeOptions(!!oldVehicleId).map((o) => (
                 <label key={o.mode} className={radio(mode === o.mode)}>
                   <input type="radio" name="mode" checked={mode === o.mode} onChange={() => setMode(o.mode)} className="mt-1 h-4 w-4" />
-                  <span><span className="block text-sm font-semibold text-slate-900">{o.title}</span>
+                  <span><span className="block text-base sm:text-sm font-semibold text-slate-900">{o.title}</span>
                     <span className="block text-xs text-slate-600">
                       {o.mode === 'use_new' && oldVehicleId
                         ? `The kit they hold stays with ${oldLabel}${oldHolders.length ? ` (${oldHolders.join(', ')})` : ' as spare-van kit'}.`
@@ -203,7 +203,7 @@ export function ChangeVanSheet({
                     ? [['keep', 'Keep (now theirs)'], ['old_van', 'Move to old van'], ['spare', 'Back to Yard Lockup']]
                     : [['keep', 'Keep (now theirs)'], ['spare', 'Back to Yard Lockup']]} fallback="keep" />
               )}
-              {!oldKit.length && !newKit.length && <p className="text-sm text-slate-600">Neither van has any kit recorded.</p>}
+              {!oldKit.length && !newKit.length && <p className="text-base sm:text-sm text-slate-600">Neither van has any kit recorded.</p>}
             </div>
           )}
         </>
@@ -219,7 +219,7 @@ export function ChangeVanSheet({
           )}
           <Summary icon={<User className="h-4 w-4 text-blue-600" />} title={`${person.name} will hold (${newLabel})`} items={plan.willHold} empty="No kit." />
           {oldVehicleId && (
-            <Summary icon={<Truck className="h-4 w-4 text-slate-500" />}
+            <Summary icon={<Truck className="h-4 w-4 text-slate-600" />}
               title={`Left in the old van (${oldLabel}) · ${oldHolders.length ? oldHolders.join(', ') : 'spare-van kit'}`}
               items={plan.leftInOld} empty="Nothing." />
           )}
@@ -249,7 +249,7 @@ function MixList({ title, items, mix, setMix, options, fallback }: {
       <ul className="space-y-2">
         {items.map((k) => (
           <li key={k.id} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center">
-            <label htmlFor={`mix-${k.id}`} className="text-sm font-semibold text-slate-900">{kitLabel(k)}</label>
+            <label htmlFor={`mix-${k.id}`} className="text-base sm:text-sm font-semibold text-slate-900">{kitLabel(k)}</label>
             <select id={`mix-${k.id}`} className={inputCls} value={mix[k.id] ?? fallback} onChange={(e) => setMix({ ...mix, [k.id]: e.target.value as MixChoice })}>
               {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
@@ -263,11 +263,11 @@ function MixList({ title, items, mix, setMix, options, fallback }: {
 function Summary({ icon, title, items, empty }: { icon: ReactNode; title: string; items: VanKit[]; empty: string }) {
   return (
     <section className="rounded-lg border border-slate-200 p-3">
-      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">{icon}{title}</h3>
+      <h3 className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2 mb-1">{icon}{title}</h3>
       {items.length ? (
-        <ul className="text-sm text-slate-800 space-y-0.5">{items.map((k) => <li key={k.id}>• {kitLabel(k)}</li>)}</ul>
+        <ul className="text-base sm:text-sm text-slate-800 space-y-0.5">{items.map((k) => <li key={k.id}>• {kitLabel(k)}</li>)}</ul>
       ) : (
-        <p className="text-sm text-slate-500">{empty}</p>
+        <p className="text-sm text-slate-600">{empty}</p>
       )}
     </section>
   );

@@ -135,7 +135,7 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
           {LOCKUP_SECTIONS.map((s) => (
             <button key={s.key} type="button" onClick={() => jump(s.key)}
               className="flex-shrink-0 min-h-[44px] px-4 rounded-full border border-slate-300 bg-white text-sm font-semibold text-slate-800 hover:bg-slate-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-              {s.title} <span className="text-slate-500 font-normal">{count(s.key)}</span>
+              {s.title} <span className="text-slate-600 font-normal">{count(s.key)}</span>
             </button>
           ))}
           <button type="button" aria-pressed={lowOnly} onClick={() => setLowOnly(!lowOnly)}
@@ -165,17 +165,17 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
             <button type="button" onClick={() => toggle(s.key)} aria-expanded={open}
               className="w-full min-h-[52px] px-4 sm:px-5 flex items-center justify-between gap-2 border-b border-slate-200 cursor-pointer hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
               <span id={`lockup-h-${s.key}`} className="text-base font-bold text-slate-900">
-                {s.title} <span className="text-sm font-normal text-slate-500">· {count(s.key)} {s.key === 'kit' ? 'items' : 'lines'}</span>
+                {s.title} <span className="text-sm font-normal text-slate-600">· {count(s.key)} {s.key === 'kit' ? 'items' : 'lines'}</span>
               </span>
               <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
             {open && (s.key === 'kit' ? (
-              kitShown.length === 0 ? <p className="px-5 py-5 text-sm text-slate-600">No plant kit in the Yard Lockup.</p> : (
+              kitShown.length === 0 ? <p className="px-5 py-5 text-base sm:text-sm text-slate-600">No plant kit in the Yard Lockup.</p> : (
                 <ul className="divide-y divide-slate-200">
                   {kitShown.map((k) => (
                     <li key={k.id} className="px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                       <div className="md:w-56 min-w-0">
-                        <p className="text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
+                        <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
                         <p className="text-xs text-slate-600">{k.plant_no ?? 'No plant no'} · expiry {formatDate(k.expiry_date)}</p>
                       </div>
                       <div className="md:flex-1"><ExpiryPill expiry={k.expiry_date} /></div>
@@ -192,19 +192,19 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
             ) : (
               (() => {
                 const rows = shown.filter((l) => l.section === s.key);
-                if (!rows.length) return <p className="px-5 py-5 text-sm text-slate-600">{lowOnly ? 'Nothing low here.' : term ? 'Nothing matches.' : 'Nothing counted here yet. Use “Add to lockup”.'}</p>;
+                if (!rows.length) return <p className="px-5 py-5 text-base sm:text-sm text-slate-600">{lowOnly ? 'Nothing low here.' : term ? 'Nothing matches.' : 'Nothing counted here yet. Use “Add to lockup”.'}</p>;
                 return (
                   <ul className="divide-y divide-slate-200">
                     {rows.map((l) => (
                       <li key={l.id} className={`px-4 sm:px-5 py-3 grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_auto_6.5rem_minmax(10rem,1fr)_auto] gap-3 items-center ${isLowStock(l.quantity, l.low_at) ? 'bg-amber-50' : ''}`}>
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                          <p className="text-base sm:text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
                             {l.name}<TestTag show={l.is_test} />
                             {isLowStock(l.quantity, l.low_at) && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-100 text-amber-800 border-amber-200">Low stock</span>
                             )}
                           </p>
-                          {l.expected_qty && <p className="text-xs text-slate-500">{l.expected_qty}</p>}
+                          {l.expected_qty && <p className="text-xs text-slate-600">{l.expected_qty}</p>}
                         </div>
                         <div className="flex items-center gap-2" role="group" aria-label={`${l.name} count`}>
                           <button type="button" aria-label={`One fewer ${l.name}`} disabled={busyLine === l.id || l.quantity < 1} onClick={() => bump(l, -1)}

@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { X, FlaskConical } from 'lucide-react';
+import { X, FlaskConical, Check } from 'lucide-react';
 import { formatExpiryStatus, getExpiryStatus, todayISO } from '../../../../lib/siteAuditLogic';
 import { TEST_MODE } from './styles';
 
@@ -9,25 +9,38 @@ import { TEST_MODE } from './styles';
  * dark mode comes from the global overrides in index.css.
  */
 
+/** Label line height for every field on a row, so all inputs start on the same top line. */
+export const LABEL_LINE = 'flex items-center justify-between gap-2 h-6 mb-1';
+export const LABEL_TEXT = 'text-xs font-semibold text-slate-600 truncate';
+
 export function Field({
   label,
   hint,
+  aside,
+  reserveHint = false,
   children,
   className = '',
 }: {
   label: string;
   hint?: string;
+  /** shown at the right of the label line (e.g. the expiry badge); the line height never changes */
+  aside?: React.ReactNode;
+  /** keep space for the hint even when there is none, so nothing below moves (true = 1 line, 2 = 2 lines) */
+  reserveHint?: boolean | 2;
   children: (id: string) => React.ReactNode;
   className?: string;
 }) {
   const id = useId();
   return (
     <div className={className}>
-      <label htmlFor={id} className="block text-xs font-semibold text-slate-600 mb-1">
-        {label}
-      </label>
+      <div className={LABEL_LINE}>
+        <label htmlFor={id} className={LABEL_TEXT}>{label}</label>
+        {aside}
+      </div>
       {children(id)}
-      {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
+      {(hint || reserveHint) && (
+        <p className={`text-xs text-slate-600 mt-1 leading-4 ${reserveHint === 2 ? 'min-h-[2rem]' : 'min-h-[1rem]'}`}>{hint ?? ''}</p>
+      )}
     </div>
   );
 }
@@ -43,7 +56,7 @@ export function ExpiryPill({
   showOk?: boolean;
 }) {
   const { status, daysLeft } = getExpiryStatus(expiry, today);
-  if (!status) return <span className="text-xs text-slate-500">N/A</span>;
+  if (!status) return <span className="text-xs text-slate-600">N/A</span>;
   if (status === 'ok') {
     return showOk ? (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
@@ -78,7 +91,7 @@ export function CountBadge({ n, label, tone }: { n: number; label: string; tone:
   );
 }
 
-/** Big Y / N buttons (44px+, usable with gloves). */
+/** Big Y / N buttons: 48px, full-width split, tick / cross as well as colour (usable with gloves). */
 export function YesNo({
   value,
   onChange,
@@ -94,26 +107,26 @@ export function YesNo({
   question?: string;
 }) {
   const base =
-    'min-h-[44px] min-w-[52px] px-3 rounded-lg text-sm font-bold border transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed';
+    'inline-flex items-center justify-center gap-1.5 min-h-[48px] px-3 rounded-lg text-base font-bold border-2 transition-colors duration-150 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed';
   return (
-    <div role="group" aria-label={`${label}: ${question}`} className="flex gap-2">
+    <div role="group" aria-label={`${label}: ${question}`} className="grid grid-cols-2 gap-2 w-full">
       <button
         type="button"
         disabled={disabled}
         aria-pressed={value === 'Y'}
         onClick={() => onChange(value === 'Y' ? null : 'Y')}
-        className={`${base} ${value === 'Y' ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+        className={`${base} ${value === 'Y' ? 'bg-green-700 border-green-700 text-white' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}
       >
-        Y
+        <Check className="h-5 w-5" aria-hidden="true" strokeWidth={3} />Y
       </button>
       <button
         type="button"
         disabled={disabled}
         aria-pressed={value === 'N'}
         onClick={() => onChange(value === 'N' ? null : 'N')}
-        className={`${base} ${value === 'N' ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+        className={`${base} ${value === 'N' ? 'bg-red-700 border-red-700 text-white' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}
       >
-        N
+        <X className="h-5 w-5" aria-hidden="true" strokeWidth={3} />N
       </button>
     </div>
   );
@@ -164,12 +177,12 @@ export function Sheet({
             <h2 id={titleId} className="text-base font-bold text-slate-900">{title}</h2>
             {subtitle && <p className="text-xs text-slate-600 mt-0.5">{subtitle}</p>}
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="p-2.5 -mr-2 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-2.5 -mr-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
             <X className="h-5 w-5" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-4">{children}</div>
-        {footer && <div className="px-5 py-3 border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">{footer}</div>}
+        {footer && <div className="px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );

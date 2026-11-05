@@ -35,7 +35,7 @@ export function FileLink({
 
   if (gone) {
     return (
-      <span className="text-xs text-slate-500 italic">
+      <span className="text-xs text-slate-600 italic">
         {kind} deleted by {whoName(gone.actor_name)} on {formatDateTime(gone.deleted_at)}
       </span>
     );
@@ -62,7 +62,7 @@ export function FileLink({
         type="button"
         aria-label={`Delete ${kind.toLowerCase()}`}
         onClick={() => setConfirming(true)}
-        className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+        className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-700 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
       >
         <Trash2 className="h-4 w-4" />
       </button>

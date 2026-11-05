@@ -118,6 +118,15 @@ export async function loadTeam(ganger: StaffRow | null, employees: StaffRow[]): 
   return buildTeam({ ganger, timesheet: ts?.[0] ?? null, havsMembers, employees });
 }
 
+/** One row of audit_holder_answers: what the holder answered last time, per checklist item. */
+export interface HolderAnswer {
+  checklist_item_id: string;
+  qty: string | null;
+  service_date: string | null;
+  label_on: 'Y' | 'N' | null;
+  date_tag: string | null;
+}
+
 /** person:<id> → that person; van:<id> → that spare van */
 export const holderParams = (t: Pick<AuditTarget, 'kind' | 'personId' | 'vehicleId'>) => ({
   holderEmployeeId: t.kind === 'person' ? t.personId : null,
@@ -133,18 +142,20 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
   ppe: AuditPpeItem[];
   notCarried: KitVanKitListRow[];
   lastLines: AuditLineRow[];
+  /** last answers kept on their record: qty, date on hat, Label on, date / tag (round 8) */
+  answers: HolderAnswer[];
   lastAuditId: string | null;
   /** when their last audit was submitted (for "Issued since last audit") */
   lastAuditAt: string | null;
 }> {
   const { holderEmployeeId, vehicleId } = holderParams(t);
-  if (!holderEmployeeId && !vehicleId) return { heldKit: [], ppe: [], notCarried: [], lastLines: [], lastAuditId: null, lastAuditAt: null };
+  if (!holderEmployeeId && !vehicleId) return { heldKit: [], ppe: [], notCarried: [], lastLines: [], answers: [], lastAuditId: null, lastAuditAt: null };
   // rows held by this person, or (no person) by this spare van
   const own = (table: string, cols = '*') => {
     const q = supabase.from(table).select(cols);
     return holderEmployeeId ? q.eq('holder_employee_id', holderEmployeeId) : q.is('holder_employee_id', null).eq('vehicle_id', vehicleId as string);
   };
-  const [kit, ppe, vkl, audits] = await Promise.all([
+  const [kit, ppe, vkl, audits, answers] = await Promise.all([
     holderEmployeeId
       ? supabase.from('kit_items_overview').select('*').eq('status', 'on_van').eq('holder_employee_id', holderEmployeeId).order('type_sort')
       : supabase.from('kit_items_overview').select('*').eq('status', 'on_van').is('holder_employee_id', null).eq('spare_vehicle_id', vehicleId as string).order('type_sort'),
@@ -152,6 +163,7 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
     own('kit_van_kit_list'),
     own('audit_site_audits', 'id, audit_date, submitted_at').eq('status', 'submitted')
       .order('audit_date', { ascending: false }).order('submitted_at', { ascending: false }).limit(1),
+    own('audit_holder_answers', 'checklist_item_id, qty, service_date, label_on, date_tag'),
   ]);
   const last = (check(audits) as unknown as { id: string; submitted_at: string | null }[] | null)?.[0] ?? null;
   const lastLines = last
@@ -162,6 +174,7 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
     ppe: (check(ppe) as unknown as AuditPpeItem[]) ?? [],
     notCarried: (check(vkl) as unknown as KitVanKitListRow[]) ?? [],
     lastLines,
+    answers: (check(answers) as unknown as HolderAnswer[]) ?? [],
     lastAuditId: last?.id ?? null,
     lastAuditAt: last?.submitted_at ?? null,
   };

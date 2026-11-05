@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  sectionProgress,
+  unansweredLines,
   otherAnswerFor,
   getExpiryStatus,
   formatExpiryStatus,
@@ -628,5 +630,70 @@ describe('buildAuditPrefill — "Label on?" carries over like quantities (round 
   });
   it('never answered = blank', () => {
     expect(lines.find((l) => l.checklist_item_id === 'c-nsf')!.label_on).toBeNull();
+  });
+});
+
+describe('summariseAuditLines — no label is a fail (round 8)', () => {
+  const base = { section: 'other' as const, item_name: 'Water containers', expiry_date: null };
+  it('"Label on? = N" counts as 1 fail, like Fit for purpose = N', () => {
+    expect(summariseAuditLines([{ ...base, result: 'Y', label_on: 'N' }], '2026-11-05').fails).toBe(1);
+  });
+  it('one item with both N is still one fail', () => {
+    expect(summariseAuditLines([{ ...base, result: 'N', label_on: 'N' }], '2026-11-05').fails).toBe(1);
+  });
+  it('label Y or blank is not a fail', () => {
+    expect(summariseAuditLines([{ ...base, result: 'Y', label_on: 'Y' }, { ...base, result: 'Y', label_on: null }], '2026-11-05').fails).toBe(0);
+  });
+});
+
+describe('buildAuditPrefill — answers come from the person’s record (round 8)', () => {
+  const checklist = [
+    { id: 'c-hat', section: 'ppe', name: 'Hard hats', expected_qty: 'Per person', sort_order: 30 },
+    { id: 'c-aid', section: 'hs', name: 'First aid kit', expected_qty: '1', sort_order: 10 },
+    { id: 'c-water', section: 'other', name: 'Water containers', expected_qty: 'x1', sort_order: 10 },
+  ];
+  const record = [
+    { checklist_item_id: 'c-hat', qty: '2', service_date: '2026-10-26', label_on: null, date_tag: null },
+    { checklist_item_id: 'c-aid', qty: '1', service_date: null, label_on: null, date_tag: null },
+    { checklist_item_id: 'c-water', qty: '1', service_date: null, label_on: 'N', date_tag: null },
+  ];
+  it('still pre-fills qty, date on hat and Label on when the last audit was deleted (no last lines)', () => {
+    const lines = buildAuditPrefill({ checklist, kitTypes: [], heldKit: [], ppe: [{ checklist_item_id: 'c-hat', expiry_date: '2029-10-26' }], notCarried: [], lastLines: [], answers: record });
+    const by = (id: string) => lines.find((l) => l.checklist_item_id === id)!;
+    expect(by('c-hat')).toMatchObject({ qty: '2', service_date: '2026-10-26', expiry_date: '2029-10-26', result: null });
+    expect(by('c-aid')).toMatchObject({ qty: '1', result: null });
+    expect(by('c-water')).toMatchObject({ qty: '1', label_on: 'N', result: null });
+  });
+  it('the record wins over an older audit’s lines', () => {
+    const lines = buildAuditPrefill({ checklist, kitTypes: [], heldKit: [], ppe: [], notCarried: [], answers: record,
+      lastLines: [{ section: 'hs', checklist_item_id: 'c-aid', qty: '9', service_date: null, date_tag: null }] });
+    expect(lines.find((l) => l.checklist_item_id === 'c-aid')!.qty).toBe('1');
+  });
+  it('falls back to the last audit’s lines for items not on the record yet', () => {
+    const lines = buildAuditPrefill({ checklist, kitTypes: [], heldKit: [], ppe: [], notCarried: [], answers: [],
+      lastLines: [{ section: 'hs', checklist_item_id: 'c-aid', qty: '4', service_date: null, date_tag: null }] });
+    expect(lines.find((l) => l.checklist_item_id === 'c-aid')!.qty).toBe('4');
+  });
+  it('kit marked Y with no plant no or dates comes back next time as that kit type', () => {
+    const lines = buildAuditPrefill({ checklist: [], kitTypes: [{ id: 't-dig', name: 'Digger', sort_order: 1 }],
+      heldKit: [{ id: 'k1', kit_type_id: 't-dig', plant_no: null, service_date: null, expiry_date: null }], ppe: [], notCarried: [], lastLines: [], answers: [] });
+    expect(lines[0]).toMatchObject({ kit_item_id: 'k1', item_name: 'Digger', result: null, plant_no_snapshot: null });
+  });
+});
+
+describe('sectionProgress / unansweredLines — progress chips and Submit (round 8)', () => {
+  const l = (section: 'ppe' | 'hs' | 'kit' | 'other', name: string, result: 'Y' | 'N' | 'not_carried' | null) =>
+    ({ key: name, section, item_name: name, result, expiry_date: null });
+  const lines = [l('ppe', 'Hi vis', 'Y'), l('ppe', 'Boots', null), l('hs', 'First aid', 'N'), l('kit', 'Digger', 'not_carried'), l('kit', 'Saw', null)];
+  it('counts an item as answered when Y, N or Not carried', () => {
+    expect(sectionProgress(lines)).toEqual([
+      { key: 'ppe', title: 'PPE', answered: 1, total: 2, done: false },
+      { key: 'hs', title: 'H&S', answered: 1, total: 1, done: true },
+      { key: 'kit', title: 'Kit', answered: 1, total: 2, done: false },
+      { key: 'other', title: 'Other', answered: 0, total: 0, done: true },
+    ]);
+  });
+  it('lists unanswered items in form order', () => {
+    expect(unansweredLines(lines).map((x) => x.item_name)).toEqual(['Boots', 'Saw']);
   });
 });

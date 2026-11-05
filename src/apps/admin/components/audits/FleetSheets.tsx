@@ -44,7 +44,7 @@ export function TakeOutSheet({ person, vanLabel, vehicleId, kitCount, auditors, 
     <Sheet title={`Take ${person.name} out of the van?`} subtitle={vanLabel} onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><button type="button" className={btn.danger} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Take out of van'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-      <p className="text-sm text-slate-700">
+      <p className="text-base sm:text-sm text-slate-700">
         {reg} becomes a <strong>spare van</strong>. All {kitCount} kit item{kitCount === 1 ? '' : 's'} {person.name} holds stay in it as
         spare-van kit (“{reg} · spare van”), with their PPE dates and not-carried list. Every move is logged.
       </p>
@@ -175,14 +175,14 @@ export function OffRoadSheet({ vehicleId, vanLabel, kit, targets, auditors, onCl
               {REASONS.map((r) => (
                 <label key={r.value} className={radio(reason === r.value)}>
                   <input type="radio" name="reason" checked={reason === r.value} onChange={() => setReason(r.value)} className="mt-1 h-4 w-4" />
-                  <span className="text-sm font-semibold text-slate-900">{r.label}</span>
+                  <span className="text-base sm:text-sm font-semibold text-slate-900">{r.label}</span>
                 </label>
               ))}
             </div>
           </fieldset>
           <Field label="Note (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. gearbox, sold" />}</Field>
           {kit.length === 0 ? (
-            <p className="text-sm text-slate-600">No kit on this van.</p>
+            <p className="text-base sm:text-sm text-slate-600">No kit on this van.</p>
           ) : (
             <>
               <DestinationPicker label={`All ${kit.length} items to…`} value={all} onChange={setAll} targets={others} />
@@ -191,7 +191,7 @@ export function OffRoadSheet({ vehicleId, vanLabel, kit, targets, auditors, onCl
                 <ul className="space-y-3">
                   {kit.map((k) => (
                     <li key={k.id} className="rounded-lg border border-slate-200 p-3">
-                      <p className="text-sm font-semibold text-slate-900 mb-2">{kitName(k)} <span className="font-normal text-slate-500">· {holderLabel(k)}</span></p>
+                      <p className="text-base sm:text-sm font-semibold text-slate-900 mb-2">{kitName(k)} <span className="font-normal text-slate-600">· {holderLabel(k)}</span></p>
                       <DestinationPicker label="Goes to" value={per[k.id] ?? blankDest} onChange={(v) => setPer({ ...per, [k.id]: v })}
                         targets={others} allowBlank="Same as “all items”" />
                     </li>
@@ -203,16 +203,16 @@ export function OffRoadSheet({ vehicleId, vanLabel, kit, targets, auditors, onCl
         </>
       ) : (
         <>
-          <p className="text-sm text-slate-700">{vanLabel} will show as <strong>Off the road</strong> ({REASONS.find((r) => r.value === reason)?.label.toLowerCase()}{note.trim() ? `: ${note.trim()}` : ''}) and be left out of pickers and audit lists until it’s back on the road.</p>
+          <p className="text-base sm:text-sm text-slate-700">{vanLabel} will show as <strong>Off the road</strong> ({REASONS.find((r) => r.value === reason)?.label.toLowerCase()}{note.trim() ? `: ${note.trim()}` : ''}) and be left out of pickers and audit lists until it’s back on the road.</p>
           <ul className="rounded-lg border border-slate-200 divide-y divide-slate-100">
             {kit.map((k) => (
-              <li key={k.id} className="px-3 py-2 text-sm text-slate-800 flex items-center gap-2">
+              <li key={k.id} className="px-3 py-2 text-base sm:text-sm text-slate-800 flex items-center gap-2">
                 <span className="font-semibold">{kitName(k)}</span>
                 <ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />
                 <span className={perDest[k.id] ?? allDest ? '' : 'text-red-700 font-semibold'}>{destText(perDest[k.id] ?? allDest, others)}</span>
               </li>
             ))}
-            {kit.length === 0 && <li className="px-3 py-2 text-sm text-slate-600">No kit to move.</li>}
+            {kit.length === 0 && <li className="px-3 py-2 text-base sm:text-sm text-slate-600">No kit to move.</li>}
           </ul>
           {plan.missing.length > 0 && <p className="text-sm text-red-700">{plan.missing.length} item(s) still need somewhere to go.</p>}
         </>
@@ -292,7 +292,7 @@ export function DeletePlantSheet({ item, auditors, onClose, onDone }: {
     <Sheet title={`Delete ${kitName(item)} completely?`} subtitle="Gone from Kit & Plant, gang / van pages, Needs attention and search" onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Keep it</button><button type="button" className={btn.danger} disabled={busy || !matches} onClick={save}>{busy ? 'Deleting…' : 'Delete completely'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-      <p className="text-sm text-slate-700">Its kit history and certificates are deleted too. Past audits keep only their own line of text (e.g. “{kitName(item)}”). If it’s needed again, add it back with “+ Add kit”. To keep a record of scrapped kit, use “Scrapped (keep record)” instead.</p>
+      <p className="text-base sm:text-sm text-slate-700">Its kit history and certificates are deleted too. Past audits keep only their own line of text (e.g. “{kitName(item)}”). If it’s needed again, add it back with “+ Add kit”. To keep a record of scrapped kit, use “Scrapped (keep record)” instead.</p>
       <Field label={`Type ${expected} to confirm`}>{(id) => <input id={id} className={inputCls} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />}</Field>
       <ErrorNote message={error} />
     </Sheet>
@@ -325,7 +325,7 @@ export function DeleteAuditSheet({ auditId, label, auditors, onClose, onDone }: 
     <Sheet title="Delete this audit?" subtitle={label} onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Keep it</button><button type="button" className={btn.danger} disabled={busy} onClick={save}>{busy ? 'Deleting…' : 'Delete audit'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-      <p className="text-sm text-slate-700">The audit, its lines, team list and photos are removed. Kit already on the Kit &amp; Plant list stays where it is. The audit schedule goes back to the previous audit.</p>
+      <p className="text-base sm:text-sm text-slate-700">The audit, its lines, team list and photos are removed. Kit already on the Kit &amp; Plant list stays where it is. The audit schedule goes back to the previous audit.</p>
       <Field label="Reason">{(id) => <input id={id} className={inputCls} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. done for the wrong gang" />}</Field>
       <ErrorNote message={error} />
     </Sheet>

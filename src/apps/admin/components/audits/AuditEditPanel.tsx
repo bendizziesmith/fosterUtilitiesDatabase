@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Field, ErrorNote, YesNo } from './ui';
+import { Field, ErrorNote, YesNo, LABEL_LINE, LABEL_TEXT } from './ui';
 import { btn, inputCls, card } from './styles';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
@@ -59,9 +59,10 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
             <legend className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">{SECTION_TITLE[sec]}</legend>
             <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200">
               {rows.map((l) => (
-                <li key={l.id} className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-3 items-end">
-                  <div className="col-span-2 sm:col-span-1">
-                    <p className="text-sm font-bold text-slate-900 mb-1">{l.item_name}</p>
+                <li key={l.id} className="p-3 grid grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+                  <p className="col-span-2 lg:col-span-4 text-base sm:text-sm font-bold text-slate-900">{l.item_name}</p>
+                  <div className="col-span-2 lg:col-span-1">
+                    <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fit for purpose</span></div>
                     {l.result === 'not_carried' ? (
                       <button type="button" className={btn.small} onClick={() => set(l.id, { result: null })}>Not carried · change</button>
                     ) : (
@@ -77,13 +78,13 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
                     <Field label="Expiry">{(id) => <input id={id} type="date" className={inputCls} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
                   ) : sec === 'other' && answerOf(l.id) === 'label' ? (
                     <div>
-                      <p className="text-xs font-semibold text-slate-600 mb-1">Label on?</p>
+                      <div className={LABEL_LINE}><span className={LABEL_TEXT}>Label on?</span></div>
                       <YesNo value={(l.label_on as 'Y' | 'N' | null) ?? null} label={l.item_name} question="label on" onChange={(v) => set(l.id, { label_on: v })} />
                     </div>
                   ) : sec === 'other' && answerOf(l.id) === 'date_tag' ? (
                     <Field label="Date / tag / label">{(id) => <input id={id} className={inputCls} value={l.date_tag ?? ''} onChange={(e) => set(l.id, { date_tag: e.target.value })} />}</Field>
                   ) : <div className="hidden sm:block" />}
-                  <Field label="Comment" className="col-span-2 sm:col-span-1">{(id) => <input id={id} className={inputCls} value={l.comment ?? ''} onChange={(e) => set(l.id, { comment: e.target.value })} />}</Field>
+                  <Field label="Comment" className="col-span-2 lg:col-span-1">{(id) => <input id={id} className={inputCls} value={l.comment ?? ''} onChange={(e) => set(l.id, { comment: e.target.value })} />}</Field>
                 </li>
               ))}
             </ul>
@@ -93,7 +94,7 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
       {diff.summary.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" aria-live="polite">
           <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Changes to save</p>
-          <ul className="text-sm text-slate-800 list-disc ml-5">{diff.summary.map((x) => <li key={x}>{x}</li>)}</ul>
+          <ul className="text-base sm:text-sm text-slate-800 list-disc ml-5">{diff.summary.map((x) => <li key={x}>{x}</li>)}</ul>
         </div>
       )}
       <ErrorNote message={error} />

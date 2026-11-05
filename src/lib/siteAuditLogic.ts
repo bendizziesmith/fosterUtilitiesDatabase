@@ -262,7 +262,8 @@ export function summariseAuditLines(
   let expired = 0;
   let dueSoon = 0;
   for (const l of lines) {
-    if (l.result === 'N') fails++;
+    // "Label on? = N" is a fail too; one item counts once
+    if (l.result === 'N' || l.label_on === 'N') fails++;
     if (l.result === 'not_carried') continue;
     if (l.section !== 'ppe' && l.section !== 'kit') continue;
     const { status } = getExpiryStatus(l.expiry_date, auditDate);
@@ -466,8 +467,13 @@ export function buildAuditPrefill(input: {
   ppe: { checklist_item_id: string; expiry_date: string | null }[];
   notCarried: { kit_type_id: string; carried: boolean }[];
   lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null; label_on?: string | null }[];
+  /** the holder's record of last answers (survives a deleted audit); wins over lastLines */
+  answers?: { checklist_item_id: string; qty: string | null; service_date: string | null; label_on: string | null; date_tag: string | null }[];
 }): DraftLine[] {
-  const last = new Map(input.lastLines.filter((l) => l.checklist_item_id).map((l) => [l.checklist_item_id as string, l]));
+  const last = new Map<string, { qty: string | null; service_date: string | null; date_tag: string | null; label_on?: string | null }>(
+    input.lastLines.filter((l) => l.checklist_item_id).map((l) => [l.checklist_item_id as string, l])
+  );
+  (input.answers ?? []).forEach((a) => last.set(a.checklist_item_id, a));
   const ppe = new Map(input.ppe.map((p) => [p.checklist_item_id, p.expiry_date]));
   const sectionOrder: Record<string, number> = { ppe: 0, hs: 1, other: 2 };
   const checklistLines: DraftLine[] = [...input.checklist]
@@ -606,4 +612,31 @@ export interface FileDeletion {
 export function isFileDeleted(path: string | null | undefined, deletions: FileDeletion[]): FileDeletion | undefined {
   if (!path) return undefined;
   return deletions.find((d) => d.path === path);
+}
+
+// ---------------------------------------------------------------- form progress (round 8)
+
+const PROGRESS_SECTIONS: { key: AuditSection; title: string }[] = [
+  { key: 'ppe', title: 'PPE' },
+  { key: 'hs', title: 'H&S' },
+  { key: 'kit', title: 'Kit' },
+  { key: 'other', title: 'Other' },
+];
+
+/** answered = Y, N or Not carried */
+const isAnswered = (l: Pick<DraftLine, 'result'>) => l.result === 'Y' || l.result === 'N' || l.result === 'not_carried';
+
+/** "PPE 6/9 · H&S 8/8 · Kit 3/7 · Other 5/5"; a section is done when every item is answered. */
+export function sectionProgress(lines: Pick<DraftLine, 'section' | 'result'>[]) {
+  return PROGRESS_SECTIONS.map((s) => {
+    const sl = lines.filter((l) => l.section === s.key);
+    const answered = sl.filter(isAnswered).length;
+    return { key: s.key, title: s.title, answered, total: sl.length, done: answered === sl.length };
+  });
+}
+
+/** Items with no answer yet, in form order (Submit lists them and jumps to the first). */
+export function unansweredLines<T extends Pick<DraftLine, 'section' | 'result'>>(lines: T[]): T[] {
+  const order = PROGRESS_SECTIONS.map((s) => s.key);
+  return [...lines].filter((l) => !isAnswered(l)).sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section));
 }

@@ -143,7 +143,7 @@ export function UpdateItemSheet({
             >
               <input type="radio" name="what" value={o.value} checked={what === o.value} onChange={() => setWhat(o.value)} className="mt-1 h-4 w-4" />
               <span>
-                <span className="block text-sm font-semibold text-slate-900">{o.label}</span>
+                <span className="block text-base sm:text-sm font-semibold text-slate-900">{o.label}</span>
                 <span className="block text-xs text-slate-600">{o.hint}</span>
               </span>
             </label>

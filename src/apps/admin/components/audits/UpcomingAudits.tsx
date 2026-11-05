@@ -64,7 +64,7 @@ export function UpcomingAudits({ targets }: { targets: AuditTarget[] }) {
           <h2 id="upcoming-h" className="text-base font-bold text-slate-900">Upcoming audits</h2>
           {urgent.length > 0 && <span className="text-xs font-semibold text-red-700">{urgent.length} due</span>}
         </div>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
+        <label className="flex items-center gap-2 text-base sm:text-sm text-slate-700">
           Audit every
           <input inputMode="numeric" aria-label="Audit every how many months" className={`${inputCls} w-20 text-center`} value={editing}
             onChange={(e) => setEditing(e.target.value.replace(/\D/g, ''))} onBlur={saveInterval} />
@@ -73,16 +73,16 @@ export function UpcomingAudits({ targets }: { targets: AuditTarget[] }) {
       </div>
       <ErrorNote message={error} />
       {rows === null ? (
-        <p className="px-5 py-5 text-sm text-slate-600">Loading…</p>
+        <p className="px-5 py-5 text-base sm:text-sm text-slate-600">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="px-5 py-5 text-sm text-slate-600">No gangs or spare vans to audit.</p>
+        <p className="px-5 py-5 text-base sm:text-sm text-slate-600">No gangs or spare vans to audit.</p>
       ) : (
         <>
           <ul className="divide-y divide-slate-200">
             {shown.map((r) => (
               <li key={r.key} className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                 <div className="min-w-0 sm:flex-1">
-                  <p className="text-sm font-bold text-slate-900">{r.label}</p>
+                  <p className="text-base sm:text-sm font-bold text-slate-900">{r.label}</p>
                   <p className="text-xs text-slate-600">Last audited {r.lastAudit ? formatDate(r.lastAudit) : 'never'}{r.due ? ` · due ${formatDate(r.due)}` : ''}</p>
                 </div>
                 <span className={`self-start sm:self-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${tone(r)}`}>{formatDue(r)}</span>

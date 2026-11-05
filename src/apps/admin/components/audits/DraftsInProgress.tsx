@@ -54,14 +54,14 @@ export function DraftsInProgress() {
       <div className="flex items-center gap-2 px-4 sm:px-5 py-4 border-b border-slate-200">
         <FilePen className="h-5 w-5 text-blue-600" />
         <h2 id="drafts-h" className="text-base font-bold text-slate-900">Drafts in progress</h2>
-        <span className="text-xs text-slate-500">{drafts.length} not submitted yet</span>
+        <span className="text-xs text-slate-600">{drafts.length} not submitted yet</span>
       </div>
       <div className="px-4 sm:px-5"><ErrorNote message={error} /></div>
       <ul className="divide-y divide-slate-200">
         {drafts.map((d) => (
           <li key={d.id} className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-900">{teamOf(d)} <TestTag show={d.is_test} /></p>
+              <p className="text-base sm:text-sm font-bold text-slate-900">{teamOf(d)} <TestTag show={d.is_test} /></p>
               <p className="text-xs text-slate-600 mt-0.5">
                 {[formatDate(d.audit_date), d.site_visited, `Audited by ${whoName(d.auditor_name)}`, `Last saved ${lastSavedText(d.updated_at ?? d.created_at)}`]
                   .filter(Boolean).join(' · ')}
@@ -91,7 +91,7 @@ export function DraftsInProgress() {
             </>
           }
         >
-          <p className="text-sm text-slate-700">Everything filled in on this draft, and its photos, will be deleted. Kit and PPE records are not changed. This can’t be undone.</p>
+          <p className="text-base sm:text-sm text-slate-700">Everything filled in on this draft, and its photos, will be deleted. Kit and PPE records are not changed. This can’t be undone.</p>
           <ErrorNote message={error} />
         </Sheet>
       )}

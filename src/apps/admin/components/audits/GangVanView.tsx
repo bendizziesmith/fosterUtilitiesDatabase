@@ -140,14 +140,14 @@ export const GangVanView: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              {target.kind === 'person' ? <Users className="h-5 w-5 text-slate-500" /> : <Truck className="h-5 w-5 text-slate-500" />}
+              {target.kind === 'person' ? <Users className="h-5 w-5 text-slate-600" /> : <Truck className="h-5 w-5 text-slate-600" />}
               {target.label}
             </h2>
             <dl className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
-              <div><dt className="text-xs font-semibold text-slate-500">{target.isGanger ? 'Ganger' : 'Holder'}</dt><dd className="text-slate-900 font-medium">{target.personName ?? 'Spare van (nobody assigned)'}</dd></div>
-              <div><dt className="text-xs font-semibold text-slate-500">Van reg</dt><dd className="text-slate-900 font-medium">{target.reg ?? 'No van assigned'}</dd></div>
+              <div><dt className="text-xs font-semibold text-slate-600">{target.isGanger ? 'Ganger' : 'Holder'}</dt><dd className="text-slate-900 font-medium">{target.personName ?? 'Spare van (nobody assigned)'}</dd></div>
+              <div><dt className="text-xs font-semibold text-slate-600">Van reg</dt><dd className="text-slate-900 font-medium">{target.reg ?? 'No van assigned'}</dd></div>
               <div>
-                <dt className="text-xs font-semibold text-slate-500">Last audit</dt>
+                <dt className="text-xs font-semibold text-slate-600">Last audit</dt>
                 <dd>
                   {last ? (
                     <button type="button" onClick={() => navigate(`/audits/detail?id=${last.id}`)} className="inline-flex items-center gap-1 min-h-[44px] sm:min-h-0 text-sm font-semibold text-blue-700 hover:underline cursor-pointer">
@@ -158,7 +158,7 @@ export const GangVanView: React.FC = () => {
               </div>
               {target.isGanger && (
                 <div className="sm:col-span-3">
-                  <dt className="text-xs font-semibold text-slate-500">This week’s members</dt>
+                  <dt className="text-xs font-semibold text-slate-600">This week’s members</dt>
                   <dd className="text-slate-900">{members.map((m) => m.name).join(', ') || '—'}</dd>
                 </div>
               )}
@@ -203,13 +203,13 @@ export const GangVanView: React.FC = () => {
           <h2 id="gv-kit" className="text-base font-bold text-slate-900">Kit {target.kind === 'person' ? `${target.personName} holds` : 'on this spare van'}</h2>
         </div>
         {kit === null ? <LoadingSpinner /> : kit.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-600">No kit recorded yet.</p>
+          <p className="px-5 py-6 text-base sm:text-sm text-slate-600">No kit recorded yet.</p>
         ) : (
           <ul className="divide-y divide-slate-200">
             {kit.map((k) => (
               <li key={k.id} className="px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                 <div className="md:w-48 min-w-0">
-                  <p className="text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
+                  <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
                   <p className="text-xs text-slate-600">{k.plant_no ?? 'No plant no'}</p>
                 </div>
                 <p className="text-xs text-slate-600 md:w-40">Service {formatDate(k.service_date)}</p>
@@ -229,15 +229,15 @@ export const GangVanView: React.FC = () => {
         <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-blue-600" />
           <h2 id="gv-ppe" className="text-base font-bold text-slate-900">PPE expiry dates</h2>
-          <span className="text-xs text-slate-500">from the latest audit or update</span>
+          <span className="text-xs text-slate-600">from the latest audit or update</span>
         </div>
         {ppe.filter((p) => p.expiry_date).length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-600">No PPE expiry dates recorded.</p>
+          <p className="px-5 py-6 text-base sm:text-sm text-slate-600">No PPE expiry dates recorded.</p>
         ) : (
           <ul className="divide-y divide-slate-200">
             {ppe.filter((p) => p.expiry_date).map((p) => (
               <li key={p.id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900 flex items-center gap-2 min-w-[8rem]">{p.item_name}<TestTag show={p.is_test} /></span>
+                <span className="text-base sm:text-sm font-semibold text-slate-900 flex items-center gap-2 min-w-[8rem]">{p.item_name}<TestTag show={p.is_test} /></span>
                 <span className="text-xs text-slate-600">Expiry {formatDate(p.expiry_date)}</span>
                 <ExpiryPill expiry={p.expiry_date} />
                 <button type="button" className={`${btn.small} ml-auto`} onClick={() => setUpdating(ppeUpdateTarget(p, target.label, ref.checklist))}>Update</button>
@@ -254,15 +254,15 @@ export const GangVanView: React.FC = () => {
             <h2 id="gv-lockup" className="text-base font-bold text-slate-900">Issued from Yard Lockup</h2>
           </div>
           {issues.length === 0 && issueMoves.length === 0 ? (
-            <p className="px-5 py-6 text-sm text-slate-600">Nothing issued from the Yard Lockup.</p>
+            <p className="px-5 py-6 text-base sm:text-sm text-slate-600">Nothing issued from the Yard Lockup.</p>
           ) : (
             <>
               <ul className="divide-y divide-slate-200">
                 {issues.map((i) => (
                   <li key={i.stock_id} className="px-4 sm:px-5 py-3 flex flex-wrap items-center gap-3">
-                    <span className="text-sm font-semibold text-slate-900 flex items-center gap-2 min-w-[8rem]">{i.item_name}<TestTag show={i.is_test} /></span>
-                    <span className="text-sm text-slate-700">Holds {i.quantity_held}</span>
-                    {i.last_issued_at && <span className="text-xs text-slate-500">last issued {formatDate(i.last_issued_at.slice(0, 10))}</span>}
+                    <span className="text-base sm:text-sm font-semibold text-slate-900 flex items-center gap-2 min-w-[8rem]">{i.item_name}<TestTag show={i.is_test} /></span>
+                    <span className="text-base sm:text-sm text-slate-700">Holds {i.quantity_held}</span>
+                    {i.last_issued_at && <span className="text-xs text-slate-600">last issued {formatDate(i.last_issued_at.slice(0, 10))}</span>}
                     <button type="button" className={`${btn.small} ml-auto`} onClick={() => setReturning(i)}>
                       <Undo2 className="h-3.5 w-3.5" />Return to lockup
                     </button>
@@ -278,7 +278,7 @@ export const GangVanView: React.FC = () => {
                         {m.date_on_hat && <> · date on hat {formatDate(m.date_on_hat)}</>}
                         {m.note && <> · {m.note}</>}
                       </span>
-                      <span className="text-slate-500">{whoName(m.actor_name)} · {formatDateTime(m.created_at)}</span>
+                      <span className="text-slate-600">{whoName(m.actor_name)} · {formatDateTime(m.created_at)}</span>
                     </li>
                   ))}
                 </ul>
@@ -292,11 +292,11 @@ export const GangVanView: React.FC = () => {
 
       <section className={card} aria-labelledby="gv-hist">
         <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center gap-2">
-          <History className="h-5 w-5 text-slate-500" />
+          <History className="h-5 w-5 text-slate-600" />
           <h2 id="gv-hist" className="text-base font-bold text-slate-900">Recent kit history</h2>
         </div>
         {history.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-600">Nothing yet.</p>
+          <p className="px-5 py-6 text-base sm:text-sm text-slate-600">Nothing yet.</p>
         ) : (
           <ul className="divide-y divide-slate-200">
             {history.map((h) => (
@@ -311,7 +311,7 @@ export const GangVanView: React.FC = () => {
                   {h.note && <p className="text-xs text-slate-600 mt-0.5">{h.note}</p>}
                   {h.certificate_path && <FileLink path={h.certificate_path} kind="Certificate" deletions={deletions} auditors={ref.auditors} onDeleted={reloadDeletions} />}
                 </div>
-                <p className="text-xs text-slate-500 whitespace-nowrap">{whoName(h.actor_name)} · {formatDateTime(h.created_at)}</p>
+                <p className="text-xs text-slate-600 whitespace-nowrap">{whoName(h.actor_name)} · {formatDateTime(h.created_at)}</p>
               </li>
             ))}
           </ul>
@@ -398,7 +398,7 @@ function CarriedList({ holder, kitTypes, notCarried, onChanged, onError }: {
           return (
             <li key={t.id}>
               <button type="button" aria-pressed={carried} disabled={busy === t.id} onClick={() => toggle(t)}
-                className={`w-full min-h-[44px] px-3 rounded-lg border text-sm font-medium flex items-center justify-between gap-2 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${carried ? 'border-green-200 bg-green-50 text-green-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+                className={`w-full min-h-[44px] px-3 rounded-lg border text-sm font-medium flex items-center justify-between gap-2 cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${carried ? 'border-green-200 bg-green-50 text-green-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
                 <span>{t.name}</span>
                 <span className="inline-flex items-center gap-1 text-xs font-semibold">
                   {carried ? <><Check className="h-3.5 w-3.5" />Carried</> : <><Ban className="h-3.5 w-3.5" />Not carried</>}

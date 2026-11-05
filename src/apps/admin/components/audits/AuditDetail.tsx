@@ -32,14 +32,14 @@ function Result({ r }: { r: AuditLineRow['result'] }) {
   if (r === 'Y') return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-green-50 text-green-700 border border-green-200">Y</span>;
   if (r === 'N') return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-700 border border-red-200">N · fail</span>;
   if (r === 'not_carried') return <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">Not carried</span>;
-  return <span className="text-xs text-slate-500">—</span>;
+  return <span className="text-xs text-slate-600">—</span>;
 }
 
 /** "Label on?" answer: words as well as colour */
 function LabelOn({ v }: { v: AuditLineRow['label_on'] }) {
   if (v === 'Y') return <span className="text-slate-700">Label on</span>;
   if (v === 'N') return <span className="font-semibold text-red-700">No label</span>;
-  return <span className="text-xs text-slate-500">—</span>;
+  return <span className="text-xs text-slate-600">—</span>;
 }
 
 function SectionTable({ title, lines, auditDate, section, deletions, auditors, onFileDeleted, dateLabelFor, otherAnswer }: {
@@ -61,7 +61,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
 
   const cells = (l: AuditLineRow) => (
     <>
-      <td className="px-5 py-2.5 font-semibold text-slate-900">{l.item_name}{l.expected_qty && <span className="block text-xs font-normal text-slate-500">{l.expected_qty}</span>}</td>
+      <td className="px-5 py-2.5 font-semibold text-slate-900">{l.item_name}{l.expected_qty && <span className="block text-xs font-normal text-slate-600">{l.expected_qty}</span>}</td>
       <td className="px-3 py-2.5"><Result r={l.result} /></td>
       {isKit ? (
         <>
@@ -94,7 +94,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+            <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <th className="px-5 py-2.5">Item</th>
               <th className="px-3 py-2.5">Fit for purpose</th>
               {isKit ? (<><th className="px-3 py-2.5">Plant no</th><th className="px-3 py-2.5">Service</th></>) : <th className="px-3 py-2.5">Qty</th>}
@@ -118,7 +118,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
         {[...flagged, ...(showAll ? rest : [])].map((l) => (
           <li key={l.id} className={`px-4 py-3 ${l.result === 'not_carried' ? 'bg-slate-50' : ''}`}>
             <div className="flex items-start justify-between gap-2">
-              <p className="text-sm font-bold text-slate-900">{l.item_name}</p>
+              <p className="text-base sm:text-sm font-bold text-slate-900">{l.item_name}</p>
               <Result r={l.result} />
             </div>
             <p className="text-xs text-slate-600 mt-1">
@@ -173,7 +173,7 @@ export const AuditDetail: React.FC = () => {
     load();
   }, [load]);
 
-  if (!id) return <p className="text-sm text-slate-600">No audit selected.</p>;
+  if (!id) return <p className="text-base sm:text-sm text-slate-600">No audit selected.</p>;
   if (error) return <ErrorNote message={error} />;
   if (!data) return <LoadingSpinner />;
 
@@ -213,12 +213,12 @@ export const AuditDetail: React.FC = () => {
             ['Site', audit.site_visited ?? '—'],
           ].map(([k, v]) => (
             <div key={k}>
-              <dt className="text-xs font-semibold text-slate-500">{k}</dt>
+              <dt className="text-xs font-semibold text-slate-600">{k}</dt>
               <dd className="text-slate-900 font-medium break-words">{v}</dd>
             </div>
           ))}
           <div className="col-span-2 sm:col-span-4">
-            <dt className="text-xs font-semibold text-slate-500">Team members</dt>
+            <dt className="text-xs font-semibold text-slate-600">Team members</dt>
             <dd className="text-slate-900">{members.map((m) => m.name).join(', ') || '—'}</dd>
           </div>
         </dl>
@@ -261,7 +261,7 @@ export const AuditDetail: React.FC = () => {
 
       <section className={`${card} p-4 sm:p-5`}>
         <h2 className="text-base font-bold text-slate-900 mb-1">Additional kit required / notes for Neil & Sam</h2>
-        <p className="text-sm text-slate-700 whitespace-pre-wrap">{audit.notes || 'None.'}</p>
+        <p className="text-base sm:text-sm text-slate-700 whitespace-pre-wrap">{audit.notes || 'None.'}</p>
       </section>
     </div>
   );

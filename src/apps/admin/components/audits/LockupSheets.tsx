@@ -126,9 +126,9 @@ export function IssueSheet({ line, people, auditors, onClose, onSaved }: {
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <TargetPicker label="Issue to" targets={people} value={personKey} onChange={setPersonKey} placeholder="Type a name…" />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Quantity" hint={`Up to ${line.quantity}`}>{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
+        <Field label="Quantity" hint={`Up to ${line.quantity}`} reserveHint={2}>{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
         {dated && (
-          <Field label={line.date_label ?? 'Date'} hint={newExpiry ? `Their PPE expiry becomes ${formatDate(newExpiry)} (${line.service_interval_months} months)` : undefined}>
+          <Field label={line.date_label ?? 'Date'} reserveHint={2} hint={newExpiry ? `Their PPE expiry becomes ${formatDate(newExpiry)} (${line.service_interval_months} months)` : undefined}>
             {(id) => <input id={id} type="date" className={inputCls} value={hat} onChange={(e) => setHat(e.target.value)} />}
           </Field>
         )}

@@ -17,6 +17,7 @@ import { AuditRecords } from './components/audits/AuditRecords';
 import { AuditDetail } from './components/audits/AuditDetail';
 import { KitPlantPage } from './components/audits/KitPlantPage';
 import { GangVanView } from './components/audits/GangVanView';
+import { AuditShell } from './components/audits/AuditNavBar';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -341,12 +342,12 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
             />
           }
         />
-        <Route path="/audits" element={<SiteAuditsPage />} />
-        <Route path="/audits/new" element={<NewAuditForm key={location.search} />} />
-        <Route path="/audits/records" element={<AuditRecords />} />
-        <Route path="/audits/detail" element={<AuditDetail />} />
-        <Route path="/kit" element={<KitPlantPage />} />
-        <Route path="/kit/van" element={<GangVanView key={location.search} />} />
+        <Route path="/audits" element={<AuditShell><SiteAuditsPage /></AuditShell>} />
+        <Route path="/audits/new" element={<AuditShell><NewAuditForm key={location.search} /></AuditShell>} />
+        <Route path="/audits/records" element={<AuditShell><AuditRecords /></AuditShell>} />
+        <Route path="/audits/detail" element={<AuditShell><AuditDetail /></AuditShell>} />
+        <Route path="/kit" element={<AuditShell><KitPlantPage /></AuditShell>} />
+        <Route path="/kit/van" element={<AuditShell><GangVanView key={location.search} /></AuditShell>} />
         <Route
           path="/weekly-timesheet-detail"
           element={

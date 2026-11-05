@@ -11,9 +11,9 @@ const radio = (checked: boolean) =>
 export function ReplacementFields({ f, months, title }: { f: SwapForm; months: number | null | undefined; title: string }) {
   return (
     <fieldset>
-      <legend className="text-sm font-bold text-slate-900 mb-2">{title}</legend>
+      <legend className="text-base sm:text-sm font-bold text-slate-900 mb-2">{title}</legend>
       {f.spares === null ? (
-        <p className="text-sm text-slate-500">Looking in the Yard Lockup…</p>
+        <p className="text-sm text-slate-600">Looking in the Yard Lockup…</p>
       ) : (
         <div className="space-y-2">
           {f.spares.length === 0 && <p className="text-xs text-slate-600">No {f.item.type_name} in the Yard Lockup.</p>}
@@ -21,7 +21,7 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
             <label key={s.id} className={radio(f.repl === s.id)}>
               <input type="radio" name="repl" checked={f.repl === s.id} onChange={() => f.setRepl(s.id)} className="mt-1 h-4 w-4" />
               <span className="flex-1 flex flex-wrap items-center gap-2">
-                <span className="text-sm font-semibold text-slate-900">{s.plant_no || 'No plant no'}</span>
+                <span className="text-base sm:text-sm font-semibold text-slate-900">{s.plant_no || 'No plant no'}</span>
                 <span className="text-xs text-slate-600">Yard Lockup · expiry {s.expiry_date ?? 'N/A'}</span>
                 <ExpiryPill expiry={s.expiry_date} />
               </span>
@@ -29,7 +29,7 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
           ))}
           <label className={radio(f.repl === 'new')}>
             <input type="radio" name="repl" checked={f.repl === 'new'} onChange={() => f.setRepl('new')} className="mt-1 h-4 w-4" />
-            <span className="text-sm font-semibold text-slate-900">+ Add a new {f.item.type_name}</span>
+            <span className="text-base sm:text-sm font-semibold text-slate-900">+ Add a new {f.item.type_name}</span>
           </label>
           {f.repl === 'new' && (
             <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -39,7 +39,7 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
           )}
           <label className={radio(f.repl === 'none')}>
             <input type="radio" name="repl" checked={f.repl === 'none'} onChange={() => f.setRepl('none')} className="mt-1 h-4 w-4" />
-            <span className="text-sm font-semibold text-slate-900">Nothing for now</span>
+            <span className="text-base sm:text-sm font-semibold text-slate-900">Nothing for now</span>
           </label>
         </div>
       )}
@@ -56,13 +56,13 @@ export function DestinationFields({ f, title }: { f: SwapForm; title: string }) 
   ];
   return (
     <fieldset>
-      <legend className="text-sm font-bold text-slate-900 mb-2">{title}</legend>
+      <legend className="text-base sm:text-sm font-bold text-slate-900 mb-2">{title}</legend>
       <div className="space-y-2">
         {options.map((o) => (
           <div key={o.value}>
             <label className={radio(f.dest === o.value)}>
               <input type="radio" name="dest" checked={f.dest === o.value} onChange={() => f.setDest(o.value)} className="mt-1 h-4 w-4" />
-              <span className="text-sm font-semibold text-slate-900">{o.label}</span>
+              <span className="text-base sm:text-sm font-semibold text-slate-900">{o.label}</span>
             </label>
             {f.dest === 'away_for_service' && o.value === 'away_for_service' && (
               <Field label="Service company (optional)" className="mt-2 ml-7">
@@ -89,8 +89,8 @@ export function SwapNoteAndPreview({ f }: { f: SwapForm }) {
       </Field>
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3" aria-live="polite">
         <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Result</p>
-        <p className="flex items-center gap-2 text-sm text-slate-800"><ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />{f.preview.outgoing}</p>
-        <p className="flex items-center gap-2 text-sm text-slate-800 mt-1"><ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />{f.preview.incoming}</p>
+        <p className="flex items-center gap-2 text-base sm:text-sm text-slate-800"><ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />{f.preview.outgoing}</p>
+        <p className="flex items-center gap-2 text-base sm:text-sm text-slate-800 mt-1"><ArrowRight className="h-4 w-4 text-slate-400 flex-shrink-0" />{f.preview.incoming}</p>
       </div>
     </>
   );

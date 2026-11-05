@@ -32,7 +32,7 @@ function lastSeen(k: KitItemOverview) {
 }
 
 const tabCls = (on: boolean) =>
-  `min-h-[40px] px-3 rounded-md text-xs font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
+  `min-h-[44px] px-3 rounded-md text-sm sm:text-xs font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${on ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`;
 
 export const KitPlantPage: React.FC = () => {
   const navigate = useNavigate();
@@ -115,7 +115,7 @@ export const KitPlantPage: React.FC = () => {
     <div className="space-y-5">
       <TestModeBanner />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-sm text-slate-600">Every item of kit and where it is. Audits add kit here automatically.</p>
+        <p className="text-base sm:text-sm text-slate-600">Every item of kit and where it is. Audits add kit here automatically.</p>
         <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
           <Plus className="h-4 w-4" />Add kit
         </button>
@@ -130,14 +130,14 @@ export const KitPlantPage: React.FC = () => {
           <input id="kit-top-search" className={`${inputCls} pl-9 pr-10`} placeholder="Search ganger, van, item or plant no"
             value={topQ} onChange={(e) => setTopQ(e.target.value)} autoComplete="off" />
           {topQ && (
-            <button type="button" aria-label="Clear search" onClick={() => setTopQ('')} className="absolute right-1 top-1/2 -translate-y-1/2 p-2.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer">
+            <button type="button" aria-label="Clear search" onClick={() => setTopQ('')} className="absolute right-1 top-1/2 -translate-y-1/2 p-2.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer">
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
         {q && (
           <div className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {vanHits.length === 0 && itemHits.length === 0 && <p className="px-3 py-3 text-sm text-slate-500">Nothing matches “{topQ}”.</p>}
+            {vanHits.length === 0 && itemHits.length === 0 && <p className="px-3 py-3 text-sm text-slate-600">Nothing matches “{topQ}”.</p>}
             {vanHits.map((t) => (
               <button key={t.key} type="button" onClick={() => navigate(`/kit/van?key=${encodeURIComponent(t.key)}`)}
                 className="w-full min-h-[44px] px-3 flex items-center gap-2 text-left text-sm text-slate-900 hover:bg-slate-50 cursor-pointer">
@@ -252,7 +252,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
       <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+            <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
               <th className="px-5 py-3">Kit type</th>
               <th className="px-3 py-3 text-right">Total</th>
               <th className="px-3 py-3 text-right">On vans</th>
@@ -274,7 +274,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
                   <span className="flex flex-wrap gap-1">
                     {r.expired > 0 && <CountBadge n={r.expired} label="expired" tone="red" />}
                     {r.dueSoon > 0 && <CountBadge n={r.dueSoon} label="due soon" tone="amber" />}
-                    {!r.expired && !r.dueSoon && <span className="text-xs text-slate-500">None</span>}
+                    {!r.expired && !r.dueSoon && <span className="text-xs text-slate-600">None</span>}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-right">
@@ -292,7 +292,7 @@ function ByType({ rows, onOpen }: { rows: ReturnType<typeof summariseKitByType>;
           <li key={r.typeId}>
             <button type="button" onClick={() => onOpen(r.typeId)} className="w-full text-left px-4 py-3 min-h-[64px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
               <span className="min-w-0">
-                <span className="block text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-600">· {r.total}</span></span>
+                <span className="block text-base sm:text-sm font-bold text-slate-900">{r.name} <span className="font-normal text-slate-600">· {r.total}</span></span>
                 <span className="block text-xs text-slate-600 mt-0.5">{r.onVans} on vans · {r.spares} in Yard Lockup · {r.away} away</span>
                 {(r.expired > 0 || r.dueSoon > 0) && (
                   <span className="flex flex-wrap gap-1 mt-1.5">
@@ -319,7 +319,7 @@ function ByVan({ rows, changedPeople, onOpen }: { rows: ReturnType<typeof summar
         <li key={r.key}>
           <button type="button" onClick={() => onOpen(r.key)} className="w-full text-left px-4 sm:px-5 py-3 min-h-[56px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
             <span className="min-w-0 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-              <span className="text-sm font-bold text-slate-900">{r.label}</span>
+              <span className="text-base sm:text-sm font-bold text-slate-900">{r.label}</span>
               <span className="flex flex-wrap items-center gap-1">
                 <CountBadge n={r.items} label={r.items === 1 ? 'item' : 'items'} tone="slate" />
                 {r.expired > 0 && <CountBadge n={r.expired} label="expired" tone="red" />}
@@ -399,7 +399,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
             <ArrowLeft className="h-4 w-4" />All kit types
           </button>
           <h2 id="type-h" className="text-base font-bold text-slate-900">{typeName}</h2>
-          <span className="text-xs text-slate-500">{items.length} items{months ? ` · service every ${months} months` : ''}</span>
+          <span className="text-xs text-slate-600">{items.length} items{months ? ` · service every ${months} months` : ''}</span>
         </div>
         <div className="flex flex-col lg:flex-row lg:items-end gap-3 justify-between">
           <div role="tablist" aria-label="Filter" className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-lg self-start">
@@ -427,13 +427,13 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
       </div>
 
       {visible.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-slate-600">{items.length === 0 ? `No ${typeName} recorded yet.` : 'Nothing matches.'}</p>
+        <p className="px-5 py-8 text-base sm:text-sm text-slate-600">{items.length === 0 ? `No ${typeName} recorded yet.` : 'Nothing matches.'}</p>
       ) : (
         <>
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                   <th className="px-5 py-3">Plant no</th>
                   <th className="px-3 py-3">Assigned to</th>
                   <th className="px-3 py-3">Service</th>
@@ -463,7 +463,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
               <li key={k.id} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-900 flex items-center gap-2">{k.plant_no ?? 'No plant no'}<TestTag show={k.is_test} /></p>
+                    <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.plant_no ?? 'No plant no'}<TestTag show={k.is_test} /></p>
                     <p className="text-xs mt-0.5">{whereCell(k)}</p>
                     <p className="text-xs text-slate-600 mt-0.5">Service {formatDate(k.service_date)} · expiry {formatDate(k.expiry_date)}</p>
                   </div>

@@ -92,7 +92,7 @@ export const AuditRecords: React.FC = () => {
             </select>
           )}
         </Field>
-        <label className="flex items-center gap-2 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-sm text-slate-700 cursor-pointer">
+        <label className="flex items-center gap-2 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-700 cursor-pointer">
           <input type="checkbox" checked={expiredOnly} onChange={(e) => setExpiredOnly(e.target.checked)} className="h-4 w-4" />
           Expired only
         </label>
@@ -104,7 +104,7 @@ export const AuditRecords: React.FC = () => {
         {rows === null ? (
           <LoadingSpinner />
         ) : filtered.length === 0 ? (
-          <div className="flex items-center gap-2 px-5 py-10 text-sm text-slate-600">
+          <div className="flex items-center gap-2 px-5 py-10 text-base sm:text-sm text-slate-600">
             <ClipboardList className="h-5 w-5 text-slate-400" />
             {rows.length === 0 ? 'No audits yet.' : 'No audits match these filters.'}
           </div>
@@ -113,7 +113,7 @@ export const AuditRecords: React.FC = () => {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                  <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                     <th className="px-5 py-3">Date</th>
                     <th className="px-3 py-3">Gang / van</th>
                     <th className="px-3 py-3">Reg</th>
@@ -154,7 +154,7 @@ export const AuditRecords: React.FC = () => {
                 <li key={r.id}>
                   <button type="button" onClick={() => open(r)} className="w-full text-left px-4 py-3 min-h-[64px] flex items-center justify-between gap-3 hover:bg-slate-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
                     <span className="min-w-0">
-                      <span className="flex items-center gap-2 text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
+                      <span className="flex items-center gap-2 text-base sm:text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
                       <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''} · {byName(r)}</span>
                       <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} />}</span>
                     </span>

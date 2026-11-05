@@ -13,8 +13,9 @@ DELETE FROM public.audit_site_audits WHERE is_test;
 DELETE FROM public.kit_history WHERE is_test;
 DELETE FROM public.kit_items WHERE is_test;
 
--- test PPE expiry rows and van kit list entries
+-- test PPE expiry rows, carry-over answers and van kit list entries
 DELETE FROM public.audit_ppe_items WHERE is_test;
+DELETE FROM public.audit_holder_answers WHERE is_test;
 DELETE FROM public.kit_van_kit_list WHERE is_test;
 
 -- test "photo deleted by …" records and remembered vans
@@ -35,6 +36,7 @@ SELECT
   (SELECT count(*) FROM public.kit_items WHERE is_test)         AS test_kit,
   (SELECT count(*) FROM public.kit_history WHERE is_test)       AS test_history,
   (SELECT count(*) FROM public.audit_ppe_items WHERE is_test)   AS test_ppe,
+  (SELECT count(*) FROM public.audit_holder_answers WHERE is_test) AS test_holder_answers,
   (SELECT count(*) FROM public.kit_van_kit_list WHERE is_test)  AS test_van_lists,
   (SELECT count(*) FROM public.audit_file_deletions WHERE is_test) AS test_file_deletions,
   (SELECT count(*) FROM public.kit_person_vans WHERE is_test)   AS test_person_vans,

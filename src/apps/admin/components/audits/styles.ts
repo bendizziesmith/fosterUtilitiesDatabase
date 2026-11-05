@@ -5,17 +5,18 @@ export const TEST_MODE = import.meta.env.DEV;
 
 export const btn = {
   primary:
-    'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
+    'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-blue-600 text-white text-base sm:text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2',
   secondary:
-    'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-lg bg-white border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+    'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-white border border-slate-300 text-slate-800 text-base sm:text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
   small:
-    'inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+    'inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm sm:text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
   danger:
-    'inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2',
+    'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-red-600 text-white text-base sm:text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2',
 };
 
+/** 16px text on phones so iOS never zooms into a field; 14px from tablet up. */
 export const inputCls =
-  'w-full min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+  'block w-full min-h-[48px] sm:min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
 export const card = 'bg-white border border-slate-200 rounded-xl';
 

@@ -1,22 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardPlus, ClipboardList, Wrench, ArrowRight, AlertTriangle, CheckCircle2, History } from 'lucide-react';
+import { ClipboardPlus, ClipboardList, Wrench, ArrowRight, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listAttention, listRecentUpdates, listKit } from '../../../../lib/siteAuditService';
+import { listAttention, listKit } from '../../../../lib/siteAuditService';
 import { listLockup, LockupRow } from '../../../../lib/lockupService';
 import { lowStockLines } from '../../../../lib/lockupLogic';
-import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus, whoName } from '../../../../lib/siteAuditLogic';
-import { KitItemOverview, KitRecentUpdate } from '../../../../lib/supabase';
+import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus } from '../../../../lib/siteAuditLogic';
+import { KitItemOverview } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
-import { FileLink } from './FileLink';
 import { UpcomingAudits } from './UpcomingAudits';
 import { DraftsInProgress } from './DraftsInProgress';
 import { HomeSheet } from './FleetSheets';
-import { useAuditRef, useFileDeletions } from './useAuditRef';
+import { useAuditRef } from './useAuditRef';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { ErrorNote, TestModeBanner, TestTag } from './ui';
-import { btn, card, formatDate, formatDateTime, ACTION_LABEL } from './styles';
+import { btn, card, formatDate } from './styles';
 
 function StatusText({ r }: { r: AttentionRow }) {
   if (r.expiry_status === 'no_home') {
@@ -37,11 +36,9 @@ function StatusText({ r }: { r: AttentionRow }) {
 export const SiteAuditsPage: React.FC = () => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<AttentionRow[] | null>(null);
-  const [recent, setRecent] = useState<KitRecentUpdate[]>([]);
   const [kit, setKit] = useState<KitItemOverview[]>([]);
   const [lowStock, setLowStock] = useState<LockupRow[]>([]);
   const ref = useAuditRef();
-  const { deletions, reload: reloadDeletions } = useFileDeletions();
   const [tab, setTab] = useState<AttentionTab>('all');
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
@@ -50,10 +47,9 @@ export const SiteAuditsPage: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [a, r, k, lockup] = await Promise.all([listAttention(), listRecentUpdates(8), listKit(), listLockup().catch(() => [] as LockupRow[])]);
+      const [a, k, lockup] = await Promise.all([listAttention(), listKit(), listLockup().catch(() => [] as LockupRow[])]);
       setLowStock(lowStockLines(lockup));
       setRows(sortAttention(a));
-      setRecent(r);
       setKit(k);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load audits.');
@@ -135,7 +131,7 @@ export const SiteAuditsPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 className={`text-sm font-bold ${l.primary ? 'text-white' : 'text-slate-900'}`}>{l.title}</h3>
-                    <p className={`text-xs mt-0.5 ${l.primary ? 'text-blue-100' : 'text-slate-500'}`}>{l.sub}</p>
+                    <p className={`text-xs mt-0.5 ${l.primary ? 'text-blue-100' : 'text-slate-600'}`}>{l.sub}</p>
                   </div>
                 </div>
                 <ArrowRight className={`h-4 w-4 ${l.primary ? 'text-white' : 'text-slate-300 group-hover:text-blue-500'}`} />
@@ -154,7 +150,7 @@ export const SiteAuditsPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-red-600" />
             <h2 id="attention-h" className="text-base font-bold text-slate-900">Needs attention</h2>
-            <span className="text-xs text-slate-500">Kit and PPE expired or due within 30 days</span>
+            <span className="text-xs text-slate-600">Kit and PPE expired or due within 30 days</span>
           </div>
           <div role="tablist" aria-label="Filter" className="flex gap-1 bg-slate-100 p-1 rounded-lg self-start">
             {([
@@ -168,7 +164,7 @@ export const SiteAuditsPage: React.FC = () => {
                 role="tab"
                 aria-selected={tab === v}
                 onClick={() => setTab(v)}
-                className={`min-h-[40px] px-3 rounded-md text-xs font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${tab === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                className={`min-h-[44px] px-3 rounded-md text-sm sm:text-xs font-semibold cursor-pointer transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${tab === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
               >
                 {l}
               </button>
@@ -179,7 +175,7 @@ export const SiteAuditsPage: React.FC = () => {
         {rows === null ? (
           <LoadingSpinner />
         ) : visible.length === 0 ? (
-          <div className="flex items-center gap-2 px-5 py-8 text-sm text-slate-600">
+          <div className="flex items-center gap-2 px-5 py-8 text-base sm:text-sm text-slate-600">
             <CheckCircle2 className="h-5 w-5 text-green-600" />
             Nothing {tab === 'expired' ? 'expired' : tab === 'due' ? 'due within 30 days' : 'needs attention'}.
           </div>
@@ -189,7 +185,7 @@ export const SiteAuditsPage: React.FC = () => {
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                  <tr className="text-left text-xs font-semibold text-slate-600 uppercase tracking-wider border-b border-slate-200">
                     <th className="px-5 py-3">Item</th>
                     <th className="px-3 py-3">Section</th>
                     <th className="px-3 py-3">Plant no</th>
@@ -231,9 +227,9 @@ export const SiteAuditsPage: React.FC = () => {
                 <li key={`${r.source}:${r.item_id}`} className="px-4 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">
                         {r.item_name}
-                        <span className="text-xs font-semibold text-slate-500">{r.source === 'kit' ? 'Kit' : 'PPE'}</span>
+                        <span className="text-xs font-semibold text-slate-600">{r.source === 'kit' ? 'Kit' : 'PPE'}</span>
                         <TestTag show={r.is_test} />
                       </p>
                       <p className="text-xs text-slate-600 mt-0.5">{r.plant_no && <>{r.plant_no} · </>}{whereCell(r)}</p>
@@ -279,36 +275,6 @@ export const SiteAuditsPage: React.FC = () => {
       </section>
 
       <UpcomingAudits targets={ref.auditTargets} />
-
-      <section className={card} aria-labelledby="recent-h">
-        <div className="flex items-center gap-2 px-4 sm:px-5 py-4 border-b border-slate-200">
-          <History className="h-5 w-5 text-slate-500" />
-          <h2 id="recent-h" className="text-base font-bold text-slate-900">Recently updated</h2>
-        </div>
-        {recent.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-slate-600">No updates yet.</p>
-        ) : (
-          <ul className="divide-y divide-slate-200">
-            {recent.map((u) => (
-              <li key={u.id} className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                <div className="min-w-0">
-                  <p className="text-sm text-slate-900 flex flex-wrap items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
-                    <span className="font-semibold">{u.item_name ?? 'Item'}</span>
-                    {u.plant_no && <span className="text-slate-600">{u.plant_no}</span>}
-                    <span className="text-slate-600">· {ACTION_LABEL[u.action] ?? u.action}</span>
-                    {u.vehicle_reg && <span className="text-slate-600">· {u.vehicle_reg}</span>}
-                    <TestTag show={u.is_test} />
-                  </p>
-                  {u.note && <p className="text-xs text-slate-600 ml-6 mt-0.5">{u.note}</p>}
-                  {u.certificate_path && <div className="ml-6"><FileLink path={u.certificate_path} kind="Certificate" deletions={deletions} auditors={ref.auditors} onDeleted={reloadDeletions} /></div>}
-                </div>
-                <p className="text-xs text-slate-500 ml-6 sm:ml-0 whitespace-nowrap">{whoName(u.actor_name)} · {formatDateTime(u.created_at)}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       {homing && (
         <HomeSheet item={{ id: homing.item_id, item_name: homing.item_name, plant_no: homing.plant_no }} targets={ref.allTargets} auditors={ref.auditors}
