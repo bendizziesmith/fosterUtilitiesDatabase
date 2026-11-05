@@ -25,6 +25,8 @@ export interface LockupRow {
   is_test: boolean;
   sheet_order: number;
   updated_at: string;
+  /** "Low at": warn when the count is at or below this; null = no warning */
+  low_at: number | null;
 }
 
 export interface LockupMovementRow extends LockupMovement {
@@ -139,4 +141,10 @@ export async function returnToLockup(input: {
 
 export async function setLockupNote(stockId: string, note: string | null): Promise<void> {
   check(await supabase.from('kit_lockup_stock').update({ note: note?.trim() || null }).eq('id', stockId));
+}
+
+/** "Low at" for a stock line; null clears the warning. */
+export async function setLockupLowAt(stockId: string, lowAt: number | null): Promise<void> {
+  if (lowAt !== null && (!Number.isInteger(lowAt) || lowAt < 0)) throw new Error('“Low at” must be a whole number, 0 or more.');
+  check(await supabase.from('kit_lockup_stock').update({ low_at: lowAt }).eq('id', stockId));
 }

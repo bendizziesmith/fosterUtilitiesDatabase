@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, Search, ChevronDown, Send, Wrench, PackagePlus } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listLockup, adjustLockupChecked, setLockupNote, LockupRow } from '../../../../lib/lockupService';
-import { LOCKUP_SECTIONS, LockupSection, LockupSort, sortLockup } from '../../../../lib/lockupLogic';
+import { listLockup, adjustLockupChecked, setLockupNote, setLockupLowAt, LockupRow } from '../../../../lib/lockupService';
+import { LOCKUP_SECTIONS, LockupSection, LockupSort, sortLockup, isLowStock } from '../../../../lib/lockupLogic';
 import { AuditChecklistItem, Auditor, KitItemOverview } from '../../../../lib/supabase';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { ActorPicker } from './ActorPicker';
@@ -34,6 +34,7 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<LockupSort>('sheet');
   const [closed, setClosed] = useState<Set<SectionKey>>(new Set());
+  const [lowOnly, setLowOnly] = useState(false);
   const [busyLine, setBusyLine] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [issuing, setIssuing] = useState<LockupRow | null>(null);
@@ -52,14 +53,19 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
   }, [load]);
 
   const term = q.trim().toLowerCase();
+  const lowCount = (lines ?? []).filter((l) => isLowStock(l.quantity, l.low_at)).length;
   const shown = useMemo(
-    () => sortLockup((lines ?? []).filter((l) => !term || [l.name, l.note].some((v) => v?.toLowerCase().includes(term))), sort),
-    [lines, term, sort]
+    () => sortLockup(
+      (lines ?? []).filter((l) => (!lowOnly || isLowStock(l.quantity, l.low_at)) && (!term || [l.name, l.note].some((v) => v?.toLowerCase().includes(term)))),
+      sort
+    ),
+    [lines, term, sort, lowOnly]
   );
   const kitShown = useMemo(() => {
+    if (lowOnly) return [];
     const f = plantKit.filter((k) => !term || [k.type_name, k.plant_no].some((v) => v?.toLowerCase().includes(term)));
     return [...f].sort((a, b) => a.type_sort - b.type_sort || (a.plant_no ?? '').localeCompare(b.plant_no ?? '', undefined, { numeric: true }));
-  }, [plantKit, term]);
+  }, [plantKit, term, lowOnly]);
 
   const count = (s: SectionKey) => (s === 'kit' ? kitShown.length : shown.filter((l) => l.section === s).length);
   const toggle = (s: SectionKey) => setClosed((c) => {
@@ -83,6 +89,18 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
       setError(e instanceof Error ? e.message : 'Could not change the count.');
     } finally {
       setBusyLine(null);
+    }
+  };
+
+  const saveLowAt = async (l: LockupRow, raw: string) => {
+    const v = raw.trim() === '' ? null : Number(raw);
+    if (v === (l.low_at ?? null)) return;
+    setError(null);
+    try {
+      await setLockupLowAt(l.id, v);
+      setLines((ls) => (ls ?? []).map((x) => (x.id === l.id ? { ...x, low_at: v } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save “Low at”.');
     }
   };
 
@@ -120,6 +138,10 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
               {s.title} <span className="text-slate-500 font-normal">{count(s.key)}</span>
             </button>
           ))}
+          <button type="button" aria-pressed={lowOnly} onClick={() => setLowOnly(!lowOnly)}
+            className={`flex-shrink-0 min-h-[44px] px-4 rounded-full border text-sm font-semibold cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 ${lowOnly ? 'bg-amber-700 border-amber-700 text-white' : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'}`}>
+            Low stock ({lowCount})
+          </button>
         </nav>
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_14rem] gap-2">
           <div className="relative">
@@ -169,13 +191,18 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
             ) : (
               (() => {
                 const rows = shown.filter((l) => l.section === s.key);
-                if (!rows.length) return <p className="px-5 py-5 text-sm text-slate-600">{term ? 'Nothing matches.' : 'Nothing counted here yet. Use “Add to lockup”.'}</p>;
+                if (!rows.length) return <p className="px-5 py-5 text-sm text-slate-600">{lowOnly ? 'Nothing low here.' : term ? 'Nothing matches.' : 'Nothing counted here yet. Use “Add to lockup”.'}</p>;
                 return (
                   <ul className="divide-y divide-slate-200">
                     {rows.map((l) => (
-                      <li key={l.id} className="px-4 sm:px-5 py-3 grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_auto_minmax(10rem,1fr)_auto] gap-3 items-center">
+                      <li key={l.id} className={`px-4 sm:px-5 py-3 grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_auto_6.5rem_minmax(10rem,1fr)_auto] gap-3 items-center ${isLowStock(l.quantity, l.low_at) ? 'bg-amber-50' : ''}`}>
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-slate-900 flex items-center gap-2">{l.name}<TestTag show={l.is_test} /></p>
+                          <p className="text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                            {l.name}<TestTag show={l.is_test} />
+                            {isLowStock(l.quantity, l.low_at) && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-100 text-amber-800 border-amber-200">Low stock</span>
+                            )}
+                          </p>
                           {l.expected_qty && <p className="text-xs text-slate-500">{l.expected_qty}</p>}
                         </div>
                         <div className="flex items-center gap-2" role="group" aria-label={`${l.name} count`}>
@@ -189,6 +216,13 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
                             <Plus className="h-4 w-4" />
                           </button>
                         </div>
+                        <Field label="Low at" hint="Blank = no warning">
+                          {(id) => (
+                            <input id={id} inputMode="numeric" className={inputCls} defaultValue={l.low_at ?? ''} placeholder="—"
+                              onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); }}
+                              onBlur={(e) => saveLowAt(l, e.target.value)} />
+                          )}
+                        </Field>
                         <Field label="Note">
                           {(id) => <input id={id} className={inputCls} defaultValue={l.note ?? ''} placeholder="e.g. sizes" onBlur={(e) => saveNote(l, e.target.value)} />}
                         </Field>

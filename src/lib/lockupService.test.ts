@@ -72,4 +72,18 @@ describe('Yard Lockup service', () => {
     await svc.issueFromLockup({ stockId: 's1', employeeId: 'e1', quantity: 1, dateOnHat: null, note: null, actorId: 'a1' });
     expect(H.calls.some((c) => c.table === 'employees')).toBe(false);
   });
+
+  it('saves "Low at" on the line, and blank clears the warning', async () => {
+    await svc.setLockupLowAt('s1', 5);
+    await svc.setLockupLowAt('s1', null);
+    expect(H.calls.map((c) => [c.table, c.op, c.payload])).toEqual([
+      ['kit_lockup_stock', 'update', { low_at: 5 }],
+      ['kit_lockup_stock', 'update', { low_at: null }],
+    ]);
+  });
+
+  it('refuses a negative "Low at" before calling the database', async () => {
+    await expect(svc.setLockupLowAt('s1', -1)).rejects.toThrow('0 or more');
+    expect(H.calls).toEqual([]);
+  });
 });

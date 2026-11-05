@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { VehicleInspection, PlantRecord } from '../../../lib/supabase';
 import { getDashboardCounts } from '../../../lib/siteAuditService';
+import { lowStockBadgeText } from '../../../lib/lockupLogic';
 
 interface AdminDashboardProps {
   inspections: VehicleInspection[];
@@ -110,6 +111,11 @@ function cardBadges(path: string, c: Counts | null) {
       <>
         <Badge n={c.onVans} label="on vans" cls="bg-slate-100 text-slate-700 border-slate-200" />
         <Badge n={c.spares} label="in Yard Lockup" cls="bg-violet-50 text-violet-700 border-violet-200" />
+        {lowStockBadgeText(c.lowStock) && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap bg-amber-50 text-amber-800 border-amber-200">
+            {lowStockBadgeText(c.lowStock)}
+          </span>
+        )}
       </>
     );
   }

@@ -24,6 +24,8 @@ export interface LockupLine {
   sheet_order: number;
   note: string | null;
   checklist_item_id: string | null;
+  /** warn when the count is at or below this; blank = no warning */
+  low_at?: number | null;
 }
 
 export interface LockupMovement {
@@ -84,3 +86,16 @@ export function issuedSince(moves: LockupMovement[], employeeId: string, sinceIs
 
 /** Issuing a dated PPE item (hard hats): new expiry for that person = date on hat + interval. */
 export const lockupExpiryFromHat = (dateOnHat: string | null, months: number | null | undefined) => autoExpiry(dateOnHat, months);
+
+// ---------------------------------------------------------------- low stock (round 5)
+
+/** At or below "Low at" is low. Blank "Low at" = no warning. */
+export const isLowStock = (quantity: number, lowAt: number | null | undefined): boolean =>
+  lowAt !== null && lowAt !== undefined && quantity <= lowAt;
+
+/** The low lines, in audit-sheet order. Used for the dashboard badge and Needs attention. */
+export function lowStockLines<T extends LockupLine>(lines: T[]): T[] {
+  return sortLockup(lines.filter((l) => isLowStock(l.quantity, l.low_at)), 'sheet');
+}
+
+export const lowStockBadgeText = (n: number): string | null => (n > 0 ? `${n} low stock` : null);

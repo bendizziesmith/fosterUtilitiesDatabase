@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardPlus, ClipboardList, Wrench, ArrowRight, AlertTriangle, CheckCircle2, History } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAttention, listRecentUpdates, listKit } from '../../../../lib/siteAuditService';
+import { listLockup, LockupRow } from '../../../../lib/lockupService';
+import { lowStockLines } from '../../../../lib/lockupLogic';
 import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus, whoName } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview, KitRecentUpdate } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
@@ -34,6 +36,7 @@ export const SiteAuditsPage: React.FC = () => {
   const [rows, setRows] = useState<AttentionRow[] | null>(null);
   const [recent, setRecent] = useState<KitRecentUpdate[]>([]);
   const [kit, setKit] = useState<KitItemOverview[]>([]);
+  const [lowStock, setLowStock] = useState<LockupRow[]>([]);
   const ref = useAuditRef();
   const { deletions, reload: reloadDeletions } = useFileDeletions();
   const [tab, setTab] = useState<AttentionTab>('all');
@@ -43,7 +46,8 @@ export const SiteAuditsPage: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [a, r, k] = await Promise.all([listAttention(), listRecentUpdates(8), listKit()]);
+      const [a, r, k, lockup] = await Promise.all([listAttention(), listRecentUpdates(8), listKit(), listLockup().catch(() => [] as LockupRow[])]);
+      setLowStock(lowStockLines(lockup));
       setRows(sortAttention(a));
       setRecent(r);
       setKit(k);
@@ -232,6 +236,28 @@ export const SiteAuditsPage: React.FC = () => {
               ))}
             </ul>
           </>
+        )}
+
+        {/* separate from the kit / PPE expiry list above, which stays first and in its own order */}
+        {lowStock.length > 0 && (
+          <div className="border-t border-slate-200" aria-labelledby="low-stock-h">
+            <h3 id="low-stock-h" className="px-4 sm:px-5 pt-3 pb-1 text-xs font-bold text-amber-800 uppercase tracking-wider">
+              Low stock in Yard Lockup ({lowStock.length})
+            </h3>
+            <ul className="divide-y divide-slate-100 pb-2">
+              {lowStock.map((l) => (
+                <li key={l.id}>
+                  <button type="button" onClick={() => navigate('/kit?view=lockup')}
+                    className="w-full min-h-[44px] px-4 sm:px-5 py-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-left text-sm hover:bg-amber-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500">
+                    <span className="font-semibold text-slate-900 flex items-center gap-2">{l.name}<TestTag show={l.is_test} /></span>
+                    <span className="text-slate-700">{l.quantity} left · low at {l.low_at}</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-100 text-amber-800 border-amber-200">Low stock</span>
+                    <span className="ml-auto text-xs font-semibold text-blue-700">Yard Lockup →</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 

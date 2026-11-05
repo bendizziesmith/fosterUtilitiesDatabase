@@ -14,6 +14,8 @@ import {
   Auditor,
 } from './supabase';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
+import { listLockup } from './lockupService';
+import { lowStockLines } from './lockupLogic';
 import { getWeekEndingSunday } from './timesheetUtils';
 
 /**
@@ -250,10 +252,13 @@ export async function getDashboardCounts(): Promise<{
   dueSoon: number;
   onVans: number;
   spares: number;
+  /** Yard Lockup stock lines at or below their "Low at" */
+  lowStock: number;
 }> {
-  const [att, kit] = await Promise.all([
+  const [att, kit, lockup] = await Promise.all([
     supabase.from('audit_needs_attention').select('expiry_status'),
     supabase.from('kit_items').select('status').in('status', ['on_van', 'spare']),
+    listLockup().catch(() => []),
   ]);
   const a = (check(att) ?? []) as { expiry_status: string }[];
   const k = (check(kit) ?? []) as { status: string }[];
@@ -262,6 +267,7 @@ export async function getDashboardCounts(): Promise<{
     dueSoon: a.filter((r) => r.expiry_status === 'due_soon').length,
     onVans: k.filter((r) => r.status === 'on_van').length,
     spares: k.filter((r) => r.status === 'spare').length,
+    lowStock: lowStockLines(lockup).length,
   };
 }
 

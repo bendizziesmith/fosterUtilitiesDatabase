@@ -16,7 +16,7 @@ describe('applyStockDelta — the lockup count can never go below 0', () => {
 });
 
 const line = (over: Partial<LockupLine>): LockupLine => ({
-  id: Math.random().toString(), section: 'ppe', name: 'X', quantity: 1, sheet_order: 0, note: null, checklist_item_id: null, ...over,
+  id: Math.random().toString(), section: 'ppe', name: 'X', quantity: 1, sheet_order: 0, note: null, checklist_item_id: null, low_at: null, ...over,
 });
 
 describe('sortLockup', () => {
@@ -89,5 +89,40 @@ describe('lockupExpiryFromHat — issuing a dated hard hat updates the person’
   it('is nothing without a date or an interval', () => {
     expect(lockupExpiryFromHat(null, 36)).toBeNull();
     expect(lockupExpiryFromHat('2026-11-05', null)).toBeNull();
+  });
+});
+
+import { isLowStock, lowStockLines, lowStockBadgeText } from './lockupLogic';
+
+describe('isLowStock — the "Low at" level on a lockup line', () => {
+  it('is low at the level', () => {
+    expect(isLowStock(5, 5)).toBe(true);
+  });
+  it('is low below the level', () => {
+    expect(isLowStock(2, 5)).toBe(true);
+    expect(isLowStock(0, 0)).toBe(true);
+  });
+  it('is not low above the level', () => {
+    expect(isLowStock(6, 5)).toBe(false);
+  });
+  it('blank "Low at" means no warning, whatever the count', () => {
+    expect(isLowStock(0, null)).toBe(false);
+    expect(isLowStock(0, undefined)).toBe(false);
+  });
+});
+
+describe('lowStockLines / lowStockBadgeText — one count for the dashboard badge and Needs attention', () => {
+  const lines = [
+    line({ name: 'Hard hats', section: 'ppe', sheet_order: 30, quantity: 4, low_at: 5 }),
+    line({ name: 'Hi vis', section: 'ppe', sheet_order: 10, quantity: 20, low_at: 5 }),
+    line({ name: 'Eye wash', section: 'hs', sheet_order: 20, quantity: 2, low_at: 2 }),
+    line({ name: 'Fuel cans', section: 'other', sheet_order: 30, quantity: 0, low_at: null }),
+  ];
+  it('lists only the low lines, in audit-sheet order', () => {
+    expect(lowStockLines(lines).map((l) => l.name)).toEqual(['Hard hats', 'Eye wash']);
+  });
+  it('the dashboard badge says "N low stock" only when N > 0', () => {
+    expect(lowStockBadgeText(lowStockLines(lines).length)).toBe('2 low stock');
+    expect(lowStockBadgeText(0)).toBeNull();
   });
 });
