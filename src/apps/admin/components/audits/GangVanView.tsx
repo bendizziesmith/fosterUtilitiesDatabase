@@ -17,6 +17,9 @@ import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
+import { DownloadMenu } from './DownloadMenu';
+import { downloadOneHolder } from '../../../../lib/auditDownloads';
+import { useActor } from './useActor';
 import { btn, card, formatDate, formatDateTime, ACTION_LABEL, TEST_MODE } from './styles';
 
 /** Old links used gang:<id>; a gang page is now the ganger's page. */
@@ -28,6 +31,7 @@ export const GangVanView: React.FC = () => {
   const [params] = useSearchParams();
   const key = normaliseKey(params.get('key') ?? '');
   const ref = useAuditRef();
+  const { actor: downloadActor } = useActor(ref.auditors);
   const { deletions, reload: reloadDeletions } = useFileDeletions();
   // an off-the-road spare van is left out of the pickers, but its own page still opens
   const target = useMemo<AuditTarget | undefined>(() => {
@@ -170,6 +174,7 @@ export const GangVanView: React.FC = () => {
                 <ClipboardPlus className="h-4 w-4" />New audit for {target.isGanger ? 'this gang' : target.kind === 'person' ? 'this person' : 'this van'}
               </button>
             )}
+            <DownloadMenu choices={[{ title: 'Download', kind: 'pdf', run: () => downloadOneHolder(target.label, kit ?? [], ppe, whoName(downloadActor?.name)) }]} />
             <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>
               <Plus className="h-4 w-4" />Add kit to {target.kind === 'person' ? target.personName : 'this van'}
             </button>
@@ -228,11 +233,11 @@ export const GangVanView: React.FC = () => {
       <section className={card} aria-labelledby="gv-ppe">
         <div className="px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center gap-2">
           <ShieldCheck className="h-5 w-5 text-blue-600" />
-          <h2 id="gv-ppe" className="text-base font-bold text-slate-900">PPE expiry dates</h2>
+          <h2 id="gv-ppe" className="text-base font-bold text-slate-900">PPE and H&S expiry dates</h2>
           <span className="text-xs text-slate-600">from the latest audit or update</span>
         </div>
         {ppe.filter((p) => p.expiry_date).length === 0 ? (
-          <p className="px-5 py-6 text-base sm:text-sm text-slate-600">No PPE expiry dates recorded.</p>
+          <p className="px-5 py-6 text-base sm:text-sm text-slate-600">No PPE or H&S expiry dates recorded.</p>
         ) : (
           <ul className="divide-y divide-slate-200">
             {ppe.filter((p) => p.expiry_date).map((p) => (

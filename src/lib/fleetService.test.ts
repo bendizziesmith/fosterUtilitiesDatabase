@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type Call = { table?: string; rpc?: string; op: string; payload?: unknown; filters: unknown[][] };
-const H = vi.hoisted(() => ({ calls: [] as Call[], rpcData: null as unknown }));
+const H = vi.hoisted(() => ({ calls: [] as Call[], rpcData: null as unknown, tableData: {} as Record<string, unknown[]> }));
 
 vi.mock('./supabase', () => {
   const builder = (call: Call) => {
@@ -14,7 +14,7 @@ vi.mock('./supabase', () => {
       return b;
     };
     ['insert', 'update', 'upsert', 'delete', 'select', 'eq', 'is', 'order', 'limit', 'maybeSingle'].forEach((m) => (b[m] = chain(m)));
-    b.then = (resolve: (r: unknown) => unknown) => resolve({ data: [], error: null });
+    b.then = (resolve: (r: unknown) => unknown) => resolve({ data: call.op === 'select' ? H.tableData[call.table as string] ?? [] : [], error: null });
     return b;
   };
   return {
@@ -94,9 +94,18 @@ describe('Edit / delete audits', () => {
 
   it('delete removes the audit, then its photos from storage', async () => {
     H.rpcData = ['lines/a.jpg', 'lines/b.jpg'];
+    H.tableData = {};
     await svc.deleteAudit('au1', 'Wrong gang', 'a1');
-    expect(H.calls.map((c) => c.rpc ?? `${c.table}:${c.op}`)).toEqual(['audit_delete', 'storage:audit-photos:remove']);
-    expect(H.calls[1].payload).toEqual(['lines/a.jpg', 'lines/b.jpg']);
+    expect(H.calls.map((c) => c.rpc ?? `${c.table}:${c.op}`)).toEqual(['audit_photos:select', 'audit_delete', 'storage:audit-photos:remove']);
+    expect(H.calls[2].payload).toEqual(['lines/a.jpg', 'lines/b.jpg']);
+  });
+
+  it('round 9: delete also removes the standard and additional photos (not the "can\'t take photo" rows)', async () => {
+    H.rpcData = ['lines/a.jpg'];
+    H.tableData = { audit_photos: [{ path: 'photos/van.jpg' }, { path: null }, { path: 'photos/extra.jpg' }] };
+    await svc.deleteAudit('au1', 'Wrong gang', 'a1');
+    expect(H.calls.find((c) => c.op === 'remove')?.payload).toEqual(['lines/a.jpg', 'photos/van.jpg', 'photos/extra.jpg']);
+    H.tableData = {};
   });
 });
 

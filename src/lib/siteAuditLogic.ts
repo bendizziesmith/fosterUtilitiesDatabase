@@ -41,6 +41,31 @@ export function getExpiryStatus(
   return { status: 'ok', daysLeft };
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The one expiry status used everywhere (form, Edit audit, detail, Kit & Plant, person pages):
+ * red "Expired 3 weeks ago", amber "Expires in 12 days", green "OK until Mar 2027".
+ */
+export function expiryWording(expiry: string | null | undefined, today: string): { tone: ExpiryStatus | null; text: string } {
+  const { status, daysLeft } = getExpiryStatus(expiry, today);
+  if (!status || daysLeft === null) return { tone: null, text: 'No expiry date' };
+  if (status === 'expired') {
+    const n = -daysLeft;
+    if (n === 1) return { tone: status, text: 'Expired yesterday' };
+    if (n < 14) return { tone: status, text: `Expired ${n} days ago` };
+    if (n < 60) return { tone: status, text: `Expired ${Math.floor(n / 7)} weeks ago` };
+    return { tone: status, text: `Expired ${Math.floor(n / 30)} months ago` };
+  }
+  if (status === 'due_soon') {
+    if (daysLeft === 0) return { tone: status, text: 'Expires today' };
+    if (daysLeft === 1) return { tone: status, text: 'Expires tomorrow' };
+    return { tone: status, text: `Expires in ${daysLeft} days` };
+  }
+  const [y, m] = (expiry as string).split('-').map(Number);
+  return { tone: status, text: `OK until ${MONTHS[m - 1]} ${y}` };
+}
+
 export function formatExpiryStatus(daysLeft: number | null | undefined): string {
   if (daysLeft === null || daysLeft === undefined) return 'N/A';
   if (daysLeft === 0) return 'Due today';
@@ -243,6 +268,10 @@ export interface DraftLine {
   date_tag?: string | null;
   /** "Label on?" (Other section): Y / N / blank */
   label_on?: 'Y' | 'N' | null;
+  /** fire extinguisher pressure gauge: red = fail, amber = to look at (round 9) */
+  gauge?: 'green' | 'amber' | 'red' | null;
+  /** when the photo on an N answer was taken (round 9) */
+  photo_taken_at?: string | null;
   comment?: string | null;
   photo_path?: string | null;
   /** set when the van's kit list already says this type is not carried */
@@ -257,20 +286,23 @@ export interface DraftLine {
 export function summariseAuditLines(
   lines: DraftLine[],
   auditDate: string
-): { fails: number; expired: number; dueSoon: number } {
+): { fails: number; expired: number; dueSoon: number; toLookAt: number } {
   let fails = 0;
   let expired = 0;
   let dueSoon = 0;
+  let toLookAt = 0;
   for (const l of lines) {
-    // "Label on? = N" is a fail too; one item counts once
-    if (l.result === 'N' || l.label_on === 'N') fails++;
+    // a fail: Fit for purpose N, "Label on? = N", or a red pressure gauge; one item counts once
+    if (l.result === 'N' || l.label_on === 'N' || l.gauge === 'red') fails++;
+    else if (l.gauge === 'amber') toLookAt++;
     if (l.result === 'not_carried') continue;
-    if (l.section !== 'ppe' && l.section !== 'kit') continue;
+    // PPE, kit and the dated H&S items (undated H&S lines have no expiry)
+    if (l.section === 'other') continue;
     const { status } = getExpiryStatus(l.expiry_date, auditDate);
     if (status === 'expired') expired++;
     if (status === 'due_soon') dueSoon++;
   }
-  return { fails, expired, dueSoon };
+  return { fails, expired, dueSoon, toLookAt };
 }
 
 export function buildKitLines(
@@ -335,7 +367,7 @@ export type SwapDestination =
   | { destination: 'removed' };
 
 export type SwapReplacement =
-  | { mode: 'spare'; plantNo: string | null }
+  | { mode: 'spare'; plantNo: string | null; from?: string }
   | { mode: 'new'; plantNo: string | null }
   | { mode: 'none' };
 
@@ -363,7 +395,7 @@ export function previewSwap(
       where = 'Scrapped / removed';
   }
   let incoming: string;
-  if (repl.mode === 'spare') incoming = `${repl.plantNo || 'Item'} (from Yard Lockup) → on ${van}`;
+  if (repl.mode === 'spare') incoming = `${repl.plantNo || 'Item'} (from ${repl.from ?? 'Yard Lockup'}) → on ${van}`;
   else if (repl.mode === 'new') incoming = `New ${item.type_name}${repl.plantNo ? ` ${repl.plantNo}` : ''} → on ${van}`;
   else incoming = `Nothing for now: ${van} will have no ${item.type_name}`;
   return { outgoing: `${label} → ${where}`, incoming };
@@ -461,7 +493,7 @@ export function otherAnswerFor(
 // ---------------------------------------------------------------- audit pre-fill from the holder's record
 
 export function buildAuditPrefill(input: {
-  checklist: { id: string; section: string; name: string; expected_qty: string | null; sort_order: number }[];
+  checklist: { id: string; section: string; name: string; expected_qty: string | null; sort_order: number; has_expiry?: boolean }[];
   kitTypes: { id: string; name: string; sort_order: number }[];
   heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null }[];
   ppe: { checklist_item_id: string; expiry_date: string | null }[];
@@ -480,6 +512,8 @@ export function buildAuditPrefill(input: {
     .sort((a, b) => (sectionOrder[a.section] ?? 9) - (sectionOrder[b.section] ?? 9) || a.sort_order - b.sort_order)
     .map((c) => {
       const prev = last.get(c.id);
+      // PPE dates, and the dated H&S items (first aid kit, eye wash, burns kit, fire extinguisher)
+      const dated = c.section === 'ppe' || (c.section === 'hs' && !!c.has_expiry);
       return {
         key: `c:${c.id}`,
         section: c.section as AuditSection,
@@ -488,9 +522,10 @@ export function buildAuditPrefill(input: {
         expected_qty: c.expected_qty,
         result: null,
         qty: prev?.qty ?? '',
-        expiry_date: c.section === 'ppe' ? ppe.get(c.id) ?? null : null,
+        expiry_date: dated ? ppe.get(c.id) ?? null : null,
         expiryManual: false,
-        service_date: c.section === 'ppe' ? prev?.service_date ?? null : null,
+        service_date: dated ? prev?.service_date ?? null : null,
+        gauge: null,
         date_tag: prev?.date_tag ?? '',
         label_on: prev?.label_on === 'Y' || prev?.label_on === 'N' ? prev.label_on : null,
         comment: '',
@@ -639,4 +674,23 @@ export function sectionProgress(lines: Pick<DraftLine, 'section' | 'result'>[]) 
 export function unansweredLines<T extends Pick<DraftLine, 'section' | 'result'>>(lines: T[]): T[] {
   const order = PROGRESS_SECTIONS.map((s) => s.key);
   return [...lines].filter((l) => !isAnswered(l)).sort((a, b) => order.indexOf(a.section) - order.indexOf(b.section));
+}
+
+// ---------------------------------------------------------------- spares for a swap (round 9)
+
+type SpareLike = {
+  id: string; kit_type_id: string; status: string; holder_kind: string; plant_no: string | null;
+  vehicle_reg: string | null; spare_vehicle_id?: string | null; vehicle_id: string | null;
+};
+
+/** Same-type replacements: in the Yard Lockup, and spare-van kit ("WV72 OZL · spare van"). */
+export function spareOptions<T extends SpareLike>(kit: T[], kitTypeId: string, excludeItemId: string) {
+  const same = kit.filter((k) => k.kit_type_id === kitTypeId && k.id !== excludeItemId);
+  const byPlant = (a: T, b: T) => (a.plant_no ?? '').localeCompare(b.plant_no ?? '');
+  const lockup = same.filter((k) => k.status === 'spare').sort(byPlant).map((k) => ({ ...k, where: 'Yard Lockup' }));
+  const spareVans = same
+    .filter((k) => k.status === 'on_van' && k.holder_kind === 'spare_van')
+    .sort((a, b) => (a.vehicle_reg ?? '').localeCompare(b.vehicle_reg ?? '') || byPlant(a, b))
+    .map((k) => ({ ...k, where: `${k.vehicle_reg ?? 'Van'} · spare van` }));
+  return { lockup, spareVans };
 }

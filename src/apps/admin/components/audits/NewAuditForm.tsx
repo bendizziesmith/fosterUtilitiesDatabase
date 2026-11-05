@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Camera, Plus, X, Ban, ArrowLeftRight, MessageSquare, Users, Truck, Save, Send, Check, ChevronDown } from 'lucide-react';
+import { Camera, ImagePlus, Plus, X, Ban, ArrowLeftRight, MessageSquare, Users, Truck, Save, Send, Check, ChevronDown } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import {
   loadAuditReferenceData,
@@ -10,7 +10,7 @@ import {
   submitAudit,
   getAudit,
   getCurrentAuditor,
-  uploadAuditFile,
+  uploadAuditPhoto,
   StaffRow,
   VanRow,
 } from '../../../../lib/siteAuditService';
@@ -31,7 +31,7 @@ import {
   DraftLine,
   TeamMember,
 } from '../../../../lib/siteAuditLogic';
-import { AuditChecklistItem, Auditor, KitItemOverview, KitType } from '../../../../lib/supabase';
+import { AuditChecklistItem, AuditPhotoSlot, Auditor, KitItemOverview, KitType } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { AddKitSheet } from './AddKitSheet';
@@ -39,12 +39,15 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { listLockupMovements } from '../../../../lib/lockupService';
 import { issuedSince } from '../../../../lib/lockupLogic';
-import { Field, ExpiryPill, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT } from './ui';
-import { btn, card, inputCls, TEST_MODE } from './styles';
+import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
+import { PhotosSection, DraftPhoto } from './PhotosSection';
+import { photoProgress } from '../../../../lib/photoLogic';
+import { StampInfo } from '../../../../lib/photoUpload';
+import { btn, card, inputCls, TEST_MODE, expiryRing } from './styles';
 
 const SECTIONS: { key: DraftLine['section']; title: string; note: string }[] = [
   { key: 'ppe', title: 'PPE', note: 'Qty per person' },
-  { key: 'hs', title: 'Health & safety', note: 'Expected qty shown · audit only, no dates' },
+  { key: 'hs', title: 'Health & safety', note: 'Expected qty shown · first aid kit, eye wash, burns kit and fire extinguisher have an expiry' },
   { key: 'kit', title: 'Kit', note: 'Pre-filled from their Kit & Plant record' },
   { key: 'other', title: 'Other', note: '' },
 ];
@@ -97,6 +100,11 @@ export const NewAuditForm: React.FC = () => {
   /** Submit pressed with items still unanswered: list them first */
   const [unanswered, setUnanswered] = useState<DraftLine[] | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  /** standard photo slots (data) and this audit's photos */
+  const [photoSlots, setPhotoSlots] = useState<AuditPhotoSlot[]>([]);
+  const [photos, setPhotos] = useState<DraftPhoto[]>([]);
+  /** Submit pressed with required photos missing */
+  const [missingPhotos, setMissingPhotos] = useState<AuditPhotoSlot[] | null>(null);
 
   const targets = useMemo(() => buildAuditTargets(employees, vehicles), [employees, vehicles]);
   /** who can be audited: gangers, staff with a van, spare vans */
@@ -115,9 +123,10 @@ export const NewAuditForm: React.FC = () => {
         setChecklist(ref.checklist);
         setKitTypes(ref.kitTypes);
         setAuditors(ref.auditors);
+        setPhotoSlots(ref.photoSlots);
         setAuditor(who);
         if (draftParam) {
-          const { audit, members: m, lines: l } = await getAudit(draftParam);
+          const { audit, members: m, lines: l, photos: ph } = await getAudit(draftParam);
           if (audit.status !== 'draft') {
             navigate(`/audits/detail?id=${audit.id}`, { replace: true });
             return;
@@ -130,6 +139,7 @@ export const NewAuditForm: React.FC = () => {
           setNotes(audit.notes ?? '');
           setMembers(m.map((x) => ({ name: x.name, employee_id: x.employee_id })));
           setLines(l.map((x) => ({ ...x, key: `row:${x.id}` })));
+          setPhotos(ph.map((x, i) => ({ ...x, key: `photo:${x.id ?? i}` })));
           const rec = await loadHolderRecord({ kind: person ? 'person' : 'spare_van', personId: person, vehicleId: audit.vehicle_id });
           setVanItems(rec.heldKit);
         }
@@ -236,7 +246,7 @@ export const NewAuditForm: React.FC = () => {
       setError('Choose who you are auditing first.');
       return null;
     }
-    const id = await saveDraftAudit(auditId, header(), members, lines);
+    const id = await saveDraftAudit(auditId, header(), members, lines, photos);
     setAuditId(id);
     return id;
   };
@@ -273,6 +283,9 @@ export const NewAuditForm: React.FC = () => {
 
   const summary = summariseAuditLines(lines, auditDate);
   const progress = sectionProgress(lines);
+  const photoState = photoProgress(photoSlots, photos);
+  /** stamped on every photo: van reg and site */
+  const stamp: StampInfo = { reg: target?.reg ?? null, site: site.trim() || null };
 
   /** open a section and bring it (or one item in it) into view below the sticky strip */
   const jumpTo = (section: string, lineKey?: string) => {
@@ -290,10 +303,23 @@ export const NewAuditForm: React.FC = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    // required photos block Submit (a photo, or "Can't take photo" with a reason)
+    if (!photoState.complete) {
+      setMissingPhotos(photoState.missing);
+      setUnanswered(unansweredLines(lines));
+      return;
+    }
     const missing = unansweredLines(lines);
     if (missing.length) setUnanswered(missing);
     else setConfirmSubmit(true);
   };
+
+  const jumpToPhoto = (slotId: string) =>
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`photo-${slotId}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      (el?.querySelector('button') as HTMLElement | null)?.focus({ preventScroll: true });
+    });
 
   if (loading) return <LoadingSpinner />;
 
@@ -390,6 +416,19 @@ export const NewAuditForm: React.FC = () => {
                 </button>
               </li>
             ))}
+            {photoSlots.length > 0 && (
+              <li className="flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => document.getElementById('sec-photos')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  className={`inline-flex items-center gap-1.5 min-h-[44px] px-3 rounded-full border text-sm font-semibold cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${photoState.complete ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
+                  aria-label={`Photos: ${photoState.done} of ${photoState.total} required${photoState.complete ? ', complete' : ''}`}
+                >
+                  {photoState.complete && <Check className="h-4 w-4" aria-hidden="true" strokeWidth={3} />}
+                  Photos {photoState.done}/{photoState.total}
+                </button>
+              </li>
+            )}
           </ul>
         </nav>
       )}
@@ -436,8 +475,11 @@ export const NewAuditForm: React.FC = () => {
                           ? kitTypes.find((t) => t.id === l.kit_type_id)?.service_interval_months ?? null
                           : checklist.find((c) => c.id === l.checklist_item_id)?.service_interval_months ?? null
                       }
-                      dateLabel={l.section === 'ppe' ? checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null : null}
+                      dateLabel={l.section === 'ppe' || l.section === 'hs' ? checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null : null}
                       otherAnswer={otherAnswerFor(checklist.find((c) => c.id === l.checklist_item_id))}
+                      datedHs={l.section === 'hs' && !!checklist.find((c) => c.id === l.checklist_item_id)?.has_expiry}
+                      hasGauge={l.section === 'hs' && !!checklist.find((c) => c.id === l.checklist_item_id)?.has_gauge}
+                      stamp={stamp}
                       issued={l.checklist_item_id ? issuedMap.get(l.checklist_item_id) ?? 0 : 0}
                       onChange={(p) => update(l.key!, p)}
                       onRemove={l.key?.startsWith('add:') ? () => setLines((ls) => ls.filter((x) => x.key !== l.key)) : undefined}
@@ -469,6 +511,11 @@ export const NewAuditForm: React.FC = () => {
         </section>
       )}
 
+      {/* ------------------------------------------------ photos: the last section */}
+      {target && photoSlots.length > 0 && (
+        <PhotosSection slots={photoSlots} photos={photos} setPhotos={setPhotos} stamp={stamp} onError={setError} />
+      )}
+
       {/* ------------------------------------------------ summary + actions: fixed above the Home / Site Audits / Kit & Plant bar on phone */}
       {target && (
         <div className="fixed sm:static inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 bg-white border-t sm:border border-slate-200 sm:rounded-xl px-4 py-2.5 sm:py-3 shadow-[0_-2px_8px_rgba(15,23,42,0.08)] sm:shadow-none">
@@ -478,6 +525,11 @@ export const NewAuditForm: React.FC = () => {
               <span className={summary.expired ? 'text-red-700' : ''}>{summary.expired} expired</span>,{' '}
               <span className={summary.dueSoon ? 'text-amber-800' : ''}>{summary.dueSoon} due soon</span>
               {savedAt && <span className="ml-2 text-xs font-normal text-slate-600">Draft saved {savedAt}</span>}
+              {!photoState.complete && photoSlots.length > 0 && (
+                <span className="block text-sm font-semibold text-amber-800">
+                  {photoState.missing.length} required photo{photoState.missing.length === 1 ? '' : 's'} missing
+                </span>
+              )}
             </p>
             <div className="grid grid-cols-2 sm:flex gap-2">
               <button type="button" className={btn.secondary} onClick={onSaveDraft} disabled={!!busy}>
@@ -524,7 +576,34 @@ export const NewAuditForm: React.FC = () => {
         <SwapKitSheet item={swapItem} targets={allHolders} auditors={auditors} months={kitTypes.find((t) => t.id === swapItem.kit_type_id)?.service_interval_months ?? null}
           onClose={() => setSwapItem(null)} onSaved={reloadKitAfterSwap} />
       )}
-      {unanswered && (
+      {missingPhotos && missingPhotos.length > 0 && (
+        <Sheet
+          title={`Can’t submit yet: ${missingPhotos.length} required photo${missingPhotos.length === 1 ? '' : 's'} missing`}
+          subtitle="Take each one, or tap “Can’t take photo” and say why. Save draft always works."
+          onClose={() => { setMissingPhotos(null); setUnanswered(null); }}
+          footer={
+            <button type="button" className={btn.primary} onClick={() => { const f = missingPhotos[0]; setMissingPhotos(null); setUnanswered(null); jumpToPhoto(f.id); }}>
+              Go to the first one
+            </button>
+          }
+        >
+          <ul className="space-y-1" aria-label="Missing photos">
+            {missingPhotos.map((s) => (
+              <li key={s.id}>
+                <button type="button" onClick={() => { setMissingPhotos(null); setUnanswered(null); jumpToPhoto(s.id); }}
+                  className="w-full min-h-[44px] flex items-center justify-between gap-2 px-3 rounded-lg border border-amber-200 bg-amber-50 text-left text-base sm:text-sm text-amber-800 hover:bg-amber-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+                  <span className="font-semibold">{s.name}</span>
+                  <span className="text-xs font-semibold uppercase">Photo</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {unanswered && unanswered.length > 0 && (
+            <p className="text-base sm:text-sm text-slate-700">Also not answered yet: {unanswered.slice(0, 8).map((l) => l.item_name).join(', ')}{unanswered.length > 8 ? ` and ${unanswered.length - 8} more` : ''}.</p>
+          )}
+        </Sheet>
+      )}
+      {unanswered && !missingPhotos && (
         <Sheet
           title={`${unanswered.length} item${unanswered.length === 1 ? '' : 's'} not answered`}
           subtitle="Answer Y / N (or Not carried for kit) before submitting, or submit as it is."
@@ -581,6 +660,9 @@ function LineRow({
   months,
   dateLabel,
   otherAnswer = 'none',
+  datedHs = false,
+  hasGauge = false,
+  stamp,
   issued = 0,
   onChange,
   onRemove,
@@ -594,6 +676,12 @@ function LineRow({
   dateLabel: string | null;
   /** Other section: "Label on?" Y/N, the free-text date / tag box, or nothing (from the checklist item) */
   otherAnswer?: 'label' | 'date_tag' | 'none';
+  /** first aid kit, eye wash, burns kit, fire extinguisher: an expiry date (round 9) */
+  datedHs?: boolean;
+  /** fire extinguisher: Pressure gauge Green / Amber / Red */
+  hasGauge?: boolean;
+  /** van reg and site, stamped on the photo */
+  stamp: StampInfo;
   /** issued from the Yard Lockup since their last audit */
   issued?: number;
   onChange: (p: Partial<DraftLine>) => void;
@@ -607,7 +695,7 @@ function LineRow({
   const notCarried = line.result === 'not_carried';
   const isKit = line.section === 'kit';
   const commentOpen = showComment || line.result === 'N';
-  const failed = line.result === 'N' || line.label_on === 'N';
+  const failed = line.result === 'N' || line.label_on === 'N' || line.gauge === 'red';
   const setServiceDate = (v: string | null) => {
     const next = applyServiceDate(
       { serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual },
@@ -616,16 +704,17 @@ function LineRow({
     );
     onChange({ service_date: next.serviceDate, expiry_date: next.expiry });
   };
-  const datedPpe = line.section === 'ppe' && !!months;
-  const hasExpiry = line.section === 'ppe' || isKit;
+  // a date the expiry counts from: hard hats "Date on hat", fire extinguisher "Service date"
+  const datedPpe = (line.section === 'ppe' || datedHs) && !!months;
+  const hasExpiry = line.section === 'ppe' || isKit || datedHs;
 
   const onPhoto = async (file: File | undefined) => {
     if (!file) return;
     setUploading(true);
     onError(null);
     try {
-      const path = await uploadAuditFile(file, 'lines');
-      onChange({ photo_path: path });
+      const { path, takenAt } = await uploadAuditPhoto(file, 'lines', stamp);
+      onChange({ photo_path: path, photo_taken_at: takenAt });
       setPreview(URL.createObjectURL(file));
     } catch (e) {
       onError(e instanceof Error ? e.message : 'Photo upload failed.');
@@ -683,6 +772,12 @@ function LineRow({
               <ExpiryInput line={line} auditDate={auditDate} months={months} onChange={onChange} />
             </div>
           )}
+          {hasGauge && (
+            <div className="col-span-2 lg:col-span-1">
+              <div className={LABEL_LINE}><span className={LABEL_TEXT}>Pressure gauge</span></div>
+              <GaugeButtons value={line.gauge ?? null} label={line.item_name} onChange={(v) => onChange({ gauge: v })} />
+            </div>
+          )}
           {line.section === 'other' && otherAnswer === 'label' && (
             <div className="col-span-2 sm:col-span-1">
               <div className={LABEL_LINE}><span className={LABEL_TEXT}>Label on?</span></div>
@@ -731,12 +826,16 @@ function LineRow({
             {(id) => <textarea id={id} rows={2} className={`${inputCls} py-2`} value={line.comment ?? ''} onChange={(e) => onChange({ comment: e.target.value })} />}
           </Field>
           {line.result === 'N' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {preview && <img src={preview} alt={`Photo of ${line.item_name}`} className="h-12 w-12 rounded-lg object-cover border border-slate-200" />}
               <label className={`${btn.secondary} ${uploading ? 'opacity-50' : ''}`}>
                 <Camera className="h-4 w-4" aria-hidden="true" />
-                {uploading ? 'Uploading…' : line.photo_path ? 'Change photo' : 'Add photo (optional)'}
-                <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => onPhoto(e.target.files?.[0])} />
+                {uploading ? 'Uploading…' : line.photo_path ? 'Retake photo' : 'Take photo (optional)'}
+                <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+              </label>
+              <label className={`${btn.secondary} ${uploading ? 'opacity-50' : ''}`}>
+                <ImagePlus className="h-4 w-4" aria-hidden="true" />Choose from library
+                <input type="file" accept="image/*" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
               </label>
             </div>
           )}
@@ -758,14 +857,14 @@ function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; a
     <div>
       <div className={LABEL_LINE}>
         <label htmlFor={`exp-${line.key}`} className={LABEL_TEXT}>Expiry</label>
-        <span className="flex-shrink-0">{line.expiry_date ? <ExpiryPill expiry={line.expiry_date} today={auditDate} /> : <span className="text-xs text-slate-600">N/A</span>}</span>
       </div>
       {showInput ? (
         <div className="flex gap-2">
           <input
             id={`exp-${line.key}`}
             type="date"
-            className={inputCls}
+            aria-describedby={`exp-note-${line.key}`}
+            className={`${inputCls} ${expiryRing(line.expiry_date, auditDate)}`}
             value={line.expiry_date ?? ''}
             onChange={(e) => {
               const s = applyExpiry({ serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual }, e.target.value || null);
@@ -789,7 +888,9 @@ function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; a
           N/A · add date
         </button>
       )}
-      <p className="text-xs text-slate-600 mt-1 min-h-[1rem] leading-4" aria-live="polite">{auto ? `Auto: ${months} months, change if needed` : ''}</p>
+      {/* status straight under the field (coloured + worded), then the auto note; both lines always reserved */}
+      <ExpiryNote id={`exp-note-${line.key}`} expiry={line.expiry_date} today={auditDate} />
+      <p className="text-xs text-slate-600 min-h-[1rem] leading-4">{auto ? `Auto: ${months} months, change if needed` : ''}</p>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  expiryWording,
+  spareOptions,
   sectionProgress,
   unansweredLines,
   otherAnswerFor,
@@ -272,7 +274,7 @@ describe('summariseAuditLines — "N fails, N expired, N due soon"', () => {
   });
   it('does not count "Not carried on this van" as a fail', () => {
     const s = summariseAuditLines([line({ section: 'kit', result: 'not_carried' })], TODAY);
-    expect(s).toEqual({ fails: 0, expired: 0, dueSoon: 0 });
+    expect(s).toEqual({ fails: 0, expired: 0, dueSoon: 0, toLookAt: 0 });
   });
   it('ignores dates on not-carried kit', () => {
     const s = summariseAuditLines([line({ section: 'kit', result: 'not_carried', expiry_date: '2026-01-01' })], TODAY);
@@ -283,11 +285,12 @@ describe('summariseAuditLines — "N fails, N expired, N due soon"', () => {
       line({ section: 'ppe', expiry_date: '2026-10-01' }),
       line({ section: 'kit', expiry_date: '2026-11-20' }),
     ], TODAY);
-    expect(s).toEqual({ fails: 0, expired: 1, dueSoon: 1 });
+    expect(s).toEqual({ fails: 0, expired: 1, dueSoon: 1, toLookAt: 0 });
   });
-  it('never counts dates on health & safety items', () => {
-    const s = summariseAuditLines([line({ section: 'hs', expiry_date: '2026-01-01' })], TODAY);
-    expect(s.expired).toBe(0);
+  it('round 9: dated H&S items count (undated H&S lines have no date); Other never does', () => {
+    expect(summariseAuditLines([line({ section: 'hs', expiry_date: '2026-01-01' })], TODAY).expired).toBe(1);
+    expect(summariseAuditLines([line({ section: 'hs', expiry_date: null })], TODAY).expired).toBe(0);
+    expect(summariseAuditLines([line({ section: 'other', expiry_date: '2026-01-01' })], TODAY).expired).toBe(0);
   });
 });
 
@@ -695,5 +698,85 @@ describe('sectionProgress / unansweredLines — progress chips and Submit (round
   });
   it('lists unanswered items in form order', () => {
     expect(unansweredLines(lines).map((x) => x.item_name)).toEqual(['Boots', 'Saw']);
+  });
+});
+
+describe('expiryWording — the same coloured, worded status everywhere (round 9)', () => {
+  const today = '2026-11-05';
+  it('expired: days, then weeks, then months ago', () => {
+    expect(expiryWording('2026-11-04', today)).toEqual({ tone: 'expired', text: 'Expired yesterday' });
+    expect(expiryWording('2026-10-30', today)).toEqual({ tone: 'expired', text: 'Expired 6 days ago' });
+    expect(expiryWording('2026-10-15', today)).toEqual({ tone: 'expired', text: 'Expired 3 weeks ago' });
+    expect(expiryWording('2026-06-01', today)).toEqual({ tone: 'expired', text: 'Expired 5 months ago' });
+  });
+  it('due within 30 days', () => {
+    expect(expiryWording('2026-11-05', today)).toEqual({ tone: 'due_soon', text: 'Expires today' });
+    expect(expiryWording('2026-11-06', today)).toEqual({ tone: 'due_soon', text: 'Expires tomorrow' });
+    expect(expiryWording('2026-11-17', today)).toEqual({ tone: 'due_soon', text: 'Expires in 12 days' });
+  });
+  it('OK: until month and year', () => {
+    expect(expiryWording('2027-03-14', today)).toEqual({ tone: 'ok', text: 'OK until Mar 2027' });
+  });
+  it('no date', () => {
+    expect(expiryWording(null, today)).toEqual({ tone: null, text: 'No expiry date' });
+  });
+});
+
+describe('summariseAuditLines — pressure gauge and dated H&S (round 9)', () => {
+  const fire = { section: 'hs' as const, item_name: 'Fire ext 2KG dry powder', result: 'Y' as const, expiry_date: null };
+  it('red gauge is a fail; amber is "to look at", not a fail', () => {
+    expect(summariseAuditLines([{ ...fire, gauge: 'red' }], '2026-11-05')).toMatchObject({ fails: 1, toLookAt: 0 });
+    expect(summariseAuditLines([{ ...fire, gauge: 'amber' }], '2026-11-05')).toMatchObject({ fails: 0, toLookAt: 1 });
+    expect(summariseAuditLines([{ ...fire, gauge: 'green' }], '2026-11-05')).toMatchObject({ fails: 0, toLookAt: 0 });
+  });
+  it('a dated H&S item counts as expired / due soon', () => {
+    expect(summariseAuditLines([{ ...fire, expiry_date: '2026-10-01' }, { ...fire, expiry_date: '2026-11-20' }], '2026-11-05'))
+      .toMatchObject({ expired: 1, dueSoon: 1 });
+  });
+});
+
+describe('buildAuditPrefill — dated H&S items belong to the person like PPE dates (round 9)', () => {
+  const checklist = [
+    { id: 'c-aid', section: 'hs', name: 'First aid kit', expected_qty: '1', sort_order: 10, has_expiry: true },
+    { id: 'c-fire', section: 'hs', name: 'Fire ext 2KG dry powder', expected_qty: '1', sort_order: 40, has_expiry: true, has_gauge: true },
+    { id: 'c-wipes', section: 'hs', name: 'Hand wipes', expected_qty: '1', sort_order: 60, has_expiry: false },
+  ];
+  const lines = buildAuditPrefill({
+    checklist, kitTypes: [], heldKit: [], notCarried: [], lastLines: [],
+    ppe: [{ checklist_item_id: 'c-aid', expiry_date: '2027-02-01' }, { checklist_item_id: 'c-fire', expiry_date: '2027-06-01' }],
+    answers: [{ checklist_item_id: 'c-fire', qty: '1', service_date: '2026-06-01', label_on: null, date_tag: null }],
+  });
+  const by = (id: string) => lines.find((l) => l.checklist_item_id === id)!;
+  it('pre-fills the expiry (and the fire extinguisher service date)', () => {
+    expect(by('c-aid').expiry_date).toBe('2027-02-01');
+    expect(by('c-fire')).toMatchObject({ expiry_date: '2027-06-01', service_date: '2026-06-01' });
+  });
+  it('undated H&S items stay dateless; the gauge starts blank like Y/N', () => {
+    expect(by('c-wipes').expiry_date).toBeNull();
+    expect(by('c-fire').gauge ?? null).toBeNull();
+  });
+});
+
+describe('spareOptions — replacements from the Yard Lockup AND spare vans (round 9)', () => {
+  const k = (id: string, extra: object) => ({ id, kit_type_id: 't-cat', type_name: 'CAT', plant_no: id.toUpperCase(), expiry_date: '2027-01-01', status: 'spare', holder_kind: 'none', holder_employee_id: null, vehicle_id: null, vehicle_reg: null, spare_vehicle_id: null, ...extra });
+  const kit = [
+    k('y1', {}),
+    k('v1', { status: 'on_van', holder_kind: 'spare_van', vehicle_id: 'van-ozl', spare_vehicle_id: 'van-ozl', vehicle_reg: 'WV72 OZL' }),
+    k('p1', { status: 'on_van', holder_kind: 'person', holder_employee_id: 'e1', vehicle_reg: 'YE24 TNL' }),
+    k('a1', { status: 'away_for_service' }),
+    k('g1', { kit_type_id: 't-genny', type_name: 'Genny' }),
+  ] as never[];
+  it('groups same-type spares: Yard Lockup, then on spare vans labelled "WV72 OZL · spare van"', () => {
+    const o = spareOptions(kit, 't-cat', 'p1');
+    expect(o.lockup.map((x: { id: string }) => x.id)).toEqual(['y1']);
+    expect(o.spareVans.map((x: { id: string; where: string }) => [x.id, x.where])).toEqual([['v1', 'WV72 OZL · spare van']]);
+  });
+  it('never offers kit someone holds, kit away for service, another type, or the item itself', () => {
+    const o = spareOptions(kit, 't-cat', 'v1');
+    expect([...o.lockup, ...o.spareVans].map((x: { id: string }) => x.id)).toEqual(['y1']);
+  });
+  it('the swap preview says where the spare came from', () => {
+    expect(previewSwap({ plant_no: 'C-1', type_name: 'CAT', vehicle_reg: 'Dom Oliver · YE24 TNL' }, { destination: 'spare' }, { mode: 'spare', plantNo: 'V1', from: 'WV72 OZL · spare van' }).incoming)
+      .toBe('V1 (from WV72 OZL · spare van) → on Dom Oliver · YE24 TNL');
   });
 });

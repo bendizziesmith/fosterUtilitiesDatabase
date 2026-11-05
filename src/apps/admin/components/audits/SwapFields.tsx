@@ -12,21 +12,29 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
   return (
     <fieldset>
       <legend className="text-base sm:text-sm font-bold text-slate-900 mb-2">{title}</legend>
-      {f.spares === null ? (
-        <p className="text-sm text-slate-600">Looking in the Yard Lockup…</p>
+      {f.spareGroups === null ? (
+        <p className="text-base sm:text-sm text-slate-600">Looking for replacements…</p>
       ) : (
         <div className="space-y-2">
-          {f.spares.length === 0 && <p className="text-xs text-slate-600">No {f.item.type_name} in the Yard Lockup.</p>}
-          {f.spares.map((s) => (
-            <label key={s.id} className={radio(f.repl === s.id)}>
-              <input type="radio" name="repl" checked={f.repl === s.id} onChange={() => f.setRepl(s.id)} className="mt-1 h-4 w-4" />
-              <span className="flex-1 flex flex-wrap items-center gap-2">
-                <span className="text-base sm:text-sm font-semibold text-slate-900">{s.plant_no || 'No plant no'}</span>
-                <span className="text-xs text-slate-600">Yard Lockup · expiry {s.expiry_date ?? 'N/A'}</span>
-                <ExpiryPill expiry={s.expiry_date} />
-              </span>
-            </label>
+          {([['Yard Lockup', f.spareGroups.lockup], ['On spare vans', f.spareGroups.spareVans]] as const).map(([groupTitle, list]) => (
+            <div key={groupTitle} className="space-y-2">
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">{groupTitle}</p>
+              {list.length === 0 && <p className="text-base sm:text-sm text-slate-600">No spare {f.item.type_name} {groupTitle === 'Yard Lockup' ? 'in the Yard Lockup' : 'on a spare van'}.</p>}
+              {list.map((s) => (
+                <label key={s.id} className={radio(f.repl === s.id)}>
+                  <input type="radio" name="repl" checked={f.repl === s.id} onChange={() => f.setRepl(s.id)} className="mt-1 h-4 w-4" />
+                  <span className="flex-1 flex flex-wrap items-center gap-2">
+                    <span className="text-base sm:text-sm font-semibold text-slate-900">{s.plant_no || 'No plant no'}</span>
+                    <span className="text-xs text-slate-600">{s.where}</span>
+                    <ExpiryPill expiry={s.expiry_date} />
+                  </span>
+                </label>
+              ))}
+            </div>
           ))}
+          {f.spareGroups.spareVans.some((s) => s.id === f.repl) && (
+            <p className="text-sm text-slate-700">It comes off that spare van; the move is logged on both.</p>
+          )}
           <label className={radio(f.repl === 'new')}>
             <input type="radio" name="repl" checked={f.repl === 'new'} onChange={() => f.setRepl('new')} className="mt-1 h-4 w-4" />
             <span className="text-base sm:text-sm font-semibold text-slate-900">+ Add a new {f.item.type_name}</span>

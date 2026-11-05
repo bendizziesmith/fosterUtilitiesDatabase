@@ -92,7 +92,7 @@ export function UpdateItemSheet({
     }
     setSaving(true);
     try {
-      const certificatePath = file ? await uploadAuditFile(file, 'certificates') : null;
+      const certificatePath = file ? await uploadAuditFile(file, 'certificates', { reg: target.where }) : null;
       const hatNote = isPpe && dates.serviceDate && target.dateLabel ? `${target.dateLabel}: ${dates.serviceDate}` : null;
       await updateAttentionItem({
         source: target.source,

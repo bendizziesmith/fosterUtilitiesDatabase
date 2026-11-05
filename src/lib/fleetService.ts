@@ -88,6 +88,19 @@ export async function getAuditInterval(): Promise<number> {
   return rows?.[0]?.audit_interval_months ?? 6;
 }
 
+/** Company name printed on the PDFs (default "Foster Utilities"). */
+export async function getCompanyName(): Promise<string> {
+  const r = await supabase.from('audit_settings').select('company_name').limit(1);
+  const name = !r.error && (r.data as { company_name?: string }[])?.[0]?.company_name;
+  return name || 'Foster Utilities';
+}
+
+export async function setCompanyName(name: string, byName: string | null): Promise<void> {
+  const n = name.trim();
+  if (!n) throw new Error('Type the company name.');
+  check(await supabase.from('audit_settings').update({ company_name: n, updated_by_name: byName, updated_at: new Date().toISOString() }).eq('id', true));
+}
+
 export async function setAuditInterval(months: number, byName: string | null): Promise<void> {
   if (!Number.isInteger(months) || months < 1 || months > 60) throw new Error('Audit every … months must be between 1 and 60.');
   check(await supabase.from('audit_settings').update({ audit_interval_months: months, updated_by_name: byName, updated_at: new Date().toISOString() }).eq('id', true));
@@ -120,9 +133,13 @@ export async function editAudit(
   })) as string[];
 }
 
-/** Deletes the audit (lines, members, edits); then its photos from storage. Kit stays where it is. */
+/** Deletes the audit (lines, members, photos, edits); then its photo files from storage. Kit stays where it is. */
 export async function deleteAudit(auditId: string, reason: string, actorId: string | null): Promise<void> {
-  const paths = (check(await supabase.rpc('audit_delete', { p_audit_id: auditId, p_reason: reason, p_actor_id: actorId })) as string[]) ?? [];
+  // the standard / additional photos go with the audit; collect their files first
+  const ph = await supabase.from('audit_photos').select('path').eq('audit_id', auditId);
+  const photoPaths = ph.error ? [] : ((ph.data as { path: string | null }[]) ?? []).map((p) => p.path).filter((p): p is string => !!p);
+  const linePaths = (check(await supabase.rpc('audit_delete', { p_audit_id: auditId, p_reason: reason, p_actor_id: actorId })) as string[]) ?? [];
+  const paths = [...new Set([...linePaths, ...photoPaths])];
   if (paths.length) check(await supabase.storage.from(BUCKET).remove(paths));
 }
 

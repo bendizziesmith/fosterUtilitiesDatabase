@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadAuditReferenceData, listFileDeletions, StaffRow, VanRow } from '../../../../lib/siteAuditService';
 import { buildAuditTargets, vanLabelFor, allTargetsOf, auditTargetsOf, AuditTarget, FileDeletion } from '../../../../lib/siteAuditLogic';
-import { AuditChecklistItem, Auditor, KitType } from '../../../../lib/supabase';
+import { AuditChecklistItem, Auditor, AuditPhotoSlot, KitType } from '../../../../lib/supabase';
 import { listPersonVans, recordAllPersonVans } from '../../../../lib/vanChangeService';
 import { vanChangesToCheck } from '../../../../lib/vanChange';
 import { listOffRoad, reconcileUnassigned, VanStatusRow } from '../../../../lib/fleetService';
@@ -14,6 +14,7 @@ export function useAuditRef() {
   const [checklist, setChecklist] = useState<AuditChecklistItem[]>([]);
   const [kitTypes, setKitTypes] = useState<KitType[]>([]);
   const [auditors, setAuditors] = useState<Auditor[]>([]);
+  const [photoSlots, setPhotoSlots] = useState<AuditPhotoSlot[]>([]);
   const [personVans, setPersonVans] = useState<{ employee_id: string | null; vehicle_id: string | null }[]>([]);
   const [offRoadRows, setOffRoadRows] = useState<VanStatusRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -27,6 +28,7 @@ export function useAuditRef() {
       setChecklist(ref.checklist);
       setKitTypes(ref.kitTypes);
       setAuditors(ref.auditors);
+      setPhotoSlots(ref.photoSlots);
       // a van unassigned in Employee Management: its kit stays with that van (spare-van kit)
       try {
         await reconcileUnassigned(TEST_MODE);
@@ -77,6 +79,7 @@ export function useAuditRef() {
   const vanChanges = useMemo(() => vanChangesToCheck(employees, personVans), [employees, personVans]);
 
   return {
+    photoSlots,
     employees, vehicles, checklist, kitTypes, setKitTypes, auditors, targets, allTargets, auditTargets,
     vanLabel, keyForVan, personVans, vanChanges, offRoad, offRoadRows, loaded, error, reload,
   };

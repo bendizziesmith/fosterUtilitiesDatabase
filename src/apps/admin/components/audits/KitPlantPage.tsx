@@ -20,6 +20,9 @@ import { TargetPicker } from './TargetPicker';
 import { useAuditRef } from './useAuditRef';
 import { kitUpdateTarget, kitWhere, monthsForType } from './updateTargets';
 import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge } from './ui';
+import { DownloadMenu } from './DownloadMenu';
+import { downloadByHolder, downloadLockup, downloadPlantRegister } from '../../../../lib/auditDownloads';
+import { whoName } from '../../../../lib/siteAuditLogic';
 import { btn, card, inputCls, formatDate } from './styles';
 
 type Filter = 'all' | 'on_van' | 'spare' | 'away_for_service' | 'attention';
@@ -40,6 +43,7 @@ export const KitPlantPage: React.FC = () => {
   const view = params.get('view') === 'van' ? 'van' : params.get('view') === 'lockup' ? 'lockup' : 'type';
   const typeId = params.get('type');
   const ref = useAuditRef();
+  const { actor: downloadActor } = useActor(ref.auditors);
 
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
   const [audits, setAudits] = useState<Awaited<ReturnType<typeof listAuditSummaries>>>([]);
@@ -108,6 +112,7 @@ export const KitPlantPage: React.FC = () => {
     : [];
 
   if (kit === null || !ref.loaded) return <LoadingSpinner />;
+  const who = whoName(downloadActor?.name);
 
   const type = typeId ? ref.kitTypes.find((t) => t.id === typeId) : undefined;
 
@@ -116,9 +121,18 @@ export const KitPlantPage: React.FC = () => {
       <TestModeBanner />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <p className="text-base sm:text-sm text-slate-600">Every item of kit and where it is. Audits add kit here automatically.</p>
-        <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
-          <Plus className="h-4 w-4" />Add kit
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <DownloadMenu choices={[
+            { title: 'Full plant register', kind: 'pdf', hint: 'Every item by kit type: plant no, who / where, service, expiry, status', run: () => downloadPlantRegister('pdf', who) },
+            { title: 'Full plant register', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadPlantRegister('csv', who) },
+            { title: 'By person / spare van', kind: 'pdf', hint: 'One section each: their kit, PPE and H&S dates', run: () => downloadByHolder(who, (key) => ref.allTargets.find((t) => t.key === key)?.label ?? key) },
+            { title: 'Yard Lockup stock', kind: 'pdf', hint: 'Counts and low-stock flags', run: () => downloadLockup('pdf', who) },
+            { title: 'Yard Lockup stock', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadLockup('csv', who) },
+          ]} />
+          <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
+            <Plus className="h-4 w-4" />Add kit
+          </button>
+        </div>
       </div>
 
       <ErrorNote message={error ?? ref.error} />

@@ -1,4 +1,5 @@
 /** Shared styles, labels and helpers for the Site Audits / Kit & Plant screens. */
+import { expiryWording, todayISO } from '../../../../lib/siteAuditLogic';
 
 /** Rows saved from a local dev run are flagged is_test so they can be cleaned up. */
 export const TEST_MODE = import.meta.env.DEV;
@@ -52,3 +53,9 @@ export const ACTION_LABEL: Record<string, string> = {
   moved_to_spare: 'Back to Yard Lockup',
   removed: 'Scrapped',
 };
+
+/** The coloured outline a date field takes for its expiry (a ring, so dark mode keeps it). */
+export function expiryRing(expiry: string | null | undefined, today = todayISO()): string {
+  const { tone } = expiryWording(expiry, today);
+  return tone === 'expired' ? 'ring-2 ring-red-600' : tone === 'due_soon' ? 'ring-2 ring-amber-500' : tone === 'ok' ? 'ring-2 ring-green-600' : '';
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { X, FlaskConical, Check } from 'lucide-react';
-import { formatExpiryStatus, getExpiryStatus, todayISO } from '../../../../lib/siteAuditLogic';
+import { X, FlaskConical, Check, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
+import { expiryWording, todayISO } from '../../../../lib/siteAuditLogic';
 import { TEST_MODE } from './styles';
 
 /**
@@ -45,7 +45,7 @@ export function Field({
   );
 }
 
-/** Expired / due soon / OK shown as text AND colour. */
+/** Expired / due soon / OK shown as text AND colour, the same wording everywhere ("Expired 3 weeks ago"). */
 export function ExpiryPill({
   expiry,
   today = todayISO(),
@@ -55,25 +55,63 @@ export function ExpiryPill({
   today?: string;
   showOk?: boolean;
 }) {
-  const { status, daysLeft } = getExpiryStatus(expiry, today);
-  if (!status) return <span className="text-xs text-slate-600">N/A</span>;
-  if (status === 'ok') {
-    return showOk ? (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-200">
-        OK
-      </span>
-    ) : null;
-  }
+  const { tone, text } = expiryWording(expiry, today);
+  if (!tone) return <span className="text-xs text-slate-600">N/A</span>;
+  if (tone === 'ok' && !showOk) return null;
   const cls =
-    status === 'expired'
-      ? 'bg-red-50 text-red-700 border-red-200'
-      : 'bg-amber-50 text-amber-800 border-amber-200';
+    tone === 'expired' ? 'bg-red-50 text-red-700 border-red-200'
+      : tone === 'due_soon' ? 'bg-amber-50 text-amber-800 border-amber-200'
+        : 'bg-green-50 text-green-700 border-green-200';
+  return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls}`}>{text}</span>;
+}
+
+/** Straight under an expiry date field: coloured AND worded, with its line always reserved. */
+export function ExpiryNote({ expiry, today = todayISO(), id }: { expiry: string | null | undefined; today?: string; id?: string }) {
+  const { tone, text } = expiryWording(expiry, today);
+  const cls = tone === 'expired' ? 'text-red-700' : tone === 'due_soon' ? 'text-amber-800' : tone === 'ok' ? 'text-green-700' : 'text-slate-600';
+  const Icon = tone === 'expired' ? XCircle : tone === 'due_soon' ? AlertTriangle : tone === 'ok' ? CheckCircle2 : null;
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${cls}`}>
-      {status === 'expired' ? 'Expired · ' : ''}
-      {formatExpiryStatus(daysLeft)}
-    </span>
+    <p id={id} className={`mt-1 min-h-[1.25rem] flex items-center gap-1 text-sm font-semibold leading-5 ${cls}`} aria-live="polite">
+      {Icon && <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />}
+      {tone ? text : ''}
+    </p>
   );
+}
+
+/** Fire extinguisher "Pressure gauge": Green / Amber / Red, coloured AND labelled (48px). */
+export function GaugeButtons({ value, onChange, label }: {
+  value: 'green' | 'amber' | 'red' | null | undefined;
+  onChange: (v: 'green' | 'amber' | 'red' | null) => void;
+  label: string;
+}) {
+  const opts: { v: 'green' | 'amber' | 'red'; text: string; on: string; Icon: typeof Check }[] = [
+    { v: 'green', text: 'Green', on: 'bg-green-700 border-green-700 text-white', Icon: CheckCircle2 },
+    { v: 'amber', text: 'Amber', on: 'bg-amber-400 border-amber-500 text-slate-900', Icon: AlertTriangle },
+    { v: 'red', text: 'Red', on: 'bg-red-700 border-red-700 text-white', Icon: XCircle },
+  ];
+  return (
+    <div role="group" aria-label={`${label}: pressure gauge`} className="grid grid-cols-3 gap-2 w-full">
+      {opts.map(({ v, text, on, Icon }) => (
+        <button
+          key={v}
+          type="button"
+          aria-pressed={value === v}
+          onClick={() => onChange(value === v ? null : v)}
+          className={`inline-flex items-center justify-center gap-1 min-h-[48px] px-2 rounded-lg text-sm font-bold border-2 transition-colors duration-150 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${value === v ? on : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />{text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Gauge in words for detail / records: never colour alone. */
+export function GaugeText({ v }: { v: 'green' | 'amber' | 'red' | null | undefined }) {
+  if (v === 'red') return <span className="font-semibold text-red-700">Red · fail</span>;
+  if (v === 'amber') return <span className="font-semibold text-amber-800">Amber · to look at</span>;
+  if (v === 'green') return <span className="text-green-700">Green</span>;
+  return <span className="text-xs text-slate-600">—</span>;
 }
 
 export function CountBadge({ n, label, tone }: { n: number; label: string; tone: 'red' | 'amber' | 'slate' | 'violet' | 'green' }) {

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listKit, swapKit } from '../../../../lib/siteAuditService';
-import { previewSwap, holderKey, holderLabel, AuditTarget, ServiceExpiryState, SwapDestination, SwapReplacement } from '../../../../lib/siteAuditLogic';
+import { previewSwap, holderKey, holderLabel, spareOptions, AuditTarget, ServiceExpiryState, SwapDestination, SwapReplacement } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview } from '../../../../lib/supabase';
+
+export type SpareOption = KitItemOverview & { where: string };
 
 export type SwapItem = Pick<KitItemOverview, 'id' | 'kit_type_id' | 'type_name' | 'plant_no' | 'vehicle_id' | 'vehicle_reg'
   | 'status' | 'holder_kind' | 'holder_employee_id' | 'holder_name' | 'holder_reg'>;
@@ -10,7 +12,8 @@ export type Dest = 'away_for_service' | 'spare' | 'holder' | 'removed';
 
 /** State + save for a swap; shared by the Swap sheet and Update → "Swap with a spare". */
 export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
-  const [spares, setSpares] = useState<KitItemOverview[] | null>(null);
+  /** same-type spares: in the Yard Lockup, and spare-van kit ('WV72 OZL · spare van') */
+  const [spareGroups, setSpareGroups] = useState<{ lockup: SpareOption[]; spareVans: SpareOption[] } | null>(null);
   const [dest, setDest] = useState<Dest>('away_for_service');
   const [company, setCompany] = useState('');
   const [destKey, setDestKey] = useState('');
@@ -23,12 +26,14 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
   useEffect(() => {
     listKit()
       .then((all) => {
-        const s = all.filter((k) => k.status === 'spare' && k.kit_type_id === item.kit_type_id);
-        setSpares(s);
-        setRepl(s.length ? s[0].id : 'new');
+        const g = spareOptions(all, item.kit_type_id, item.id);
+        setSpareGroups(g);
+        const first = g.lockup[0] ?? g.spareVans[0];
+        setRepl(first ? first.id : 'new');
       })
       .catch((e) => setLoadError(e.message));
-  }, [item.kit_type_id]);
+  }, [item.kit_type_id, item.id]);
+  const spares = useMemo(() => (spareGroups ? [...spareGroups.lockup, ...spareGroups.spareVans] : null), [spareGroups]);
 
   const destHolder = targets.find((t) => t.key === destKey);
   /** the item's current holder page key, so the picker can leave it out */
@@ -43,7 +48,7 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
           : { destination: dest };
     const spare = spares?.find((s) => s.id === repl);
     const r: SwapReplacement = spare
-      ? { mode: 'spare', plantNo: spare.plant_no }
+      ? { mode: 'spare', plantNo: spare.plant_no, from: spare.where }
       : repl === 'new'
         ? { mode: 'new', plantNo: newPlant.trim() || null }
         : { mode: 'none' };
@@ -72,7 +77,7 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
   };
 
   return {
-    item, targets, currentKey, spares, dest, setDest, company, setCompany, destKey, setDestKey, repl, setRepl,
+    item, targets, currentKey, spares, spareGroups, dest, setDest, company, setCompany, destKey, setDestKey, repl, setRepl,
     newPlant, setNewPlant, dates, setDates, note, setNote, preview, save, loadError,
   };
 }

@@ -281,6 +281,8 @@ export interface AuditChecklistItem {
   date_label: string | null;
   /** Other section: ask "Label on?" Y/N (round 7) */
   has_label_check?: boolean;
+  /** fire extinguisher: ask "Pressure gauge" Green / Amber / Red (round 9) */
+  has_gauge?: boolean;
 }
 
 export interface KitType {
@@ -363,6 +365,31 @@ export interface SiteAuditSummary {
   auditor_id: string | null;
   auditor_name: string | null;
   holder_employee_id: string | null;
+  /** amber pressure gauges: "to look at", not a fail (round 9) */
+  look_count?: number;
+}
+
+/** A standard photo on every audit (round 9); the list is data. */
+export interface AuditPhotoSlot {
+  id: string;
+  name: string;
+  hint: string | null;
+  sort_order: number;
+  required: boolean;
+  is_active: boolean;
+}
+
+/** A slot photo, a "Can't take photo" reason, or an additional photo (slot_id null). */
+export interface AuditPhotoRow {
+  id?: string;
+  audit_id?: string;
+  slot_id: string | null;
+  slot_name: string | null;
+  path: string | null;
+  caption: string | null;
+  skip_reason: string | null;
+  taken_at: string | null;
+  sort_order: number;
 }
 
 export interface SiteAudit {
@@ -409,6 +436,9 @@ export interface AuditLineRow {
   date_tag: string | null;
   /** "Label on?" Y / N (Other section, round 7) */
   label_on?: 'Y' | 'N' | null;
+  /** pressure gauge (round 9): red = fail, amber = to look at */
+  gauge?: 'green' | 'amber' | 'red' | null;
+  photo_taken_at?: string | null;
   comment: string | null;
   photo_path: string | null;
   kit_item_id: string | null;

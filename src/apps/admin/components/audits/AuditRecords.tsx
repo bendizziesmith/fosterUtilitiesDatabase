@@ -1,20 +1,27 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ClipboardList } from 'lucide-react';
+import { ChevronRight, ClipboardList, Download, Loader2, Pencil } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAuditSummaries } from '../../../../lib/siteAuditService';
 import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
-import { Field, CountBadge, ErrorNote, TestTag } from './ui';
-import { card, inputCls, formatDate } from './styles';
+import { Field, CountBadge, ErrorNote, TestTag, Sheet } from './ui';
+import { btn, card, inputCls, formatDate } from './styles';
+import { downloadAllAudits } from '../../../../lib/auditDownloads';
+import { getCompanyName, setCompanyName } from '../../../../lib/fleetService';
+import { loadAuditReferenceData } from '../../../../lib/siteAuditService';
+import { Auditor } from '../../../../lib/supabase';
+import { useActor } from './useActor';
 
 function ResultBadges({ a }: { a: SiteAuditSummary }) {
-  const any = a.expired_count || a.due_soon_count || a.fail_count;
+  const look = a.look_count ?? 0;
+  const any = a.expired_count || a.due_soon_count || a.fail_count || look;
   return (
     <span className="flex flex-wrap gap-1">
       {a.expired_count > 0 && <CountBadge n={a.expired_count} label="expired" tone="red" />}
       {a.due_soon_count > 0 && <CountBadge n={a.due_soon_count} label="due soon" tone="amber" />}
       {a.fail_count > 0 && <CountBadge n={a.fail_count} label={a.fail_count === 1 ? 'fail' : 'fails'} tone="red" />}
+      {look > 0 && <CountBadge n={look} label="to look at" tone="amber" />}
       {!any && (
         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-green-50 text-green-700 border-green-200">All OK</span>
       )}
@@ -46,6 +53,15 @@ export const AuditRecords: React.FC = () => {
   const [to, setTo] = useState('');
   const [expiredOnly, setExpiredOnly] = useState(false);
   const [by, setBy] = useState('');
+  const [zip, setZip] = useState<string | null>(null);
+  const [company, setCompany] = useState('Foster Utilities');
+  const [editCompany, setEditCompany] = useState<string | null>(null);
+  const [auditorList, setAuditorList] = useState<Auditor[]>([]);
+  const { actor } = useActor(auditorList);
+  useEffect(() => {
+    getCompanyName().then(setCompany).catch(() => undefined);
+    loadAuditReferenceData().then((r) => setAuditorList(r.auditors)).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     listAuditSummaries()
@@ -67,6 +83,21 @@ export const AuditRecords: React.FC = () => {
       (!expiredOnly || r.expired_count > 0) &&
       (!by || byName(r) === by)
   );
+
+  const submitted = filtered.filter((r) => r.status === 'submitted');
+  const onZip = async () => {
+    setZip(`Making ${submitted.length} PDF${submitted.length === 1 ? '' : 's'}…`);
+    setError(null);
+    try {
+      const r = await downloadAllAudits(submitted.map((x) => x.id), { from: from || null, to: to || null }, whoName(actor?.name),
+        (done, total) => setZip(`Making PDFs: ${done} of ${total}…`));
+      setZip(null);
+      if (r.failed.length) setError(`${r.failed.length} audit PDF${r.failed.length === 1 ? '' : 's'} could not be made: ${r.failed[0]}`);
+    } catch (e) {
+      setZip(null);
+      setError(e instanceof Error ? e.message : 'Could not make the ZIP.');
+    }
+  };
 
   const open = (r: SiteAuditSummary) =>
     navigate(r.status === 'draft' ? `/audits/new?draft=${r.id}` : `/audits/detail?id=${r.id}`);
@@ -98,7 +129,43 @@ export const AuditRecords: React.FC = () => {
         </label>
       </section>
 
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={btn.secondary} onClick={onZip} disabled={!!zip || !submitted.length}>
+            {zip ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+            Download all ({submitted.length})
+          </button>
+          {zip && <span role="status" className="text-base sm:text-sm text-slate-600">{zip}</span>}
+        </div>
+        <button type="button" onClick={() => setEditCompany(company)}
+          className="inline-flex items-center gap-1.5 min-h-[44px] text-sm font-semibold text-slate-700 hover:underline cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Pencil className="h-4 w-4" aria-hidden="true" />Company name on PDFs: {company}
+        </button>
+      </div>
+      <p className="text-sm text-slate-600 -mt-2">One ZIP of the submitted audits shown below (drafts are left out).</p>
+
       <ErrorNote message={error} />
+
+      {editCompany !== null && (
+        <Sheet title="Company name on PDFs" onClose={() => setEditCompany(null)}
+          footer={
+            <>
+              <button type="button" className={btn.secondary} onClick={() => setEditCompany(null)}>Cancel</button>
+              <button type="button" className={btn.primary} onClick={async () => {
+                try {
+                  await setCompanyName(editCompany, actor?.name ?? null);
+                  setCompany(editCompany.trim());
+                  setEditCompany(null);
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : 'Could not save.');
+                  setEditCompany(null);
+                }
+              }}>Save</button>
+            </>
+          }>
+          <Field label="Company name">{(id) => <input id={id} className={inputCls} value={editCompany} onChange={(e) => setEditCompany(e.target.value)} />}</Field>
+        </Sheet>
+      )}
 
       <section className={card}>
         {rows === null ? (

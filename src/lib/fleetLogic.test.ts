@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  dateAlerts,
   auditSchedule,
   formatDue,
   kitTiles,
@@ -156,5 +157,24 @@ describe('diffAuditLines — "Label on?" is editable (round 7)', () => {
     const d = diffAuditLines(before, after);
     expect(d.changes).toEqual([{ line_id: 'w', field: 'label_on', from: 'N', to: 'Y' }]);
     expect(d.summary).toEqual(['Water containers label on: N → Y']);
+  });
+});
+
+describe('round 9: Edit audit — gauge in the log, and the expired / due-soon summary', () => {
+  const base = { item_name: 'Fire ext 2KG dry powder', result: 'Y', qty: '1', comment: null, expiry_date: null, service_date: null, plant_no_snapshot: null, date_tag: null };
+  it('logs "Fire ext 2KG dry powder gauge: amber → green"', () => {
+    const d = diffAuditLines([{ id: 'f', ...base, gauge: 'amber' }] as never[], [{ id: 'f', ...base, gauge: 'green' }] as never[]);
+    expect(d.summary).toEqual(['Fire ext 2KG dry powder gauge: amber → green']);
+  });
+  it('"2 expired · 1 due soon", with the lines to jump to (not-carried kit ignored)', () => {
+    const a = dateAlerts([
+      { id: 'a', result: 'Y', expiry_date: '2026-10-01' },
+      { id: 'b', result: 'Y', expiry_date: '2026-09-01' },
+      { id: 'c', result: 'Y', expiry_date: '2026-11-20' },
+      { id: 'd', result: 'not_carried', expiry_date: '2026-01-01' },
+      { id: 'e', result: 'Y', expiry_date: '2028-01-01' },
+    ], '2026-11-05');
+    expect(a).toEqual({ expired: ['a', 'b'], dueSoon: ['c'], text: '2 expired · 1 due soon' });
+    expect(dateAlerts([], '2026-11-05').text).toBe('');
   });
 });

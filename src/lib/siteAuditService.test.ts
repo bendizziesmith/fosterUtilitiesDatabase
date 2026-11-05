@@ -91,7 +91,23 @@ describe('saveDraftAudit', () => {
     const upd = H.calls.find((c) => c.table === 'audit_site_audits' && c.op === 'update');
     expect(upd?.filters).toContainEqual(['eq', 'id', 'a1']);
     expect(upd?.filters).toContainEqual(['eq', 'status', 'draft']);
-    expect(H.calls.filter((c) => c.op === 'delete').map((c) => c.table).sort()).toEqual(['audit_lines', 'audit_members']);
+    expect(H.calls.filter((c) => c.op === 'delete').map((c) => c.table).sort()).toEqual(['audit_lines', 'audit_members', 'audit_photos']);
+  });
+
+  it('round 9: Save draft keeps the photos already uploaded (slot photos, reasons, additional with caption)', async () => {
+    H.calls = [];
+    await svc.saveDraftAudit('a1', header, [], [], [
+      { slot_id: 's1', slot_name: 'Van & reg', path: 'photos/van.jpg', caption: null, skip_reason: 'ignored', taken_at: '2026-11-05T14:32:00Z', sort_order: 0 },
+      { slot_id: 's2', slot_name: 'Van open', path: null, caption: null, skip_reason: ' Van locked ', taken_at: null, sort_order: 0 },
+      { slot_id: 's3', slot_name: 'CAT', path: null, caption: null, skip_reason: '', taken_at: null, sort_order: 0 },
+      { slot_id: null, slot_name: null, path: 'photos/extra.jpg', caption: ' Broken step ', skip_reason: null, taken_at: '2026-11-05T14:40:00Z', sort_order: 0 },
+    ]);
+    const ins = H.calls.find((c) => c.table === 'audit_photos' && c.op === 'insert')!;
+    expect(ins.payload).toEqual([
+      { audit_id: 'a1', slot_id: 's1', slot_name: 'Van & reg', path: 'photos/van.jpg', caption: null, skip_reason: null, taken_at: '2026-11-05T14:32:00Z', sort_order: 0, is_test: header.is_test },
+      { audit_id: 'a1', slot_id: 's2', slot_name: 'Van open', path: null, caption: null, skip_reason: 'Van locked', taken_at: null, sort_order: 1, is_test: header.is_test },
+      { audit_id: 'a1', slot_id: null, slot_name: null, path: 'photos/extra.jpg', caption: 'Broken step', skip_reason: null, taken_at: '2026-11-05T14:40:00Z', sort_order: 2, is_test: header.is_test },
+    ]);
   });
 });
 

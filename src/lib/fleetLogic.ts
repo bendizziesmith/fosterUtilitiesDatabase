@@ -3,7 +3,7 @@
  * Kit & Plant tiles, where kit goes when a van is off the road, and what an
  * audit edit changed.
  */
-import { addMonths, AuditTarget } from './siteAuditLogic';
+import { addMonths, getExpiryStatus, AuditTarget } from './siteAuditLogic';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const daysBetween = (from: string, to: string) => {
@@ -129,6 +129,7 @@ export interface EditableLine {
   plant_no_snapshot: string | null;
   date_tag: string | null;
   label_on?: string | null;
+  gauge?: string | null;
 }
 
 const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
@@ -139,6 +140,7 @@ const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
   { key: 'plant_no_snapshot', label: 'plant no' },
   { key: 'date_tag', label: 'date/tag' },
   { key: 'label_on', label: 'label on' },
+  { key: 'gauge', label: 'gauge' },
   { key: 'comment', label: 'comment' },
 ];
 
@@ -163,4 +165,18 @@ export function diffAuditLines(before: EditableLine[], after: EditableLine[]) {
     }
   }
   return { changes, summary };
+}
+
+/** Edit audit: lines whose date is expired or due within 30 days, for "2 expired · 1 due soon" (tap to jump). */
+export function dateAlerts(lines: { id: string; result: string | null; expiry_date: string | null }[], today: string) {
+  const expired: string[] = [];
+  const dueSoon: string[] = [];
+  for (const l of lines) {
+    if (l.result === 'not_carried') continue;
+    const { status } = getExpiryStatus(l.expiry_date, today);
+    if (status === 'expired') expired.push(l.id);
+    if (status === 'due_soon') dueSoon.push(l.id);
+  }
+  const text = [expired.length ? `${expired.length} expired` : '', dueSoon.length ? `${dueSoon.length} due soon` : ''].filter(Boolean).join(' · ');
+  return { expired, dueSoon, text };
 }

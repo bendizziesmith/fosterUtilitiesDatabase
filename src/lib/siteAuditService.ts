@@ -12,8 +12,12 @@ import {
   KitStatus,
   AuditPpeItem,
   Auditor,
+  AuditPhotoSlot,
+  AuditPhotoRow,
 } from './supabase';
 import { draftsInProgress } from './draftLogic';
+import { preparePhoto, StampInfo } from './photoUpload';
+import { photoPath } from './photoLogic';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { listLockup } from './lockupService';
 import { listOffRoad, getAuditInterval } from './fleetService';
@@ -52,13 +56,16 @@ export async function loadAuditReferenceData(): Promise<{
   checklist: AuditChecklistItem[];
   kitTypes: KitType[];
   auditors: Auditor[];
+  /** standard photos on every audit; empty until the round 9 database step is run */
+  photoSlots: AuditPhotoSlot[];
 }> {
-  const [emp, veh, chk, kt, aud] = await Promise.all([
+  const [emp, veh, chk, kt, aud, slots] = await Promise.all([
     supabase.from('employees').select('id, full_name, role, assigned_vehicle_id').order('full_name'),
     supabase.from('vehicles').select('id, registration_number').order('registration_number'),
     supabase.from('audit_checklist_items').select('*').eq('is_active', true).order('sort_order'),
     supabase.from('kit_types').select('*').eq('is_active', true).order('sort_order'),
     supabase.from('audit_auditors').select('*').eq('is_active', true).order('sort_order'),
+    supabase.from('audit_photo_slots').select('*').eq('is_active', true).order('sort_order'),
   ]);
   return {
     employees: check(emp) ?? [],
@@ -66,6 +73,7 @@ export async function loadAuditReferenceData(): Promise<{
     checklist: check(chk) ?? [],
     kitTypes: check(kt) ?? [],
     auditors: check(aud) ?? [],
+    photoSlots: slots.error ? [] : ((slots.data as AuditPhotoSlot[]) ?? []),
   };
 }
 
@@ -186,7 +194,7 @@ export type AuditHeader = Omit<SiteAudit, 'id' | 'status' | 'submitted_at'>;
 
 const LINE_COLUMNS = [
   'section', 'checklist_item_id', 'kit_type_id', 'item_name', 'expected_qty', 'result', 'qty',
-  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'label_on', 'comment', 'photo_path', 'kit_item_id',
+  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'label_on', 'gauge', 'comment', 'photo_path', 'photo_taken_at', 'kit_item_id',
 ] as const;
 
 function lineToRow(auditId: string, line: DraftLine, index: number) {
@@ -203,7 +211,8 @@ export async function saveDraftAudit(
   auditId: string | null,
   header: AuditHeader,
   members: TeamMember[],
-  lines: DraftLine[]
+  lines: DraftLine[],
+  photos: AuditPhotoRow[] = []
 ): Promise<string> {
   let id = auditId;
   if (!id) {
@@ -226,7 +235,36 @@ export async function saveDraftAudit(
   if (lines.length) {
     check(await supabase.from('audit_lines').insert(lines.map((l, i) => lineToRow(id as string, l, i))));
   }
+  await saveAuditPhotos(id, photos, header.is_test);
   return id;
+}
+
+/** Photo rows are replaced as a whole, like lines (the files are already uploaded). */
+async function saveAuditPhotos(auditId: string, photos: AuditPhotoRow[], isTest: boolean) {
+  const keep = photos.filter((p) => p.path || (p.slot_id && p.skip_reason?.trim()));
+  const del = await supabase.from('audit_photos').delete().eq('audit_id', auditId);
+  // before the round 9 database step the table is missing: fine while there are no photos
+  if (del.error) {
+    if (!keep.length) return;
+    throw new Error(del.error.message);
+  }
+  if (!keep.length) return;
+  check(await supabase.from('audit_photos').insert(keep.map((p, i) => ({
+    audit_id: auditId,
+    slot_id: p.slot_id,
+    slot_name: p.slot_name,
+    path: p.path,
+    caption: p.caption?.trim() || null,
+    skip_reason: p.path ? null : p.skip_reason?.trim() || null,
+    taken_at: p.taken_at,
+    sort_order: i,
+    is_test: isTest,
+  }))));
+}
+
+export async function listAuditPhotos(auditId: string): Promise<AuditPhotoRow[]> {
+  const r = await supabase.from('audit_photos').select('*').eq('audit_id', auditId).order('sort_order');
+  return r.error ? [] : ((r.data as AuditPhotoRow[]) ?? []);
 }
 
 export async function submitAudit(auditId: string): Promise<void> {
@@ -243,13 +281,15 @@ export async function getAudit(auditId: string): Promise<{
   audit: SiteAudit;
   members: AuditMemberRow[];
   lines: AuditLineRow[];
+  photos: AuditPhotoRow[];
 }> {
-  const [a, m, l] = await Promise.all([
+  const [a, m, l, p] = await Promise.all([
     supabase.from('audit_site_audits').select('*').eq('id', auditId).single(),
     supabase.from('audit_members').select('*').eq('audit_id', auditId).order('sort_order'),
     supabase.from('audit_lines').select('*').eq('audit_id', auditId).order('sort_order'),
+    listAuditPhotos(auditId),
   ]);
-  return { audit: check(a), members: check(m) ?? [], lines: check(l) ?? [] };
+  return { audit: check(a), members: check(m) ?? [], lines: check(l) ?? [], photos: p };
 }
 
 // ---------------------------------------------------------------- Needs attention + recent
@@ -445,11 +485,27 @@ export async function swapKit(input: SwapInput): Promise<string | null> {
 
 const BUCKET = 'audit-photos';
 
-export async function uploadAuditFile(file: File, folder: 'lines' | 'certificates'): Promise<string> {
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
-  check(await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type || undefined }));
-  return path;
+/**
+ * Uploads a photo or document. Photos are shrunk and stamped with the date / time (plus van
+ * reg and site) first; the file name carries when it was taken. PDFs go up unchanged.
+ */
+export async function uploadAuditPhoto(
+  file: File,
+  folder: 'lines' | 'certificates' | 'photos',
+  stamp: StampInfo = {},
+  /** told when the photo is ready and the upload starts (for "Preparing… / Uploading…") */
+  onUploading?: () => void
+): Promise<{ path: string; takenAt: string }> {
+  const prepared = await preparePhoto(file, stamp);
+  onUploading?.();
+  const rand = Math.random().toString(36).slice(2, 8);
+  const path = prepared.ext === 'jpg' ? photoPath(folder, prepared.takenAt, rand) : `${folder}/${Date.now()}_${rand}.${prepared.ext}`;
+  check(await supabase.storage.from(BUCKET).upload(path, prepared.blob, { contentType: prepared.contentType }));
+  return { path, takenAt: prepared.takenAt.toISOString() };
+}
+
+export async function uploadAuditFile(file: File, folder: 'lines' | 'certificates', stamp: StampInfo = {}): Promise<string> {
+  return (await uploadAuditPhoto(file, folder, stamp)).path;
 }
 
 export async function getAuditFileUrl(path: string): Promise<string> {
@@ -492,6 +548,11 @@ export async function listFileDeletions(): Promise<FileDeletion[]> {
  * Deletes the file from storage, then records "deleted by X on date". The audit
  * line / history entry that pointed at it is never changed.
  */
+/** A photo removed from a draft before it was ever submitted: just the file, no deletion record. */
+export async function removeDraftFile(path: string): Promise<void> {
+  check(await supabase.storage.from(BUCKET).remove([path]));
+}
+
 export async function deleteAuditFile(path: string, isTest: boolean, actor: { id: string; name: string } | null): Promise<void> {
   check(await supabase.storage.from(BUCKET).remove([path]));
   check(await supabase.from('audit_file_deletions').insert({ path, is_test: isTest, actor_id: actor?.id ?? null, actor_name: actor?.name ?? null }));

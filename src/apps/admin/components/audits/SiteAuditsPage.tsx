@@ -5,7 +5,7 @@ import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAttention, listKit } from '../../../../lib/siteAuditService';
 import { listLockup, LockupRow } from '../../../../lib/lockupService';
 import { lowStockLines } from '../../../../lib/lockupLogic';
-import { AttentionRow, AttentionTab, filterAttention, sortAttention, formatExpiryStatus } from '../../../../lib/siteAuditLogic';
+import { AttentionRow, AttentionTab, filterAttention, sortAttention, expiryWording, todayISO } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
@@ -28,7 +28,7 @@ function StatusText({ r }: { r: AttentionRow }) {
   const expired = r.expiry_status === 'expired';
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${expired ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
-      {expired ? 'Expired · ' : ''}{formatExpiryStatus(r.days_left)}
+      {expiryWording(r.expiry_date, todayISO()).text}
     </span>
   );
 }
