@@ -15,6 +15,9 @@ import {
 } from './supabase';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { listLockup } from './lockupService';
+import { listOffRoad, getAuditInterval } from './fleetService';
+import { auditSchedule } from './fleetLogic';
+import { buildAuditTargets, auditTargetsOf, todayISO } from './siteAuditLogic';
 import { lowStockLines } from './lockupLogic';
 import { getWeekEndingSunday } from './timesheetUtils';
 
@@ -254,12 +257,25 @@ export async function getDashboardCounts(): Promise<{
   spares: number;
   /** Yard Lockup stock lines at or below their "Low at" */
   lowStock: number;
+  /** gangs / spare vans overdue, never audited, or due within 30 days */
+  auditsDue: number;
 }> {
   const [att, kit, lockup] = await Promise.all([
     supabase.from('audit_needs_attention').select('expiry_status'),
     supabase.from('kit_items').select('status').in('status', ['on_van', 'spare']),
     listLockup().catch(() => []),
   ]);
+  let auditsDue = 0;
+  try {
+    const [ref, offRoad, interval, audits] = await Promise.all([
+      loadAuditReferenceData(), listOffRoad().catch(() => []), getAuditInterval().catch(() => 6), listAuditSummaries(),
+    ]);
+    const off = new Set(offRoad.map((r) => r.vehicle_id).filter((v): v is string => !!v));
+    const targets = auditTargetsOf(buildAuditTargets(ref.employees, ref.vehicles, off));
+    auditsDue = auditSchedule(targets, audits, interval, todayISO()).filter((r) => r.status !== 'ok').length;
+  } catch {
+    auditsDue = 0;
+  }
   const a = (check(att) ?? []) as { expiry_status: string }[];
   const k = (check(kit) ?? []) as { status: string }[];
   return {
@@ -268,6 +284,7 @@ export async function getDashboardCounts(): Promise<{
     onVans: k.filter((r) => r.status === 'on_van').length,
     spares: k.filter((r) => r.status === 'spare').length,
     lowStock: lowStockLines(lockup).length,
+    auditsDue,
   };
 }
 

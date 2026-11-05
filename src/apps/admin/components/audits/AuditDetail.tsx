@@ -1,10 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { getAudit } from '../../../../lib/siteAuditService';
 import { getExpiryStatus, summariseAuditLines, whoName, FileDeletion } from '../../../../lib/siteAuditLogic';
 import { FileLink } from './FileLink';
+import { AuditEditPanel } from './AuditEditPanel';
+import { DeleteAuditSheet } from './FleetSheets';
+import { listAuditEdits, AuditEditRow } from '../../../../lib/fleetService';
+import { btn } from './styles';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { AuditLineRow, AuditMemberRow, Auditor, SiteAudit } from '../../../../lib/supabase';
 import { CountBadge, ErrorNote, ExpiryPill, TestTag } from './ui';
@@ -140,11 +144,18 @@ export const AuditDetail: React.FC = () => {
   const ref = useAuditRef();
   const { deletions, reload: reloadDeletions } = useFileDeletions();
   const dateLabelFor = (l: AuditLineRow) => ref.checklist.find((c) => c.id === l.checklist_item_id)?.date_label ?? null;
+  const [edits, setEdits] = useState<AuditEditRow[]>([]);
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
+  const [flash, setFlash] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return;
     getAudit(id).then(setData).catch((e) => setError(e.message));
+    listAuditEdits(id).then(setEdits).catch(() => setEdits([]));
   }, [id]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (!id) return <p className="text-sm text-slate-600">No audit selected.</p>;
   if (error) return <ErrorNote message={error} />;
@@ -172,7 +183,7 @@ export const AuditDetail: React.FC = () => {
           <TestTag show={audit.is_test} />
           {audit.status === 'submitted' ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-              <Lock className="h-3 w-3" />Fixed record · submitted {formatDateTime(audit.submitted_at)}
+              <Lock className="h-3 w-3" />Submitted {formatDateTime(audit.submitted_at)}
             </span>
           ) : (
             <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">Draft</span>
@@ -200,10 +211,34 @@ export const AuditDetail: React.FC = () => {
           <CountBadge n={s.expired} label="expired" tone={s.expired ? 'red' : 'slate'} />
           <CountBadge n={s.dueSoon} label="due soon" tone={s.dueSoon ? 'amber' : 'slate'} />
         </div>
-        <p className="text-xs text-slate-500 mt-3">Warnings are cleared from the Site Audits page or the Kit & Plant page, not by editing this audit.</p>
+        {audit.status === 'submitted' && mode === 'view' && (
+          <div className="flex flex-wrap gap-2 mt-4">
+            <button type="button" className={btn.secondary} onClick={() => setMode('edit')}>Edit audit</button>
+            <button type="button" className={`${btn.secondary} text-red-700`} onClick={() => setMode('delete')}>Delete audit</button>
+          </div>
+        )}
+        {flash && <p role="status" className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">{flash}</p>}
+        {edits.length > 0 && (
+          <ul className="mt-4 rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200" aria-label="Edits">
+            {edits.map((e) => (
+              <li key={e.id} className="px-3 py-2 text-xs text-slate-700">
+                <strong>Edited by {whoName(e.actor_name)}</strong> on {formatDateTime(e.created_at)}: {e.summary.join('; ')}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
-      {SECTIONS.map((sec) => (
+      {mode === 'edit' && (
+        <AuditEditPanel auditId={audit.id} lines={lines} auditors={ref.auditors} onCancel={() => setMode('view')}
+          onSaved={(summary) => { setMode('view'); setFlash(`Saved: ${summary.join('; ')}`); load(); }} />
+      )}
+      {mode === 'delete' && (
+        <DeleteAuditSheet auditId={audit.id} label={`${audit.ganger_name_snapshot ?? audit.team_name_snapshot} · ${formatDate(audit.audit_date)}`}
+          auditors={ref.auditors} onClose={() => setMode('view')} onDone={() => navigate('/audits/records', { replace: true })} />
+      )}
+
+      {mode !== 'edit' && SECTIONS.map((sec) => (
         <SectionTable key={sec.key} section={sec.key} title={sec.title} auditDate={audit.audit_date} lines={lines.filter((l) => l.section === sec.key)}
           deletions={deletions} auditors={ref.auditors} onFileDeleted={reloadDeletions} dateLabelFor={dateLabelFor} />
       ))}

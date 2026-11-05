@@ -10,6 +10,8 @@ import { KitItemOverview, KitRecentUpdate } from '../../../../lib/supabase';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { FileLink } from './FileLink';
+import { UpcomingAudits } from './UpcomingAudits';
+import { HomeSheet } from './FleetSheets';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { ErrorNote, TestModeBanner, TestTag } from './ui';
@@ -42,6 +44,7 @@ export const SiteAuditsPage: React.FC = () => {
   const [tab, setTab] = useState<AttentionTab>('all');
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
+  const [homing, setHoming] = useState<AttentionRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -60,6 +63,12 @@ export const SiteAuditsPage: React.FC = () => {
   useEffect(() => {
     load();
   }, [load]);
+  // "Needs auditing" tile links to /audits#upcoming
+  useEffect(() => {
+    if (window.location.hash === '#upcoming' && ref.loaded) {
+      setTimeout(() => document.getElementById('upcoming')?.scrollIntoView({ behavior: 'smooth' }), 50);
+    }
+  }, [ref.loaded]);
 
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
   /** "Dom Oliver · YE24 TNL", "WV72 OZL · spare van", "Spare · Yard" or "Unassigned, needs a home" */
@@ -88,6 +97,7 @@ export const SiteAuditsPage: React.FC = () => {
   const done = () => {
     setUpdating(null);
     setSwapping(null);
+    setHoming(null);
     load();
   };
 
@@ -199,7 +209,9 @@ export const SiteAuditsPage: React.FC = () => {
                       <td className="px-3 py-3"><StatusText r={r} /></td>
                       <td className="px-5 py-3">
                         <div className="flex justify-end gap-2">
-                          <button type="button" className={btn.small} onClick={() => openUpdate(r)}>Update</button>
+                          {r.expiry_status === 'no_home'
+                            ? <button type="button" className={btn.small} onClick={() => setHoming(r)}>Find a home</button>
+                            : <button type="button" className={btn.small} onClick={() => openUpdate(r)}>Update</button>}
                           {r.source === 'kit' && r.kit_status === 'on_van' && (
                             <button type="button" className={btn.small} onClick={() => setSwapping(kitFor(r))}>Swap</button>
                           )}
@@ -227,7 +239,9 @@ export const SiteAuditsPage: React.FC = () => {
                     <StatusText r={r} />
                   </div>
                   <div className="flex gap-2 mt-3">
-                    <button type="button" className={`${btn.small} flex-1`} onClick={() => openUpdate(r)}>Update</button>
+                    {r.expiry_status === 'no_home'
+                      ? <button type="button" className={`${btn.small} flex-1`} onClick={() => setHoming(r)}>Find a home</button>
+                      : <button type="button" className={`${btn.small} flex-1`} onClick={() => openUpdate(r)}>Update</button>}
                     {r.source === 'kit' && r.kit_status === 'on_van' && (
                       <button type="button" className={`${btn.small} flex-1`} onClick={() => setSwapping(kitFor(r))}>Swap</button>
                     )}
@@ -261,6 +275,8 @@ export const SiteAuditsPage: React.FC = () => {
         )}
       </section>
 
+      <UpcomingAudits targets={ref.auditTargets} />
+
       <section className={card} aria-labelledby="recent-h">
         <div className="flex items-center gap-2 px-4 sm:px-5 py-4 border-b border-slate-200">
           <History className="h-5 w-5 text-slate-500" />
@@ -291,6 +307,10 @@ export const SiteAuditsPage: React.FC = () => {
         )}
       </section>
 
+      {homing && (
+        <HomeSheet item={{ id: homing.item_id, item_name: homing.item_name, plant_no: homing.plant_no }} targets={ref.allTargets} auditors={ref.auditors}
+          onClose={() => setHoming(null)} onDone={done} />
+      )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={ref.auditors} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && (
         <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={ref.auditors} onClose={() => setSwapping(null)} onSaved={done} />

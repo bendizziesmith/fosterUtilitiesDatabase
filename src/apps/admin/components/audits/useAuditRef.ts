@@ -4,6 +4,7 @@ import { buildAuditTargets, vanLabelFor, allTargetsOf, auditTargetsOf, AuditTarg
 import { AuditChecklistItem, Auditor, KitType } from '../../../../lib/supabase';
 import { listPersonVans, recordAllPersonVans } from '../../../../lib/vanChangeService';
 import { vanChangesToCheck } from '../../../../lib/vanChange';
+import { listOffRoad, reconcileUnassigned, VanStatusRow } from '../../../../lib/fleetService';
 import { TEST_MODE } from './styles';
 
 /** Staff, vans, checklist, kit types + the "Dom Oliver · YE24 TNL" labels built from them. */
@@ -14,6 +15,7 @@ export function useAuditRef() {
   const [kitTypes, setKitTypes] = useState<KitType[]>([]);
   const [auditors, setAuditors] = useState<Auditor[]>([]);
   const [personVans, setPersonVans] = useState<{ employee_id: string | null; vehicle_id: string | null }[]>([]);
+  const [offRoadRows, setOffRoadRows] = useState<VanStatusRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,12 +27,23 @@ export function useAuditRef() {
       setChecklist(ref.checklist);
       setKitTypes(ref.kitTypes);
       setAuditors(ref.auditors);
+      // a van unassigned in Employee Management: its kit stays with that van (spare-van kit)
+      try {
+        await reconcileUnassigned(TEST_MODE);
+      } catch {
+        /* not available until the round-6 SQL is run */
+      }
       // record every person's current van in one go (new people only), then read them back
       try {
         await recordAllPersonVans(TEST_MODE);
         setPersonVans(await listPersonVans());
       } catch {
         setPersonVans([]);
+      }
+      try {
+        setOffRoadRows(await listOffRoad());
+      } catch {
+        setOffRoadRows([]);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load staff and vans.');
@@ -43,7 +56,9 @@ export function useAuditRef() {
     reload();
   }, [reload]);
 
-  const targets = useMemo(() => buildAuditTargets(employees, vehicles), [employees, vehicles]);
+  /** vans marked "Off the road": left out of pickers and audit lists */
+  const offRoad = useMemo(() => new Set(offRoadRows.map((r) => r.vehicle_id).filter((v): v is string => !!v)), [offRoadRows]);
+  const targets = useMemo(() => buildAuditTargets(employees, vehicles, offRoad), [employees, vehicles, offRoad]);
   /** every possible holder: gangers, then other staff, then spare vans */
   const allTargets = useMemo<AuditTarget[]>(() => allTargetsOf(targets), [targets]);
   /** who can be audited: gangers, staff with a van, spare vans */
@@ -63,7 +78,7 @@ export function useAuditRef() {
 
   return {
     employees, vehicles, checklist, kitTypes, setKitTypes, auditors, targets, allTargets, auditTargets,
-    vanLabel, keyForVan, personVans, vanChanges, loaded, error, reload,
+    vanLabel, keyForVan, personVans, vanChanges, offRoad, offRoadRows, loaded, error, reload,
   };
 }
 

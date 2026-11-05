@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Truck, Warehouse, Wrench, AlertTriangle, Clock, ChevronRight, ArrowLeft, Users, X } from 'lucide-react';
+import { Plus, Search, Truck, Wrench, AlertTriangle, Clock, ChevronRight, ArrowLeft, Users, X, ClipboardCheck, CalendarClock } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listKit, moveKit } from '../../../../lib/siteAuditService';
+import { listKit, moveKit, listAuditSummaries } from '../../../../lib/siteAuditService';
+import { getAuditInterval } from '../../../../lib/fleetService';
+import { auditSchedule, kitTiles } from '../../../../lib/fleetLogic';
+import { todayISO } from '../../../../lib/siteAuditLogic';
 import { searchTargets, sortKit, summariseKitByType, summariseKitByHolder, holderKey, holderLabel, AuditTarget, KitSort } from '../../../../lib/siteAuditLogic';
 import { Auditor } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
@@ -10,6 +13,7 @@ import { useActor } from './useActor';
 import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { LockupView } from './LockupView';
+import { DeletePlantSheet } from './FleetSheets';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
@@ -38,6 +42,8 @@ export const KitPlantPage: React.FC = () => {
   const ref = useAuditRef();
 
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
+  const [audits, setAudits] = useState<Awaited<ReturnType<typeof listAuditSummaries>>>([]);
+  const [interval, setIntervalMonths] = useState(6);
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
   const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
@@ -45,10 +51,14 @@ export const KitPlantPage: React.FC = () => {
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
   const [assigning, setAssigning] = useState<{ item: KitItemOverview; back: boolean } | null>(null);
   const [removing, setRemoving] = useState<KitItemOverview | null>(null);
+  const [deleting, setDeleting] = useState<KitItemOverview | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setKit(await listKit());
+      const [k, a, months] = await Promise.all([listKit(), listAuditSummaries(), getAuditInterval().catch(() => 6)]);
+      setKit(k);
+      setAudits(a);
+      setIntervalMonths(months);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load kit.');
       setKit([]);
@@ -64,11 +74,13 @@ export const KitPlantPage: React.FC = () => {
     setSwapping(null);
     setAssigning(null);
     setRemoving(null);
+    setDeleting(null);
     load();
   };
 
   const { auditors } = ref;
   const all = useMemo(() => kit ?? [], [kit]);
+  const schedule = useMemo(() => auditSchedule(ref.auditTargets, audits, interval, todayISO()), [ref.auditTargets, audits, interval]);
   const labelled = useMemo(
     () => all.map((k) => ({ ...k, vehicle_label: k.status === 'on_van' ? holderLabel(k) : null })),
     [all]
@@ -79,12 +91,13 @@ export const KitPlantPage: React.FC = () => {
     if (key) navigate(`/kit/van?key=${encodeURIComponent(key)}`);
   };
 
-  const tiles = [
-    { label: 'On vans', n: all.filter((k) => k.status === 'on_van').length, icon: Truck, tone: 'text-blue-600 bg-blue-50' },
-    { label: 'In Yard Lockup', n: all.filter((k) => k.status === 'spare').length, icon: Warehouse, tone: 'text-violet-600 bg-violet-50' },
-    { label: 'Away for service', n: all.filter((k) => k.status === 'away_for_service').length, icon: Wrench, tone: 'text-slate-600 bg-slate-100' },
-    { label: 'Expired', n: all.filter((k) => k.expiry_status === 'expired' && k.status !== 'away_for_service').length, icon: AlertTriangle, tone: 'text-red-600 bg-red-50' },
-    { label: 'Due within 30 days', n: all.filter((k) => k.expiry_status === 'due_soon' && k.status !== 'away_for_service').length, icon: Clock, tone: 'text-amber-600 bg-amber-50' },
+  const t = kitTiles(schedule, all);
+  const tiles: { label: string; n: string | number; icon: typeof Truck; tone: string; onClick?: () => void; span?: boolean }[] = [
+    { label: `Gangs / vans audited in the last ${interval} months`, n: `${t.audited} of ${t.auditTargets}`, icon: ClipboardCheck, tone: 'text-green-600 bg-green-50', span: true },
+    { label: 'Needs auditing', n: t.needsAuditing, icon: CalendarClock, tone: 'text-red-600 bg-red-50', onClick: () => navigate('/audits#upcoming') },
+    { label: 'Away for service', n: t.away, icon: Wrench, tone: 'text-slate-600 bg-slate-100' },
+    { label: 'Expired', n: t.expired, icon: AlertTriangle, tone: 'text-red-600 bg-red-50' },
+    { label: 'Due within 30 days', n: t.dueSoon, icon: Clock, tone: 'text-amber-600 bg-amber-50' },
   ];
 
   // ---------------------------------------------------------- top search
@@ -147,17 +160,23 @@ export const KitPlantPage: React.FC = () => {
         )}
       </section>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {tiles.map((t) => {
-          const Icon = t.icon;
-          return (
-            <div key={t.label} className={`${card} p-3 min-h-[72px]`}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {tiles.map((tile) => {
+          const Icon = tile.icon;
+          const body = (
+            <>
               <div className="flex items-center gap-2">
-                <span className={`p-1.5 rounded-lg ${t.tone}`}><Icon className="h-4 w-4" /></span>
-                <span className="text-xl font-bold text-slate-900">{t.n}</span>
+                <span className={`p-1.5 rounded-lg ${tile.tone}`}><Icon className="h-4 w-4" /></span>
+                <span className="text-xl font-bold text-slate-900">{tile.n}</span>
               </div>
-              <p className="text-xs font-semibold text-slate-600 mt-1">{t.label}</p>
-            </div>
+              <p className="text-xs font-semibold text-slate-600 mt-1">{tile.label}{tile.onClick ? ' →' : ''}</p>
+            </>
+          );
+          const cls = `${card} p-3 min-h-[72px] text-left ${tile.span ? 'col-span-2 sm:col-span-1' : ''}`;
+          return tile.onClick ? (
+            <button key={tile.label} type="button" onClick={tile.onClick} className={`${cls} hover:border-slate-300 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}>{body}</button>
+          ) : (
+            <div key={tile.label} className={cls}>{body}</div>
           );
         })}
       </div>
@@ -175,6 +194,7 @@ export const KitPlantPage: React.FC = () => {
           onSwap={setSwapping}
           onAssign={(k, back) => setAssigning({ item: k, back })}
           onRemove={setRemoving}
+          onDelete={setDeleting}
           where={(k) => kitWhere(k)}
         />
       ) : (
@@ -194,7 +214,7 @@ export const KitPlantPage: React.FC = () => {
                 people={ref.allTargets.filter((t) => t.kind === 'person')}
                 plantKit={all.filter((k) => k.status === 'spare')}
                 onAddPlantKit={() => setAdding('lockup')}
-                onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : setRemoving(k))}
+                onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : a === 'delete' ? setDeleting(k) : setRemoving(k))}
               />
             </div>
           ) : view === 'type' ? (
@@ -219,6 +239,7 @@ export const KitPlantPage: React.FC = () => {
       {swapping && <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={auditors} onClose={() => setSwapping(null)} onSaved={done} />}
       {assigning && <AssignSheet {...assigning} targets={ref.allTargets} auditors={auditors} onClose={() => setAssigning(null)} onSaved={done} />}
       {removing && <RemoveSheet item={removing} auditors={auditors} onClose={() => setRemoving(null)} onSaved={done} />}
+      {deleting && <DeletePlantSheet item={deleting} auditors={auditors} onClose={() => setDeleting(null)} onDone={done} />}
     </div>
   );
 };
@@ -320,7 +341,7 @@ function ByVan({ rows, changedPeople, onOpen }: { rows: ReturnType<typeof summar
 
 type Labelled = KitItemOverview & { vehicle_label: string | null };
 
-function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder, onUpdate, onSwap, onAssign, onRemove, where }: {
+function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder, onUpdate, onSwap, onAssign, onRemove, onDelete, where }: {
   typeName: string;
   months: number | null;
   initialQuery: string;
@@ -331,6 +352,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
   onSwap: (k: KitItemOverview) => void;
   onAssign: (k: KitItemOverview, back: boolean) => void;
   onRemove: (k: KitItemOverview) => void;
+  onDelete: (k: KitItemOverview) => void;
   where: (k: KitItemOverview) => string;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
@@ -357,7 +379,8 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
         {k.status === 'on_van' && <button type="button" className={cls} onClick={() => onSwap(k)}>Swap</button>}
         {k.status === 'spare' && <button type="button" className={cls} onClick={() => onAssign(k, false)}>Assign to van</button>}
         {k.status === 'away_for_service' && <button type="button" className={cls} onClick={() => onAssign(k, true)}>Back from service</button>}
-        {k.status !== 'on_van' && <button type="button" className={cls} onClick={() => onRemove(k)}>Remove</button>}
+        {k.status !== 'on_van' && <button type="button" className={cls} onClick={() => onRemove(k)}>Scrapped (keep record)</button>}
+        <button type="button" className={`${cls} text-red-700`} onClick={() => onDelete(k)}>Delete completely</button>
       </>
     );
   };
@@ -523,7 +546,7 @@ function RemoveSheet({ item, auditors, onClose, onSaved }: { item: KitItemOvervi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Sheet title={`Remove ${item.type_name} ${item.plant_no ?? ''}?`} subtitle="It leaves the Kit & Plant list. Its history is kept." onClose={onClose}
+    <Sheet title={`Scrapped: ${item.type_name} ${item.plant_no ?? ''}`} subtitle="Scrapped (keep record): it leaves the Kit & Plant list, its history is kept. To remove it from every record, use “Delete completely”." onClose={onClose}
       footer={<>
         <button type="button" className={btn.secondary} onClick={onClose}>Keep it</button>
         <button type="button" className={btn.danger} disabled={busy} onClick={async () => {
@@ -536,7 +559,7 @@ function RemoveSheet({ item, auditors, onClose, onSaved }: { item: KitItemOvervi
             setError(e instanceof Error ? e.message : 'Could not remove.');
             setBusy(false);
           }
-        }}>{busy ? 'Removing…' : 'Remove kit'}</button>
+        }}>{busy ? 'Saving…' : 'Scrapped (keep record)'}</button>
       </>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <Field label="Reason (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Scrapped, beyond repair" />}</Field>

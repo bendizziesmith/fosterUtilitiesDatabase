@@ -74,6 +74,8 @@ export interface AuditTarget {
   vehicleId: string | null;
   reg: string | null;
   teamName: string;
+  /** the van is marked "Off the road" (round 6) */
+  offRoad?: boolean;
 }
 
 /** "Dom Oliver" → "D. Oliver" */
@@ -90,14 +92,16 @@ export interface Targets {
 }
 
 /** Gangers, then other staff, then vans nobody is assigned (spare vans). */
-export function buildAuditTargets(employees: StaffLike[], vehicles: VanLike[]): Targets {
+export function buildAuditTargets(employees: StaffLike[], vehicles: VanLike[], offRoad: Set<string> = new Set()): Targets {
   const byId = new Map(vehicles.map((v) => [v.id, v]));
   const person = (e: StaffLike): AuditTarget => {
     const van = e.assigned_vehicle_id ? byId.get(e.assigned_vehicle_id) : undefined;
     const isGanger = e.role === 'Ganger';
+    const off = !!van && offRoad.has(van.id);
     return {
       key: `person:${e.id}`,
-      label: `${e.full_name} · ${van ? van.registration_number : 'no van'}`,
+      label: `${e.full_name} · ${van ? van.registration_number : 'no van'}${off ? ' (off the road)' : ''}`,
+      offRoad: off,
       kind: 'person',
       personId: e.id,
       personName: e.full_name,
@@ -112,7 +116,7 @@ export function buildAuditTargets(employees: StaffLike[], vehicles: VanLike[]): 
   const staff = employees.filter((e) => e.role !== 'Ganger').sort(byName).map(person);
   const taken = new Set(employees.map((e) => e.assigned_vehicle_id).filter(Boolean));
   const spareVans = vehicles
-    .filter((v) => !taken.has(v.id))
+    .filter((v) => !taken.has(v.id) && !offRoad.has(v.id))
     .sort((a, b) => a.registration_number.localeCompare(b.registration_number))
     .map((v) => ({
       key: `van:${v.id}`,
@@ -131,7 +135,8 @@ export function buildAuditTargets(employees: StaffLike[], vehicles: VanLike[]): 
 export const allTargetsOf = (t: Targets): AuditTarget[] => [...t.gangs, ...t.staff, ...t.spareVans];
 
 /** Who can be audited: gangers, staff who have a van, then spare vans. */
-export const auditTargetsOf = (t: Targets): AuditTarget[] => [...t.gangs, ...t.staff.filter((s) => s.vehicleId), ...t.spareVans];
+export const auditTargetsOf = (t: Targets): AuditTarget[] =>
+  [...t.gangs, ...t.staff.filter((s) => s.vehicleId), ...t.spareVans].filter((x) => !x.offRoad);
 
 export interface TeamMember {
   name: string;
@@ -419,7 +424,7 @@ export interface HolderLike {
 export function holderLabel(k: HolderLike): string {
   if (k.status === 'spare') return 'Yard Lockup';
   if (k.status === 'away_for_service') return `Away for service${k.service_company ? ` · ${k.service_company}` : ''}`;
-  if (k.status === 'removed') return 'Removed';
+  if (k.status === 'removed') return 'Scrapped';
   if (k.holder_kind === 'person') return `${k.holder_name ?? 'Unknown'} · ${k.holder_reg ?? 'no van'}`;
   if (k.holder_kind === 'spare_van') return `${k.holder_reg ?? 'Van'} · spare van`;
   return 'Unassigned, needs a home';

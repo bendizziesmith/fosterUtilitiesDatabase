@@ -573,3 +573,23 @@ describe('buildAuditPrefill — a new audit starts from the person’s (or spare
       .toBe('Dom Oliver · WV72 OZL');
   });
 });
+
+describe('buildAuditTargets — vans off the road', () => {
+  const emp = [
+    { id: 'e1', full_name: 'Dom Oliver', role: 'Ganger', assigned_vehicle_id: 'v1' },
+  ];
+  const veh = [
+    { id: 'v1', registration_number: 'YE24 TNL' },
+    { id: 'v2', registration_number: 'WV72 OZL' },
+    { id: 'v3', registration_number: 'OW72 SKV' },
+  ];
+  it('leaves an off-the-road spare van out of pickers and audit lists', () => {
+    const t = buildAuditTargets(emp, veh, new Set(['v2']));
+    expect(t.spareVans.map((v) => v.reg)).toEqual(['OW72 SKV']);
+  });
+  it('marks a person whose van is off the road, and leaves them out of audit lists', () => {
+    const t = buildAuditTargets(emp, veh, new Set(['v1']));
+    expect(t.gangs[0].label).toBe('Dom Oliver · YE24 TNL (off the road)');
+    expect(auditTargetsOf(t).map((x) => x.key)).toEqual(['van:v3', 'van:v2']); // spare vans by reg
+  });
+});

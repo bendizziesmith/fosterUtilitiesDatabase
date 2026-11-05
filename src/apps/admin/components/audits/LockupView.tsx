@@ -26,7 +26,7 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
   /** kit_items with status 'spare' */
   plantKit: KitItemOverview[];
   onAddPlantKit: () => void;
-  onPlantAction: (k: KitItemOverview, action: 'update' | 'assign' | 'remove') => void;
+  onPlantAction: (k: KitItemOverview, action: 'update' | 'assign' | 'remove' | 'delete') => void;
 }) {
   const [lines, setLines] = useState<LockupRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -182,7 +182,8 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
                       <div className="flex gap-2">
                         <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => onPlantAction(k, 'update')}>Update</button>
                         <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => onPlantAction(k, 'assign')}>Assign</button>
-                        <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => onPlantAction(k, 'remove')}>Remove</button>
+                        <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => onPlantAction(k, 'remove')}>Scrapped (keep record)</button>
+                        <button type="button" className={`${btn.small} flex-1 md:flex-none text-red-700`} onClick={() => onPlantAction(k, 'delete')}>Delete completely</button>
                       </div>
                     </li>
                   ))}

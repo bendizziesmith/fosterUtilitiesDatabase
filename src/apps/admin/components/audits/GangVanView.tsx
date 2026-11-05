@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info, Warehouse, Undo2 } from 'lucide-react';
+import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info, Warehouse, Undo2, LogOut, CircleOff } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, lastAudit, listHolderHistory, loadTeam, loadHolderRecord, setCarried, holderParams } from '../../../../lib/siteAuditService';
 import { TeamMember, whoName } from '../../../../lib/siteAuditLogic';
@@ -12,6 +12,8 @@ import { AddKitSheet } from './AddKitSheet';
 import { FileLink } from './FileLink';
 import { ChangeVanSheet } from './ChangeVanSheet';
 import { ReturnSheet } from './LockupSheets';
+import { TakeOutSheet, OffRoadSheet, BackOnRoadSheet } from './FleetSheets';
+import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
@@ -27,7 +29,16 @@ export const GangVanView: React.FC = () => {
   const key = normaliseKey(params.get('key') ?? '');
   const ref = useAuditRef();
   const { deletions, reload: reloadDeletions } = useFileDeletions();
-  const target = ref.allTargets.find((t) => t.key === key);
+  // an off-the-road spare van is left out of the pickers, but its own page still opens
+  const target = useMemo<AuditTarget | undefined>(() => {
+    const found = ref.allTargets.find((t) => t.key === key);
+    if (found) return found;
+    const van = key.startsWith('van:') ? ref.vehicles.find((v) => v.id === key.slice(4)) : undefined;
+    return van ? {
+      key, label: `${van.registration_number} · spare van (off the road)`, kind: 'spare_van', personId: null, personName: null,
+      isGanger: false, vehicleId: van.id, reg: van.registration_number, teamName: van.registration_number, offRoad: true,
+    } : undefined;
+  }, [ref.allTargets, ref.vehicles, key]);
   const person = target?.kind === 'person' ? ref.employees.find((e) => e.id === target.personId) ?? null : null;
 
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -46,6 +57,7 @@ export const GangVanView: React.FC = () => {
   const [issues, setIssues] = useState<PersonIssue[]>([]);
   const [issueMoves, setIssueMoves] = useState<LockupMovementRow[]>([]);
   const [returning, setReturning] = useState<PersonIssue | null>(null);
+  const [fleet, setFleet] = useState<'takeout' | 'offroad' | 'backon' | null>(null);
 
   const load = useCallback(async () => {
     if (!target) return;
@@ -92,6 +104,10 @@ export const GangVanView: React.FC = () => {
   if (!target) return <ErrorNote message="That person or van wasn’t found. They may have been removed in Employee or Vehicle Management." />;
 
   const vanChange = person ? ref.vanChanges.find((c) => c.employeeId === person.id) ?? null : null;
+  const offRoadRow = target.vehicleId ? ref.offRoadRows.find((r) => r.vehicle_id === target.vehicleId) ?? null : null;
+  /** everything on this van: its spare-van kit and kit held by the people on it */
+  const kitOnVan = target.vehicleId ? allKit.filter((k) => k.status === 'on_van' && k.vehicle_id === target.vehicleId) : [];
+  const vanOnlyLabel = target.reg ? `${target.reg}` : '';
   const notCarried = new Set(lists.filter((l) => !l.carried).map((l) => l.kit_type_id));
   const expired = (kit ?? []).filter((k) => k.expiry_status === 'expired').length;
   const dueSoon = (kit ?? []).filter((k) => k.expiry_status === 'due_soon').length;
@@ -103,6 +119,13 @@ export const GangVanView: React.FC = () => {
       {flash && (
         <div role="status" className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
           <Info className="h-4 w-4 mt-0.5 flex-shrink-0" /><span>{flash}</span>
+        </div>
+      )}
+      {offRoadRow && (
+        <div role="status" className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <span className="flex items-start gap-2"><CircleOff className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span><strong>Off the road</strong> since {formatDate(offRoadRow.off_at.slice(0, 10))}: {offRoadRow.reason === 'broken_down' ? 'broken down' : offRoadRow.reason === 'leaving_fleet' ? 'leaving the fleet' : 'other'}{offRoadRow.note ? ` · ${offRoadRow.note}` : ''} ({whoName(offRoadRow.off_actor_name)})</span></span>
+          <button type="button" className={`${btn.secondary} sm:ml-auto`} onClick={() => setFleet('backon')}>Back on the road</button>
         </div>
       )}
       {vanChange && (
@@ -153,6 +176,16 @@ export const GangVanView: React.FC = () => {
             {person && (
               <button type="button" className={btn.secondary} onClick={() => setChanging('change')}>
                 <ArrowLeftRight className="h-4 w-4" />Change van
+              </button>
+            )}
+            {person && target.vehicleId && (
+              <button type="button" className={btn.secondary} onClick={() => setFleet('takeout')}>
+                <LogOut className="h-4 w-4" />Take out of van
+              </button>
+            )}
+            {target.vehicleId && !offRoadRow && (
+              <button type="button" className={btn.secondary} onClick={() => setFleet('offroad')}>
+                <CircleOff className="h-4 w-4" />Van off the road
               </button>
             )}
           </div>
@@ -304,6 +337,19 @@ export const GangVanView: React.FC = () => {
             load();
           }}
         />
+      )}
+      {fleet === 'takeout' && person && target.vehicleId && (
+        <TakeOutSheet person={{ id: person.id, name: person.full_name }} vanLabel={target.label} vehicleId={target.vehicleId}
+          kitCount={kit?.length ?? 0} auditors={ref.auditors} onClose={() => setFleet(null)}
+          onDone={(m) => { setFleet(null); setFlash(m); ref.reload(); load(); }} />
+      )}
+      {fleet === 'offroad' && target.vehicleId && (
+        <OffRoadSheet vehicleId={target.vehicleId} vanLabel={vanOnlyLabel} kit={kitOnVan} targets={ref.allTargets} auditors={ref.auditors}
+          onClose={() => setFleet(null)} onDone={(m) => { setFleet(null); setFlash(m); ref.reload(); load(); }} />
+      )}
+      {fleet === 'backon' && target.vehicleId && (
+        <BackOnRoadSheet vehicleId={target.vehicleId} vanLabel={vanOnlyLabel} auditors={ref.auditors}
+          onClose={() => setFleet(null)} onDone={() => { setFleet(null); setFlash(`${vanOnlyLabel} is back on the road.`); ref.reload(); load(); }} />
       )}
       {returning && person && (
         <ReturnSheet issue={returning} personId={person.id} personName={person.full_name} auditors={ref.auditors}

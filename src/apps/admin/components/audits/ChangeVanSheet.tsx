@@ -163,7 +163,7 @@ export function ChangeVanSheet({
               {oldVehicleId && (
                 <label className={radio(mode === 'take_all')}>
                   <input type="radio" name="mode" checked={mode === 'take_all'} onChange={() => setMode('take_all')} className="mt-1 h-4 w-4" />
-                  <span><span className="block text-sm font-semibold text-slate-900">Take my kit with me</span>
+                  <span><span className="block text-sm font-semibold text-slate-900">Swap vans: my kit goes with me into the new van, and the old van becomes a spare van</span>
                     <span className="block text-xs text-slate-600">Everything {person.name} holds goes with them (and any spare-van kit in the new van becomes theirs).</span></span>
                 </label>
               )}
