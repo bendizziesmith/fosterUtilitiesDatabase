@@ -1,5 +1,6 @@
 import { AuditChecklistItem, KitItemOverview, KitType } from '../../../../lib/supabase';
 import { holderLabel } from '../../../../lib/siteAuditLogic';
+import { hsDateKind } from '../../../../lib/hsDatesLogic';
 import type { UpdateTarget } from './UpdateItemSheet';
 
 export const monthsForType = (kitTypes: KitType[], typeId: string | null | undefined) =>
@@ -27,7 +28,7 @@ export function ppeUpdateTarget(
   where: string,
   checklist: AuditChecklistItem[]
 ): UpdateTarget {
-  const c = checklist.find((x) => (p.checklist_item_id ? x.id === p.checklist_item_id : x.section === 'ppe' && x.name === p.item_name));
+  const c = checklist.find((x) => (p.checklist_item_id ? x.id === p.checklist_item_id : x.section !== 'other' && x.name === p.item_name));
   return {
     source: 'ppe',
     itemId: p.id,
@@ -38,5 +39,6 @@ export function ppeUpdateTarget(
     expiryDate: p.expiry_date,
     months: c?.service_interval_months ?? null,
     dateLabel: c?.date_label ?? null,
+    hsKind: hsDateKind(c),
   };
 }

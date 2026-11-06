@@ -13,7 +13,7 @@ vi.mock('./supabase', () => {
       } else call.filters.push([op, ...args]);
       return b;
     };
-    ['insert', 'update', 'upsert', 'delete', 'select', 'eq', 'order', 'gt'].forEach((m) => (b[m] = chain(m)));
+    ['insert', 'update', 'upsert', 'delete', 'select', 'eq', 'in', 'order', 'gt'].forEach((m) => (b[m] = chain(m)));
     b.then = (resolve: (r: unknown) => unknown) => resolve({ data: [], error: null });
     return b;
   };
@@ -80,6 +80,22 @@ describe('Yard Lockup service', () => {
       ['kit_lockup_stock', 'update', { low_at: 5 }],
       ['kit_lockup_stock', 'update', { low_at: null }],
     ]);
+  });
+
+  it('adds a dated H&S item with its date tested and expiry (round 15)', async () => {
+    await svc.addToLockup({ section: 'hs', checklistItemId: 'c-fire', customName: null, quantity: 2, note: null, isTest: true, actorId: 'a1', testedDate: '2026-11-06', expiryDate: '2027-11-06' });
+    expect(H.calls[0]).toMatchObject({ rpc: 'kit_lockup_add', payload: { p_checklist_item_id: 'c-fire', p_tested_date: '2026-11-06', p_expiry_date: '2027-11-06', p_is_test: true } });
+  });
+
+  it('returns a dated item with the dates it is asked for', async () => {
+    await svc.returnDatedToLockup({ stockId: 's1', employeeId: 'e1', quantity: 1, testedDate: null, expiryDate: '2028-03-01', note: null, actorId: 'a1' });
+    expect(H.calls[0]).toMatchObject({ rpc: 'kit_lockup_return_dated', payload: { p_stock_id: 's1', p_employee_id: 'e1', p_quantity: 1, p_tested_date: null, p_expiry_date: '2028-03-01' } });
+  });
+
+  it('one "Low at" for an item kept as several lines: set on every line', async () => {
+    await svc.setLockupLowAt(['s1', 's2'], 4);
+    expect(H.calls[0]).toMatchObject({ table: 'kit_lockup_stock', op: 'update', payload: { low_at: 4 } });
+    expect(H.calls[0].filters).toContainEqual(['in', 'id', ['s1', 's2']]);
   });
 
   it('refuses a negative "Low at" before calling the database', async () => {

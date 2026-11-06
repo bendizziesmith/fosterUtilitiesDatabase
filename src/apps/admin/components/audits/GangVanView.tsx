@@ -16,6 +16,7 @@ import { TakeOutSheet, OffRoadSheet, BackOnRoadSheet, DeletePlantSheet } from '.
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
+import { hsDateKind } from '../../../../lib/hsDatesLogic';
 import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
 import { DownloadMenu } from './DownloadMenu';
 import { downloadOneHolder } from '../../../../lib/auditDownloads';
@@ -364,7 +365,7 @@ export const GangVanView: React.FC = () => {
           onClose={() => setFleet(null)} onDone={() => { setFleet(null); setFlash(`${vanOnlyLabel} is back on the road.`); ref.reload(); load(); }} />
       )}
       {returning && person && (
-        <ReturnSheet issue={returning} personId={person.id} personName={person.full_name} auditors={ref.auditors}
+        <ReturnSheet issue={returning} kind={hsDateKind(ref.checklist.find((c) => c.id === returning.checklist_item_id))} personId={person.id} personName={person.full_name} auditors={ref.auditors}
           onClose={() => setReturning(null)} onSaved={() => { setReturning(null); setFlash(`${returning.item_name} returned to the Yard Lockup.`); load(); }} />
       )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={ref.auditors} onClose={() => setUpdating(null)} onSaved={done} />}

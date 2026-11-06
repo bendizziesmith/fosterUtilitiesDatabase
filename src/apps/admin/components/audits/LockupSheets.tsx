@@ -6,16 +6,20 @@ import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { TargetPicker } from './TargetPicker';
 import { AuditChecklistItem, Auditor } from '../../../../lib/supabase';
-import { AuditTarget, todayISO } from '../../../../lib/siteAuditLogic';
+import { AuditTarget, ServiceExpiryState, todayISO } from '../../../../lib/siteAuditLogic';
+import { hsDateKind, hsStartDates, issueCopiesDates, issueLineOptions, lineForExpiry, lockupDatesError, lockupLineLabel, HsDateKind } from '../../../../lib/hsDatesLogic';
+import { HsDateFields } from './HsDateFields';
 import { LockupSection, lockupExpiryFromHat } from '../../../../lib/lockupLogic';
-import { addToLockup, issueFromLockup, returnToLockup, LockupRow } from '../../../../lib/lockupService';
+import { addToLockup, issueFromLockup, returnDatedToLockup, returnToLockup, LockupRow } from '../../../../lib/lockupService';
 
 const SECTION_NAME: Record<LockupSection, string> = { ppe: 'PPE', hs: 'Health & safety', other: 'Other' };
 const wholeNumber = (v: string) => v.replace(/\D/g, '');
 
 /** "+ Add to lockup": an audit-sheet line (PPE / H&S / Other) or a new item, with a quantity. */
-export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantKit }: {
+export function AddLockupSheet({ checklist, lines = [], auditors, onClose, onSaved, onPlantKit }: {
   checklist: AuditChecklistItem[]; auditors: Auditor[]; onClose: () => void; onSaved: () => void;
+  /** what is in the lockup now: says when a dated item adds to an existing line */
+  lines?: LockupRow[];
   /** plant kit with a plant no is added as kit (Add plant kit) */
   onPlantKit?: () => void;
 }) {
@@ -27,6 +31,14 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // the 4 dated H&S items need their dates (round 15)
+  const kind: HsDateKind | null = itemId === '__new' ? null : hsDateKind(checklist.find((c) => c.id === itemId));
+  const [dates, setDates] = useState<ServiceExpiryState>(() => hsStartDates(kind, todayISO()));
+  const pickItem = (id: string) => {
+    setItemId(id);
+    setDates(hsStartDates(id === '__new' ? null : hsDateKind(checklist.find((c) => c.id === id)), todayISO()));
+  };
+  const sameLine = kind && dates.expiry ? lineForExpiry(lines.filter((l) => l.is_test === TEST_MODE), itemId, dates.expiry) : null;
 
   const save = async () => {
     setError(null);
@@ -34,6 +46,8 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
     const n = Number(qty);
     if (!Number.isInteger(n) || n < 1) return setError('Enter how many (1 or more).');
     if (itemId === '__new' && !name.trim()) return setError('Type the name of the new item.');
+    const datesError = lockupDatesError(kind, dates.serviceDate, dates.expiry);
+    if (datesError) return setError(datesError);
     setBusy(true);
     try {
       await addToLockup({
@@ -44,6 +58,8 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
         note: note.trim() || null,
         isTest: TEST_MODE,
         actorId,
+        testedDate: kind === 'tested' ? dates.serviceDate : null,
+        expiryDate: kind ? dates.expiry : null,
       });
       onSaved();
     } catch (e) {
@@ -68,7 +84,7 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
       )}
       <Field label="Item">
         {(id) => (
-          <select id={id} className={inputCls} value={itemId} onChange={(e) => setItemId(e.target.value)}>
+          <select id={id} className={inputCls} value={itemId} onChange={(e) => pickItem(e.target.value)}>
             {(['ppe', 'hs', 'other'] as LockupSection[]).map((s) => (
               <optgroup key={s} label={SECTION_NAME[s]}>
                 {checklist.filter((c) => c.section === s).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -92,6 +108,16 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
           <Field label="New item name">{(id) => <input id={id} className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ear plugs" />}</Field>
         </div>
       )}
+      {kind && (
+        <>
+          <HsDateFields kind={kind} state={dates} onChange={setDates} />
+          <p className="text-sm text-slate-700" role="status">
+            {sameLine
+              ? `Adds to the ${sameLine.quantity} already in with this expiry.`
+              : 'Stock with a different expiry is kept as its own line.'}
+          </p>
+        </>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Quantity">{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
         <Field label="Note (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. sizes M/L" />}</Field>
@@ -101,10 +127,20 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantK
   );
 }
 
-/** "Issue to": a person, a quantity, and for dated PPE the "Date on hat" (sets their PPE expiry). */
-export function IssueSheet({ line, people, auditors, onClose, onSaved }: {
-  line: LockupRow; people: AuditTarget[]; auditors: Auditor[]; onClose: () => void; onSaved: (msg: string) => void;
+/**
+ * "Issue to": a person, a quantity, and for dated PPE the "Date on hat" (sets their PPE expiry).
+ * Dated H&S (round 15): pick which line (oldest expiry pre-selected); its dates go onto the person's record.
+ */
+export function IssueSheet({ line: first, lines, people, auditors, onClose, onSaved }: {
+  line: LockupRow;
+  /** every line of a dated H&S item (one per expiry) */
+  lines?: LockupRow[];
+  people: AuditTarget[]; auditors: Auditor[]; onClose: () => void; onSaved: (msg: string) => void;
 }) {
+  const options = first.date_kind ? issueLineOptions(lines?.length ? lines : [first]) : [first];
+  const [lineId, setLineId] = useState(options[0]?.id ?? first.id);
+  const line = options.find((l) => l.id === lineId) ?? first;
+  const copies = issueCopiesDates(line);
   const { actorId, setActorId } = useActor(auditors);
   const [personKey, setPersonKey] = useState('');
   const [qty, setQty] = useState('1');
@@ -126,7 +162,8 @@ export function IssueSheet({ line, people, auditors, onClose, onSaved }: {
     setBusy(true);
     try {
       await issueFromLockup({ stockId: line.id, employeeId: person.personId, quantity: n, dateOnHat: dated ? hat || null : null, note: note.trim() || null, actorId });
-      onSaved(`${n} × ${line.name} issued to ${person.personName}.${newExpiry ? ` Their ${line.name.toLowerCase()} expiry is now ${formatDate(newExpiry)}.` : ''}`);
+      const expiryNow = newExpiry ?? copies?.expiryDate ?? null;
+      onSaved(`${n} × ${line.name} issued to ${person.personName}.${expiryNow ? ` Their ${line.name.toLowerCase()} expiry is now ${formatDate(expiryNow)}.` : ''}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not issue.');
       setBusy(false);
@@ -134,10 +171,19 @@ export function IssueSheet({ line, people, auditors, onClose, onSaved }: {
   };
 
   return (
-    <Sheet title={`Issue ${line.name}`} subtitle={`${line.quantity} in the Yard Lockup`} onClose={onClose}
+    <Sheet title={`Issue ${line.name}`} subtitle={`${first.date_kind ? options.reduce((n, l) => n + l.quantity, 0) : line.quantity} in the Yard Lockup`} onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><button type="button" className={btn.primary} disabled={busy || line.quantity < 1} onClick={save}>{busy ? 'Saving…' : 'Issue'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <TargetPicker label="Issue to" targets={people} value={personKey} onChange={setPersonKey} placeholder="Type a name…" />
+      {first.date_kind && options.length > 0 && (
+        <Field label="Which one?" hint={copies?.expiryDate ? `Their record gets ${copies.testedDate ? `date tested ${formatDate(copies.testedDate)} and ` : ''}expiry ${formatDate(copies.expiryDate)}` : 'This line has no dates'}>
+          {(id) => (
+            <select id={id} className={inputCls} value={lineId} onChange={(e) => setLineId(e.target.value)}>
+              {options.map((l) => <option key={l.id} value={l.id}>{lockupLineLabel(l)}</option>)}
+            </select>
+          )}
+        </Field>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Quantity" hint={`Up to ${line.quantity}`} reserveHint={2}>{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
         {dated && (
@@ -153,12 +199,18 @@ export function IssueSheet({ line, people, auditors, onClose, onSaved }: {
   );
 }
 
-/** "Return to lockup" from a person's page: only up to what they still hold from it. */
-export function ReturnSheet({ issue, personId, personName, auditors, onClose, onSaved }: {
+/**
+ * "Return to lockup" from a person's page: only up to what they still hold from it.
+ * Dated H&S (round 15): asks for the dates; it goes on the line with that expiry.
+ */
+export function ReturnSheet({ issue, kind = null, personId, personName, auditors, onClose, onSaved }: {
   issue: { stock_id: string; item_name: string; quantity_held: number };
+  /** the 4 dated H&S items: which dates to ask for */
+  kind?: HsDateKind | null;
   personId: string; personName: string; auditors: Auditor[]; onClose: () => void; onSaved: () => void;
 }) {
   const { actorId, setActorId } = useActor(auditors);
+  const [dates, setDates] = useState<ServiceExpiryState>(() => hsStartDates(kind, todayISO()));
   const [qty, setQty] = useState(String(issue.quantity_held));
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -169,9 +221,15 @@ export function ReturnSheet({ issue, personId, personName, auditors, onClose, on
     const n = Number(qty);
     if (!Number.isInteger(n) || n < 1) return setError('Enter how many (1 or more).');
     if (n > issue.quantity_held) return setError(`${personName} only holds ${issue.quantity_held} from the Yard Lockup.`);
+    const datesError = lockupDatesError(kind, dates.serviceDate, dates.expiry);
+    if (datesError) return setError(datesError);
     setBusy(true);
     try {
-      await returnToLockup({ stockId: issue.stock_id, employeeId: personId, quantity: n, note: note.trim() || null, actorId });
+      if (kind) {
+        await returnDatedToLockup({ stockId: issue.stock_id, employeeId: personId, quantity: n, testedDate: kind === 'tested' ? dates.serviceDate : null, expiryDate: dates.expiry, note: note.trim() || null, actorId });
+      } else {
+        await returnToLockup({ stockId: issue.stock_id, employeeId: personId, quantity: n, note: note.trim() || null, actorId });
+      }
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not return it.');
@@ -183,6 +241,7 @@ export function ReturnSheet({ issue, personId, personName, auditors, onClose, on
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><button type="button" className={btn.primary} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Return to lockup'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
       <Field label="Quantity" hint={`Up to ${issue.quantity_held}`}>{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
+      {kind && <HsDateFields kind={kind} state={dates} onChange={setDates} />}
       <Field label="Note (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />}</Field>
       <ErrorNote message={error} />
     </Sheet>

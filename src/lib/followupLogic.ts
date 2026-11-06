@@ -26,6 +26,7 @@ export interface AuditResolution { fails_resolved: number; expired_resolved: num
 
 const ACTION: Record<string, string> = {
   reserviced: 'Re-serviced',
+  tested: 'Tested',
   replaced: 'Replaced',
   expiry_updated: 'Updated',
   assigned: 'Moved',

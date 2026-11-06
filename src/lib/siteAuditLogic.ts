@@ -219,7 +219,8 @@ export function buildTeam(input: {
 // ---------------------------------------------------------------- Needs attention
 
 export interface AttentionRow {
-  source: 'kit' | 'ppe';
+  /** lockup = dated H&S stock in the Yard Lockup (round 15) */
+  source: 'kit' | 'ppe' | 'lockup';
   item_id: string;
   item_name: string;
   plant_no: string | null;
@@ -235,6 +236,8 @@ export interface AttentionRow {
   holder_employee_id?: string | null;
   holder_name?: string | null;
   holder_kind?: 'person' | 'spare_van' | 'none';
+  /** lockup rows: how many on that line */
+  quantity?: number;
 }
 
 export type AttentionTab = 'all' | 'expired' | 'due';

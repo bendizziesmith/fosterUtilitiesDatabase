@@ -26,6 +26,7 @@ import { listOffRoad, getAuditInterval } from './fleetService';
 import { auditSchedule } from './fleetLogic';
 import { buildAuditTargets, auditTargetsOf, todayISO } from './siteAuditLogic';
 import { lowStockLines } from './lockupLogic';
+import { lockupAttentionRows } from './hsDatesLogic';
 import { getWeekEndingSunday } from './timesheetUtils';
 
 /**
@@ -336,7 +337,8 @@ export async function getDashboardCounts(): Promise<{
   } catch {
     auditsDue = 0;
   }
-  const a = (check(att) ?? []) as { expiry_status: string }[];
+  // dated H&S stock in the Yard Lockup counts as well (round 15)
+  const a = [...((check(att) ?? []) as { expiry_status: string }[]), ...lockupAttentionRows(lockup, todayISO())];
   const k = (check(kit) ?? []) as { status: string }[];
   return {
     expired: a.filter((r) => r.expiry_status === 'expired').length,
@@ -433,6 +435,27 @@ export async function updateAttentionItem(input: UpdateItemInput): Promise<void>
     p_service_date: input.serviceDate || null,
     p_expiry_date: input.expiryDate || null,
     p_plant_no: input.plantNo,
+    p_certificate_path: input.certificatePath,
+    p_note: input.note,
+    p_actor_id: input.actorId,
+  }));
+}
+
+/** Update sheet for the 4 dated H&S items: fire extinguisher Tested / Replaced, the others Replaced (round 15). */
+export async function updateHsItem(input: {
+  ppeId: string;
+  action: 'tested' | 'replaced';
+  testedDate: string | null;
+  expiryDate: string;
+  certificatePath: string | null;
+  note: string | null;
+  actorId: string;
+}): Promise<void> {
+  check(await supabase.rpc('audit_update_hs', {
+    p_ppe_id: input.ppeId,
+    p_action: input.action,
+    p_tested_date: input.testedDate,
+    p_expiry_date: input.expiryDate,
     p_certificate_path: input.certificatePath,
     p_note: input.note,
     p_actor_id: input.actorId,

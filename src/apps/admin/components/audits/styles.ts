@@ -48,6 +48,7 @@ export const KIT_STATUS_LABEL: Record<string, string> = {
 export const ACTION_LABEL: Record<string, string> = {
   added: 'Added',
   reserviced: 'Re-serviced',
+  tested: 'Tested',
   replaced: 'Replaced with new',
   expiry_updated: 'New expiry',
   audit_seen: 'Seen in audit',

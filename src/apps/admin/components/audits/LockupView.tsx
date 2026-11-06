@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Minus, Plus, Search, ChevronDown, Send } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listLockup, adjustLockupChecked, setLockupNote, setLockupLowAt, LockupRow } from '../../../../lib/lockupService';
-import { LOCKUP_SECTIONS, LockupSection, LockupSort, sortLockup, isLowStock } from '../../../../lib/lockupLogic';
+import { LOCKUP_SECTIONS, LockupSection, LockupSort, sortLockup, lowStockLines } from '../../../../lib/lockupLogic';
+import { groupLockupLines, lockupGroupKey, LockupGroup } from '../../../../lib/hsDatesLogic';
 import { Auditor, KitItemOverview } from '../../../../lib/supabase';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { ActorPicker } from './ActorPicker';
@@ -18,13 +19,15 @@ type SectionKey = LockupSection | 'kit';
  * (PPE → Health & safety → Kit → Other). Stock lines are counted; Kit is the
  * plant-numbered items whose status is Yard Lockup.
  */
-export function LockupView({ auditors, people, plantKit, onPlantAction }: {
+export function LockupView({ auditors, people, plantKit, onPlantAction, onChanged }: {
   auditors: Auditor[];
   /** people kit can be issued to: gangers first, then other staff */
   people: AuditTarget[];
   /** kit_items with status 'spare' */
   plantKit: KitItemOverview[];
   onPlantAction: (k: KitItemOverview, action: 'update' | 'assign' | 'delete') => void;
+  /** after an issue: Needs attention and low stock on the page reload */
+  onChanged?: () => void;
 }) {
   const [lines, setLines] = useState<LockupRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +39,7 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
   const [busyLine, setBusyLine] = useState<string | null>(null);
   /** a count changed before "Who's doing this?" was picked: ask, then do it */
   const [asking, setAsking] = useState<{ line: LockupRow; delta: number } | null>(null);
-  const [issuing, setIssuing] = useState<LockupRow | null>(null);
+  const [issuing, setIssuing] = useState<{ line: LockupRow; lines?: LockupRow[] } | null>(null);
   const { actorId, setActorId } = useActor(auditors);
 
   const load = useCallback(async () => {
@@ -52,13 +55,15 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
   }, [load]);
 
   const term = q.trim().toLowerCase();
-  const lowCount = (lines ?? []).filter((l) => isLowStock(l.quantity, l.low_at)).length;
+  // low stock adds up every line of an item (dated H&S items have one line per expiry)
+  const lowKeys = useMemo(() => new Set(lowStockLines(lines ?? []).map(lockupGroupKey)), [lines]);
+  const lowCount = lowKeys.size;
   const shown = useMemo(
     () => sortLockup(
-      (lines ?? []).filter((l) => (!lowOnly || isLowStock(l.quantity, l.low_at)) && (!term || [l.name, l.note].some((v) => v?.toLowerCase().includes(term)))),
+      (lines ?? []).filter((l) => (!lowOnly || lowKeys.has(lockupGroupKey(l))) && (!term || [l.name, l.note].some((v) => v?.toLowerCase().includes(term)))),
       sort
     ),
-    [lines, term, sort, lowOnly]
+    [lines, term, sort, lowOnly, lowKeys]
   );
   const kitShown = useMemo(() => {
     if (lowOnly) return [];
@@ -66,7 +71,8 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
     return [...f].sort((a, b) => a.type_sort - b.type_sort || (a.plant_no ?? '').localeCompare(b.plant_no ?? '', undefined, { numeric: true }));
   }, [plantKit, term, lowOnly]);
 
-  const count = (s: SectionKey) => (s === 'kit' ? kitShown.length : shown.filter((l) => l.section === s).length);
+  const groups = useMemo(() => groupLockupLines(shown), [shown]);
+  const count = (s: SectionKey) => (s === 'kit' ? kitShown.length : groups.filter((g) => g.section === s).length);
   const toggle = (s: SectionKey) => setClosed((c) => {
     const n = new Set(c);
     if (n.has(s)) n.delete(s); else n.add(s);
@@ -91,13 +97,14 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
     }
   };
 
-  const saveLowAt = async (l: LockupRow, raw: string) => {
+  const saveLowAt = async (g: LockupGroup<LockupRow>, raw: string) => {
     const v = raw.trim() === '' ? null : Number(raw);
-    if (v === (l.low_at ?? null)) return;
+    if (v === (g.low_at ?? null) && g.lines.every((l) => (l.low_at ?? null) === v)) return;
     setError(null);
+    const ids = g.lines.map((l) => l.id);
     try {
-      await setLockupLowAt(l.id, v);
-      setLines((ls) => (ls ?? []).map((x) => (x.id === l.id ? { ...x, low_at: v } : x)));
+      await setLockupLowAt(ids, v);
+      setLines((ls) => (ls ?? []).map((x) => (ids.includes(x.id) ? { ...x, low_at: v } : x)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save “Low at”.');
     }
@@ -181,47 +188,78 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
               )
             ) : (
               (() => {
-                const rows = shown.filter((l) => l.section === s.key);
+                const rows = groups.filter((g) => g.section === s.key);
                 if (!rows.length) return <p className="px-5 py-5 text-base sm:text-sm text-slate-600">{lowOnly ? 'Nothing low here.' : term ? 'Nothing matches.' : 'Nothing counted here yet. Use “Add to lockup”.'}</p>;
                 return (
                   <ul className="divide-y divide-slate-200">
-                    {rows.map((l) => (
-                      <li key={l.id} className={`px-4 sm:px-5 py-3 grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_auto_6.5rem_minmax(10rem,1fr)_auto] gap-3 items-center ${isLowStock(l.quantity, l.low_at) ? 'bg-amber-50' : ''}`}>
-                        <div className="min-w-0">
-                          <p className="text-base sm:text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
-                            {l.name}<TestTag show={l.is_test} />
-                            {isLowStock(l.quantity, l.low_at) && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-100 text-amber-800 border-amber-200">Low stock</span>
-                            )}
-                          </p>
-                          {l.expected_qty && <p className="text-xs text-slate-600">{l.expected_qty}</p>}
-                        </div>
-                        <div className="flex items-center gap-2" role="group" aria-label={`${l.name} count`}>
-                          <button type="button" aria-label={`One fewer ${l.name}`} disabled={busyLine === l.id || l.quantity < 1} onClick={() => bump(l, -1)}
-                            className="min-h-[44px] min-w-[44px] rounded-lg border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                            <Minus className="h-4 w-4" />
-                          </button>
-                          <span className={`min-w-[3rem] text-center text-lg font-bold ${l.quantity === 0 ? 'text-red-700' : 'text-slate-900'}`} aria-live="polite">{l.quantity}</span>
-                          <button type="button" aria-label={`One more ${l.name}`} disabled={busyLine === l.id} onClick={() => bump(l, 1)}
-                            className="min-h-[44px] min-w-[44px] rounded-lg border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-                            <Plus className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <Field label="Low at" hint="Blank = no warning">
+                    {rows.map((g) => {
+                      const low = lowKeys.has(g.key);
+                      const l = g.lines[0];
+                      const lowAt = (
+                        <Field label="Low at" hint={g.dateKind ? 'All lines added up' : 'Blank = no warning'}>
                           {(id) => (
-                            <input id={id} inputMode="numeric" className={inputCls} defaultValue={l.low_at ?? ''} placeholder="—"
+                            <input id={id} inputMode="numeric" className={inputCls} defaultValue={g.low_at ?? ''} placeholder="—"
                               onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); }}
-                              onBlur={(e) => saveLowAt(l, e.target.value)} />
+                              onBlur={(e) => saveLowAt(g, e.target.value)} />
                           )}
                         </Field>
-                        <Field label="Note">
-                          {(id) => <input id={id} className={inputCls} defaultValue={l.note ?? ''} placeholder="e.g. sizes" onBlur={(e) => saveNote(l, e.target.value)} />}
-                        </Field>
-                        <button type="button" className={btn.secondary} disabled={l.quantity < 1} onClick={() => setIssuing(l)}>
-                          <Send className="h-4 w-4" />Issue to
-                        </button>
-                      </li>
-                    ))}
+                      );
+                      const title = (
+                        <div className="min-w-0">
+                          <p className="text-base sm:text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">
+                            {g.name}<TestTag show={l.is_test} />
+                            {low && <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-100 text-amber-800 border-amber-200">Low stock</span>}
+                          </p>
+                          {l.expected_qty && <p className="text-xs text-slate-600">{l.expected_qty}</p>}
+                          {g.dateKind && <p className="text-sm text-slate-700">{g.total} in total</p>}
+                        </div>
+                      );
+                      if (g.dateKind) {
+                        const inStock = g.lines.filter((x) => x.quantity > 0);
+                        return (
+                          <li key={g.key} className={`px-4 sm:px-5 py-3 space-y-3 ${low ? 'bg-amber-50' : ''}`}>
+                            <div className="grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_6.5rem_auto] gap-3 items-center">
+                              {title}
+                              {lowAt}
+                              <button type="button" className={btn.secondary} disabled={g.total < 1} onClick={() => setIssuing({ line: l, lines: g.lines })}>
+                                <Send className="h-4 w-4" />Issue to
+                              </button>
+                            </div>
+                            {inStock.length === 0 ? (
+                              <p className="text-sm text-slate-600">None in stock. Use “Add to lockup” with the dates.</p>
+                            ) : (
+                              <ul className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-200" aria-label={`${g.name} by expiry`}>
+                                {inStock.map((x) => (
+                                  <li key={x.id} className="px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                                    <div className="flex-1 min-w-[10rem]">
+                                      <p className="text-base sm:text-sm font-semibold text-slate-900">
+                                        {x.expiry_date ? `Expires ${formatDate(x.expiry_date)}` : 'No dates'}
+                                      </p>
+                                      {g.dateKind === 'tested' && x.tested_date && <p className="text-xs text-slate-600">Tested {formatDate(x.tested_date)}</p>}
+                                    </div>
+                                    <ExpiryPill expiry={x.expiry_date} />
+                                    <Count line={x} busy={busyLine === x.id} onBump={(d) => bump(x, d)} />
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={g.key} className={`px-4 sm:px-5 py-3 grid grid-cols-1 lg:grid-cols-[minmax(10rem,1fr)_auto_6.5rem_minmax(10rem,1fr)_auto] gap-3 items-center ${low ? 'bg-amber-50' : ''}`}>
+                          {title}
+                          <Count line={l} busy={busyLine === l.id} onBump={(d) => bump(l, d)} />
+                          {lowAt}
+                          <Field label="Note">
+                            {(id) => <input id={id} className={inputCls} defaultValue={l.note ?? ''} placeholder="e.g. sizes" onBlur={(e) => saveNote(l, e.target.value)} />}
+                          </Field>
+                          <button type="button" className={btn.secondary} disabled={l.quantity < 1} onClick={() => setIssuing({ line: l })}>
+                            <Send className="h-4 w-4" />Issue to
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 );
               })()
@@ -244,9 +282,27 @@ export function LockupView({ auditors, people, plantKit, onPlantAction }: {
         </Sheet>
       )}
       {issuing && (
-        <IssueSheet line={issuing} people={people} auditors={auditors} onClose={() => setIssuing(null)}
-          onSaved={(m) => { setIssuing(null); setFlash(m); load(); }} />
+        <IssueSheet line={issuing.line} lines={issuing.lines} people={people} auditors={auditors} onClose={() => setIssuing(null)}
+          onSaved={(m) => { setIssuing(null); setFlash(m); load(); onChanged?.(); }} />
       )}
+    </div>
+  );
+}
+
+/** − count + for one lockup line (never below 0). */
+function Count({ line, busy, onBump }: { line: LockupRow; busy: boolean; onBump: (delta: number) => void }) {
+  const label = line.expiry_date ? `${line.name} expiring ${formatDate(line.expiry_date)}` : line.name;
+  return (
+    <div className="flex items-center gap-2" role="group" aria-label={`${label} count`}>
+      <button type="button" aria-label={`One fewer ${label}`} disabled={busy || line.quantity < 1} onClick={() => onBump(-1)}
+        className="min-h-[44px] min-w-[44px] rounded-lg border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+        <Minus className="h-4 w-4" />
+      </button>
+      <span className={`min-w-[3rem] text-center text-lg font-bold ${line.quantity === 0 ? 'text-red-700' : 'text-slate-900'}`} aria-live="polite">{line.quantity}</span>
+      <button type="button" aria-label={`One more ${label}`} disabled={busy} onClick={() => onBump(1)}
+        className="min-h-[44px] min-w-[44px] rounded-lg border border-slate-300 bg-white text-slate-700 flex items-center justify-center hover:bg-slate-50 disabled:opacity-40 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+        <Plus className="h-4 w-4" />
+      </button>
     </div>
   );
 }

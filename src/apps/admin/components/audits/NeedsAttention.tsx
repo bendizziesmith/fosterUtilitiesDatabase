@@ -21,7 +21,7 @@ function StatusBadge({ r }: { r: AttentionRow }) {
 }
 
 /**
- * Needs attention (Kit & Plant): kit, PPE and H&S that are expired or due within 30 days, kit with
+ * Needs attention (Kit & Plant): kit, PPE and H&S (also dated H&S stock in the Yard Lockup) that are expired or due within 30 days, kit with
  * no home, then low stock in the Yard Lockup. Compact rows; Update / Swap on the right (full width on phone).
  */
 export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
@@ -40,8 +40,9 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
 
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
   const sectionOf = (r: AttentionRow) =>
-    r.source === 'kit' ? 'Kit' : refData.checklist.find((c) => c.name === r.item_name)?.section === 'hs' ? 'H&S' : 'PPE';
+    r.source === 'lockup' ? 'H&S' : r.source === 'kit' ? 'Kit' : refData.checklist.find((c) => c.name === r.item_name)?.section === 'hs' ? 'H&S' : 'PPE';
   const where = (r: AttentionRow) => {
+    if (r.source === 'lockup') return `Yard Lockup · ${r.quantity ?? 0} in stock`;
     if (r.source === 'kit' && r.kit_status === 'spare') return 'Yard Lockup';
     if (r.holder_kind === 'person') return `${r.holder_name ?? 'Unknown'} · ${r.vehicle_reg ?? 'no van'}`;
     if (r.holder_kind === 'spare_van') return `${r.vehicle_reg ?? 'Van'} · spare van`;
@@ -120,7 +121,9 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
                   )}
                 </div>
                 <div className="grid grid-flow-col auto-cols-fr sm:flex gap-2 sm:flex-shrink-0">
-                  {r.expiry_status === 'no_home'
+                  {r.source === 'lockup' ? (
+                    <button type="button" className={btn.small} onClick={() => navigate('/kit?view=lockup')}>Open Yard Lockup</button>
+                  ) : r.expiry_status === 'no_home'
                     ? <button type="button" className={btn.small} onClick={() => setHoming(r)}>Find a home</button>
                     : <button type="button" className={btn.small} onClick={() => openUpdate(r)}>Update</button>}
                   {swappable && <button type="button" className={btn.small} onClick={() => setSwapping(kitFor(r))}>Swap</button>}

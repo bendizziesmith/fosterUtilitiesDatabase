@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { applyStockDelta, LockupMovement, LockupSection } from './lockupLogic';
+import type { HsDateKind } from './hsDatesLogic';
 
 /**
  * Data access for the Yard Lockup (kit_lockup_* tables; admin-only RLS).
@@ -27,6 +28,10 @@ export interface LockupRow {
   updated_at: string;
   /** "Low at": warn when the count is at or below this; null = no warning */
   low_at: number | null;
+  /** the 4 dated H&S items (round 15): one line per expiry; tested_date for the fire extinguisher */
+  tested_date: string | null;
+  expiry_date: string | null;
+  date_kind: HsDateKind | null;
 }
 
 export interface LockupMovementRow extends LockupMovement {
@@ -82,6 +87,9 @@ export async function addToLockup(input: {
   note: string | null;
   isTest: boolean;
   actorId: string | null;
+  /** required for the 4 dated H&S items */
+  testedDate?: string | null;
+  expiryDate?: string | null;
 }): Promise<string> {
   return check(await supabase.rpc('kit_lockup_add', {
     p_section: input.section,
@@ -91,6 +99,8 @@ export async function addToLockup(input: {
     p_note: input.note,
     p_is_test: input.isTest,
     p_actor_id: input.actorId,
+    p_tested_date: input.testedDate ?? null,
+    p_expiry_date: input.expiryDate ?? null,
   })) as string;
 }
 
@@ -139,12 +149,35 @@ export async function returnToLockup(input: {
   })) as number;
 }
 
+/** Return a dated H&S item with its dates: it goes on the line with that expiry (a new line if new). */
+export async function returnDatedToLockup(input: {
+  stockId: string;
+  employeeId: string;
+  quantity: number;
+  testedDate: string | null;
+  expiryDate: string | null;
+  note: string | null;
+  actorId: string | null;
+}): Promise<number> {
+  return check(await supabase.rpc('kit_lockup_return_dated', {
+    p_stock_id: input.stockId,
+    p_employee_id: input.employeeId,
+    p_quantity: input.quantity,
+    p_tested_date: input.testedDate,
+    p_expiry_date: input.expiryDate,
+    p_note: input.note,
+    p_actor_id: input.actorId,
+  })) as number;
+}
+
 export async function setLockupNote(stockId: string, note: string | null): Promise<void> {
   check(await supabase.from('kit_lockup_stock').update({ note: note?.trim() || null }).eq('id', stockId));
 }
 
 /** "Low at" for a stock line; null clears the warning. */
-export async function setLockupLowAt(stockId: string, lowAt: number | null): Promise<void> {
+export async function setLockupLowAt(stockId: string | string[], lowAt: number | null): Promise<void> {
   if (lowAt !== null && (!Number.isInteger(lowAt) || lowAt < 0)) throw new Error('“Low at” must be a whole number, 0 or more.');
-  check(await supabase.from('kit_lockup_stock').update({ low_at: lowAt }).eq('id', stockId));
+  // an item kept as several lines (one per expiry) has one "Low at", set on every line
+  const ids = Array.isArray(stockId) ? stockId : [stockId];
+  check(await supabase.from('kit_lockup_stock').update({ low_at: lowAt }).in('id', ids));
 }

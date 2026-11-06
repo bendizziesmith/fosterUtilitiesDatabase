@@ -5,8 +5,9 @@ import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, moveKit, listAttention } from '../../../../lib/siteAuditService';
 import { listLockup, LockupRow } from '../../../../lib/lockupService';
 import { lowStockLines } from '../../../../lib/lockupLogic';
+import { lockupAttentionRows } from '../../../../lib/hsDatesLogic';
 import { kitPageTiles } from '../../../../lib/dashboardLogic';
-import { sortAttention, AttentionRow } from '../../../../lib/siteAuditLogic';
+import { sortAttention, AttentionRow, todayISO } from '../../../../lib/siteAuditLogic';
 import { NeedsAttention } from './NeedsAttention';
 import { searchTargets, sortKit, summariseKitByType, summariseKitByHolder, holderKey, holderLabel, AuditTarget, KitSort } from '../../../../lib/siteAuditLogic';
 import { Auditor } from '../../../../lib/supabase';
@@ -51,6 +52,7 @@ export const KitPlantPage: React.FC = () => {
   const [kit, setKit] = useState<KitItemOverview[] | null>(null);
   const [attention, setAttention] = useState<AttentionRow[] | null>(null);
   const [lowStock, setLowStock] = useState<LockupRow[]>([]);
+  const [lockupLines, setLockupLines] = useState<LockupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
   const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
@@ -66,8 +68,13 @@ export const KitPlantPage: React.FC = () => {
     try {
       const [k, a, lockup] = await Promise.all([listKit(), listAttention(), listLockup().catch(() => [] as LockupRow[])]);
       setKit(k);
-      setAttention(sortAttention(a));
+      // dated H&S stock in the Yard Lockup that is expired or due within 30 days (round 15)
+      const lockupRows: AttentionRow[] = lockupAttentionRows(lockup, todayISO()).map((r) => ({
+        ...r, plant_no: null, kit_status: null, vehicle_id: null, vehicle_reg: null, ganger_name: null, holder_kind: 'none',
+      }));
+      setAttention(sortAttention([...a, ...lockupRows]));
       setLowStock(lowStockLines(lockup));
+      setLockupLines(lockup);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load kit.');
       setKit([]);
@@ -206,6 +213,7 @@ export const KitPlantPage: React.FC = () => {
                 auditors={auditors}
                 people={ref.allTargets.filter((t) => t.kind === 'person')}
                 plantKit={all.filter((k) => k.status === 'spare')}
+                onChanged={load}
                 onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : setDeleting(k))}
               />
             </div>
@@ -224,7 +232,7 @@ export const KitPlantPage: React.FC = () => {
       )}
 
       {addingStock && (
-        <AddLockupSheet checklist={ref.checklist} auditors={auditors} onClose={() => setAddingStock(false)}
+        <AddLockupSheet checklist={ref.checklist} lines={lockupLines} auditors={auditors} onClose={() => setAddingStock(false)}
           onSaved={() => { setAddingStock(false); setLockupVersion((v) => v + 1); load(); }}
           onPlantKit={() => { setAddingStock(false); setAdding('lockup'); }} />
       )}

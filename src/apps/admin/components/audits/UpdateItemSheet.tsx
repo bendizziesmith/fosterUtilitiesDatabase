@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { Sheet, Field, ErrorNote, ExpiryPill } from './ui';
 import { btn, inputCls } from './styles';
-import { updateAttentionItem, uploadAuditFile } from '../../../../lib/siteAuditService';
+import { updateAttentionItem, updateHsItem, uploadAuditFile } from '../../../../lib/siteAuditService';
+import { HsDateKind, hsStartDates, hsUpdateFields, hsUpdateInput, hsUpdateOptions } from '../../../../lib/hsDatesLogic';
+import { HsDateFields } from './HsDateFields';
 import { todayISO, autoExpiry, applyExpiry, AuditTarget, ServiceExpiryState } from '../../../../lib/siteAuditLogic';
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 import { DestinationFields, ReplacementFields, SwapNoteAndPreview } from './SwapFields';
@@ -25,9 +27,11 @@ export interface UpdateTarget {
   months?: number | null;
   /** label of the date the interval counts from, e.g. "Date on hat" */
   dateLabel?: string | null;
+  /** the 4 dated H&S items: fire extinguisher 'tested', first aid / eye wash / burns kit 'expiry' */
+  hsKind?: HsDateKind | null;
 }
 
-type What = 'reserviced' | 'replaced' | 'swap';
+type What = 'reserviced' | 'replaced' | 'swap' | 'tested';
 
 export function UpdateItemSheet({
   target,
@@ -43,10 +47,11 @@ export function UpdateItemSheet({
   onSaved: () => void;
 }) {
   const isPpe = target.source === 'ppe';
+  const hsKind = isPpe ? target.hsKind ?? null : null;
   const months = target.months ?? null;
-  const [what, setWhat] = useState<What>(isPpe ? 'replaced' : 'reserviced');
+  const [what, setWhat] = useState<What>(hsKind === 'tested' ? 'tested' : isPpe ? 'replaced' : 'reserviced');
   const startDate = isPpe ? null : todayISO();
-  const [dates, setDates] = useState<ServiceExpiryState>({
+  const [dates, setDates] = useState<ServiceExpiryState>(() => hsKind ? hsStartDates(hsKind, todayISO()) : {
     serviceDate: startDate,
     expiry: autoExpiry(startDate, months),
     expiryManual: false,
@@ -59,7 +64,9 @@ export function UpdateItemSheet({
   const swapSave = useRef<((actorId: string | null) => Promise<void>) | null>(null);
   const { actorId, setActorId } = useActor(auditors);
 
-  const options: { value: What; label: string; hint: string }[] = isPpe
+  const options: { value: What; label: string; hint: string }[] = hsKind
+    ? hsUpdateOptions(hsKind)
+    : isPpe
     ? [{ value: 'replaced', label: 'Replaced with new', hint: 'New PPE issued, enter the new expiry' }]
     : [
         { value: 'reserviced', label: 'Re-serviced', hint: 'Same item, new service and expiry dates' },
@@ -86,6 +93,20 @@ export function UpdateItemSheet({
       }
       return;
     }
+    if (hsKind) {
+      const r = hsUpdateInput(hsKind, what === 'tested' ? 'tested' : 'replaced', { testedDate: dates.serviceDate, expiry: dates.expiry });
+      if (!r.ok) return setError(r.error);
+      setSaving(true);
+      try {
+        const certificatePath = file ? await uploadAuditFile(file, 'certificates', { reg: target.where }) : null;
+        await updateHsItem({ ppeId: target.itemId, action: r.action, testedDate: r.testedDate, expiryDate: r.expiryDate, certificatePath, note: note.trim() || null, actorId });
+        onSaved();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save the update.');
+        setSaving(false);
+      }
+      return;
+    }
     if (!dates.expiry) {
       setError('Enter the new expiry date.');
       return;
@@ -97,7 +118,7 @@ export function UpdateItemSheet({
       await updateAttentionItem({
         source: target.source,
         itemId: target.itemId,
-        action: what,
+        action: what === 'replaced' ? 'replaced' : 'reserviced',
         serviceDate: isPpe ? null : dates.serviceDate,
         expiryDate: dates.expiry,
         plantNo: isPpe ? null : plantNo.trim() || null,
@@ -155,16 +176,18 @@ export function UpdateItemSheet({
         <InlineSwap item={target.swapItem} targets={targets} months={months} register={(fn) => (swapSave.current = fn)} />
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {isPpe && !months ? (
-              <Field label="New expiry date">
-                {(id) => <input id={id} type="date" className={inputCls} value={dates.expiry ?? ''} onChange={(e) => setDates(applyExpiry(dates, e.target.value || null))} />}
-              </Field>
-            ) : (
+          {hsKind ? (
+            <HsDateFields kind={hsKind} state={dates} onChange={setDates} expiryLabel={hsUpdateFields(hsKind).expiryLabel} />
+          ) : isPpe && !months ? (
+            <Field label="New expiry date">
+              {(id) => <input id={id} type="date" className={inputCls} value={dates.expiry ?? ''} onChange={(e) => setDates(applyExpiry(dates, e.target.value || null))} />}
+            </Field>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <ServiceExpiryFields state={dates} onChange={setDates} months={months}
                 serviceLabel={target.dateLabel ?? 'Service date'} expiryLabel="New expiry date" />
-            )}
-          </div>
+            </div>
+          )}
           {!isPpe && (
             <Field label="Plant no" hint={what === 'replaced' ? 'Change it if the new item has a different number' : undefined}>
               {(id) => <input id={id} className={inputCls} value={plantNo} onChange={(e) => setPlantNo(e.target.value)} />}

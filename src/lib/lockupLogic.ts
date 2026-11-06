@@ -93,9 +93,24 @@ export const lockupExpiryFromHat = (dateOnHat: string | null, months: number | n
 export const isLowStock = (quantity: number, lowAt: number | null | undefined): boolean =>
   lowAt !== null && lowAt !== undefined && quantity <= lowAt;
 
-/** The low lines, in audit-sheet order. Used for the dashboard badge and Needs attention. */
+/**
+ * The low items, in audit-sheet order. Used for the dashboard badge and Needs attention.
+ * An item kept as several lines (dated H&S, one line per expiry) is one item: its lines are
+ * added up and checked against the highest "Low at" (round 15). Returns one row per item with
+ * the total as its quantity.
+ */
 export function lowStockLines<T extends LockupLine>(lines: T[]): T[] {
-  return sortLockup(lines.filter((l) => isLowStock(l.quantity, l.low_at)), 'sheet');
+  const groups = new Map<string, T>();
+  for (const l of lines) {
+    const key = l.checklist_item_id ?? l.id;
+    const g = groups.get(key);
+    if (!g) groups.set(key, { ...l });
+    else {
+      g.quantity += l.quantity;
+      if (l.low_at !== null && l.low_at !== undefined) g.low_at = Math.max(g.low_at ?? 0, l.low_at);
+    }
+  }
+  return sortLockup([...groups.values()].filter((l) => isLowStock(l.quantity, l.low_at)), 'sheet');
 }
 
 export const lowStockBadgeText = (n: number): string | null => (n > 0 ? `${n} low stock` : null);
