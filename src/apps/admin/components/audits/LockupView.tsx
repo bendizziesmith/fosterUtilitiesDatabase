@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Minus, Plus, Search, ChevronDown, Send, Wrench, PackagePlus } from 'lucide-react';
+import { Minus, Plus, Search, ChevronDown, Send } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listLockup, adjustLockupChecked, setLockupNote, setLockupLowAt, LockupRow } from '../../../../lib/lockupService';
 import { LOCKUP_SECTIONS, LockupSection, LockupSort, sortLockup, isLowStock } from '../../../../lib/lockupLogic';
-import { AuditChecklistItem, Auditor, KitItemOverview } from '../../../../lib/supabase';
+import { Auditor, KitItemOverview } from '../../../../lib/supabase';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
-import { AddLockupSheet, IssueSheet } from './LockupSheets';
-import { ExpiryPill, ErrorNote, Field, TestTag } from './ui';
+import { IssueSheet } from './LockupSheets';
+import { ExpiryPill, ErrorNote, Field, Sheet, TestTag } from './ui';
 import { btn, card, inputCls, formatDate } from './styles';
 
 type SectionKey = LockupSection | 'kit';
@@ -18,14 +18,12 @@ type SectionKey = LockupSection | 'kit';
  * (PPE → Health & safety → Kit → Other). Stock lines are counted; Kit is the
  * plant-numbered items whose status is Yard Lockup.
  */
-export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKit, onPlantAction }: {
-  checklist: AuditChecklistItem[];
+export function LockupView({ auditors, people, plantKit, onPlantAction }: {
   auditors: Auditor[];
   /** people kit can be issued to: gangers first, then other staff */
   people: AuditTarget[];
   /** kit_items with status 'spare' */
   plantKit: KitItemOverview[];
-  onAddPlantKit: () => void;
   onPlantAction: (k: KitItemOverview, action: 'update' | 'assign' | 'remove' | 'delete') => void;
 }) {
   const [lines, setLines] = useState<LockupRow[] | null>(null);
@@ -36,7 +34,8 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
   const [closed, setClosed] = useState<Set<SectionKey>>(new Set());
   const [lowOnly, setLowOnly] = useState(false);
   const [busyLine, setBusyLine] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  /** a count changed before "Who's doing this?" was picked: ask, then do it */
+  const [asking, setAsking] = useState<{ line: LockupRow; delta: number } | null>(null);
   const [issuing, setIssuing] = useState<LockupRow | null>(null);
   const { actorId, setActorId } = useActor(auditors);
 
@@ -78,12 +77,12 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
     document.getElementById(`lockup-${s}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const bump = async (l: LockupRow, delta: number) => {
+  const bump = async (l: LockupRow, delta: number, who: string | null = actorId) => {
     setError(null);
-    if (!actorId) return setError('Pick “Who’s doing this?” first; every count is logged.');
+    if (!who) return setAsking({ line: l, delta });
     setBusyLine(l.id);
     try {
-      const qty = await adjustLockupChecked(l, delta, actorId);
+      const qty = await adjustLockupChecked(l, delta, who);
       setLines((ls) => (ls ?? []).map((x) => (x.id === l.id ? { ...x, quantity: qty } : x)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not change the count.');
@@ -118,14 +117,6 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
 
   return (
     <div className="space-y-4">
-      <section className={`${card} p-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end`}>
-        <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className={btn.primary} onClick={() => setAdding(true)}><PackagePlus className="h-4 w-4" />Add to lockup</button>
-          <button type="button" className={btn.secondary} onClick={onAddPlantKit}><Wrench className="h-4 w-4" />Add plant kit</button>
-        </div>
-      </section>
-
       <ErrorNote message={error} />
       {flash && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">{flash}</p>}
 
@@ -240,7 +231,19 @@ export function LockupView({ checklist, auditors, people, plantKit, onAddPlantKi
         );
       })}
 
-      {adding && <AddLockupSheet checklist={checklist} auditors={auditors} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} />}
+      {asking && (
+        <Sheet title="Who’s doing this?" subtitle="Every count is logged with a name." onClose={() => setAsking(null)}
+          footer={
+            <>
+              <button type="button" className={btn.secondary} onClick={() => setAsking(null)}>Cancel</button>
+              <button type="button" className={btn.primary} disabled={!actorId} onClick={() => { const a = asking; setAsking(null); bump(a.line, a.delta, actorId); }}>
+                {asking.delta > 0 ? `Add ${asking.delta}` : `Take ${-asking.delta} out`}
+              </button>
+            </>
+          }>
+          <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
+        </Sheet>
+      )}
       {issuing && (
         <IssueSheet line={issuing} people={people} auditors={auditors} onClose={() => setIssuing(null)}
           onSaved={(m) => { setIssuing(null); setFlash(m); load(); }} />

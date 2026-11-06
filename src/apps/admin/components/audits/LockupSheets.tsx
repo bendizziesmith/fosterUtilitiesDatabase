@@ -1,3 +1,4 @@
+import { Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { Sheet, Field, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE, formatDate } from './styles';
@@ -13,8 +14,10 @@ const SECTION_NAME: Record<LockupSection, string> = { ppe: 'PPE', hs: 'Health & 
 const wholeNumber = (v: string) => v.replace(/\D/g, '');
 
 /** "+ Add to lockup": an audit-sheet line (PPE / H&S / Other) or a new item, with a quantity. */
-export function AddLockupSheet({ checklist, auditors, onClose, onSaved }: {
+export function AddLockupSheet({ checklist, auditors, onClose, onSaved, onPlantKit }: {
   checklist: AuditChecklistItem[]; auditors: Auditor[]; onClose: () => void; onSaved: () => void;
+  /** plant kit with a plant no is added as kit (Add plant kit) */
+  onPlantKit?: () => void;
 }) {
   const { actorId, setActorId } = useActor(auditors);
   const [itemId, setItemId] = useState(checklist[0]?.id ?? '__new');
@@ -50,9 +53,19 @@ export function AddLockupSheet({ checklist, auditors, onClose, onSaved }: {
   };
 
   return (
-    <Sheet title="Add to Yard Lockup" subtitle="Stock counted by quantity. For plant kit with a plant no, use “Add plant kit”." onClose={onClose}
+    <Sheet title="Add to Yard Lockup" subtitle="Stock counted by quantity." onClose={onClose}
       footer={<><button type="button" className={btn.secondary} onClick={onClose}>Cancel</button><button type="button" className={btn.primary} disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Add to lockup'}</button></>}>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
+      {onPlantKit && (
+        <button type="button" onClick={onPlantKit}
+          className="w-full min-h-[48px] flex items-center gap-3 px-3 rounded-lg border border-slate-200 bg-slate-50 text-left hover:bg-slate-100 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <Wrench className="h-5 w-5 text-blue-600 flex-shrink-0" aria-hidden="true" />
+          <span>
+            <span className="block text-base sm:text-sm font-semibold text-slate-900">Add plant kit</span>
+            <span className="block text-sm text-slate-600">Kit with a plant no (saw, digger…) goes in as its own item</span>
+          </span>
+        </button>
+      )}
       <Field label="Item">
         {(id) => (
           <select id={id} className={inputCls} value={itemId} onChange={(e) => setItemId(e.target.value)}>

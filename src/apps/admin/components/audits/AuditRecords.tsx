@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ClipboardList, Download, Loader2, Pencil } from 'lucide-react';
+import { ChevronRight, ClipboardList, Download, Loader2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listAuditSummaries, listResolutions } from '../../../../lib/siteAuditService';
 import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
-import { Field, ErrorNote, TestTag, Sheet, ResolutionBadgeList } from './ui';
+import { Field, ErrorNote, TestTag, ResolutionBadgeList } from './ui';
 import { resolutionBadges, AuditResolution } from '../../../../lib/followupLogic';
 import { btn, card, inputCls, formatDate } from './styles';
 import { downloadAllAudits } from '../../../../lib/auditDownloads';
-import { getCompanyName, setCompanyName } from '../../../../lib/fleetService';
 import { loadAuditReferenceData } from '../../../../lib/siteAuditService';
 import { Auditor } from '../../../../lib/supabase';
 import { useActor } from './useActor';
@@ -45,12 +44,9 @@ export const AuditRecords: React.FC = () => {
   const [by, setBy] = useState('');
   const [zip, setZip] = useState<string | null>(null);
   const [resolutions, setResolutions] = useState<Map<string, AuditResolution>>(new Map());
-  const [company, setCompany] = useState('Foster Utilities');
-  const [editCompany, setEditCompany] = useState<string | null>(null);
   const [auditorList, setAuditorList] = useState<Auditor[]>([]);
   const { actor } = useActor(auditorList);
   useEffect(() => {
-    getCompanyName().then(setCompany).catch(() => undefined);
     loadAuditReferenceData().then((r) => setAuditorList(r.auditors)).catch(() => undefined);
   }, []);
 
@@ -129,34 +125,9 @@ export const AuditRecords: React.FC = () => {
           </button>
           {zip && <span role="status" className="text-base sm:text-sm text-slate-600">{zip}</span>}
         </div>
-        <button type="button" onClick={() => setEditCompany(company)}
-          className="inline-flex items-center gap-1.5 min-h-[44px] text-sm font-semibold text-slate-700 hover:underline cursor-pointer rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
-          <Pencil className="h-4 w-4" aria-hidden="true" />Company name on PDFs: {company}
-        </button>
       </div>
 
       <ErrorNote message={error} />
-
-      {editCompany !== null && (
-        <Sheet title="Company name on PDFs" onClose={() => setEditCompany(null)}
-          footer={
-            <>
-              <button type="button" className={btn.secondary} onClick={() => setEditCompany(null)}>Cancel</button>
-              <button type="button" className={btn.primary} onClick={async () => {
-                try {
-                  await setCompanyName(editCompany, actor?.name ?? null);
-                  setCompany(editCompany.trim());
-                  setEditCompany(null);
-                } catch (e) {
-                  setError(e instanceof Error ? e.message : 'Could not save.');
-                  setEditCompany(null);
-                }
-              }}>Save</button>
-            </>
-          }>
-          <Field label="Company name">{(id) => <input id={id} className={inputCls} value={editCompany} onChange={(e) => setEditCompany(e.target.value)} />}</Field>
-        </Sheet>
-      )}
 
       <section className={card}>
         {rows === null ? (

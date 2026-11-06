@@ -18,7 +18,7 @@ import {
 import { draftsInProgress } from './draftLogic';
 import type { AuditResolution, LineFollowup } from './followupLogic';
 import { preparePhoto, StampInfo } from './photoUpload';
-import { photoPath } from './photoLogic';
+import { photoPath, TakenAtSource } from './photoLogic';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
 import { listLockup } from './lockupService';
 import { listOffRoad, getAuditInterval } from './fleetService';
@@ -495,14 +495,17 @@ export async function uploadAuditPhoto(
   folder: 'lines' | 'certificates' | 'photos',
   stamp: StampInfo = {},
   /** told when the photo is ready and the upload starts (for "Preparing… / Uploading…") */
-  onUploading?: () => void
-): Promise<{ path: string; takenAt: string }> {
-  const prepared = await preparePhoto(file, stamp);
+  onUploading?: () => void,
+  /** camera: stamped with the time taken; library: the photo's EXIF time, else "Uploaded …" */
+  source: 'camera' | 'library' = 'library'
+): Promise<{ path: string; takenAt: string; used: TakenAtSource }> {
+  const prepared = await preparePhoto(file, stamp, source);
   onUploading?.();
   const rand = Math.random().toString(36).slice(2, 8);
-  const path = prepared.ext === 'jpg' ? photoPath(folder, prepared.takenAt, rand) : `${folder}/${Date.now()}_${rand}.${prepared.ext}`;
+  // the file name records which time was stamped: …-camera-…, …-exif-…, …-uploaded-…
+  const path = prepared.ext === 'jpg' ? photoPath(folder, prepared.takenAt, `${prepared.used}-${rand}`) : `${folder}/${Date.now()}_${rand}.${prepared.ext}`;
   check(await supabase.storage.from(BUCKET).upload(path, prepared.blob, { contentType: prepared.contentType }));
-  return { path, takenAt: prepared.takenAt.toISOString() };
+  return { path, takenAt: prepared.takenAt.toISOString(), used: prepared.used };
 }
 
 export async function uploadAuditFile(file: File, folder: 'lines' | 'certificates', stamp: StampInfo = {}): Promise<string> {

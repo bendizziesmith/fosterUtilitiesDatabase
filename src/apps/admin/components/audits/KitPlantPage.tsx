@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Truck, Wrench, ChevronRight, ArrowLeft, Users, X } from 'lucide-react';
+import { Plus, Search, Truck, Wrench, ChevronRight, ArrowLeft, Users, X, PackagePlus } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, moveKit, listAttention } from '../../../../lib/siteAuditService';
 import { listLockup, LockupRow } from '../../../../lib/lockupService';
@@ -15,13 +15,14 @@ import { useActor } from './useActor';
 import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { LockupView } from './LockupView';
+import { AddLockupSheet } from './LockupSheets';
 import { DeletePlantSheet } from './FleetSheets';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { useAuditRef } from './useAuditRef';
 import { kitUpdateTarget, kitWhere, monthsForType } from './updateTargets';
-import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge, PageBar, StatTiles } from './ui';
+import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge, StatTiles } from './ui';
 import { DownloadMenu } from './DownloadMenu';
 import { downloadByHolder, downloadLockup, downloadPlantRegister } from '../../../../lib/auditDownloads';
 import { whoName } from '../../../../lib/siteAuditLogic';
@@ -53,6 +54,9 @@ export const KitPlantPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
   const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
+  /** "Add to lockup" (stock counted by quantity); the Yard Lockup tab reloads after */
+  const [addingStock, setAddingStock] = useState(false);
+  const [lockupVersion, setLockupVersion] = useState(0);
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
   const [assigning, setAssigning] = useState<{ item: KitItemOverview; back: boolean } | null>(null);
@@ -113,18 +117,22 @@ export const KitPlantPage: React.FC = () => {
   return (
     <div className="space-y-5">
       <TestModeBanner />
-      <PageBar>
+      {/* phone: Add kit full width, then Add to lockup and Download side by side; computer: one row */}
+      <div className="grid grid-cols-2 sm:flex sm:justify-end gap-2">
+          <button type="button" className={`${btn.primary} col-span-2 sm:order-last`} onClick={() => setAdding('any')}>
+            <Plus className="h-4 w-4" aria-hidden="true" />Add kit
+          </button>
+          <button type="button" className={btn.secondary} onClick={() => setAddingStock(true)}>
+            <PackagePlus className="h-4 w-4" aria-hidden="true" />Add to lockup
+          </button>
           <DownloadMenu choices={[
             { title: 'Full plant register', kind: 'pdf', hint: 'Every item by kit type: plant no, who / where, service, expiry, status', run: () => downloadPlantRegister('pdf', who) },
             { title: 'Full plant register', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadPlantRegister('csv', who) },
             { title: 'By person / spare van', kind: 'pdf', hint: 'One section each: their kit, PPE and H&S dates', run: () => downloadByHolder(who, (key) => ref.allTargets.find((t) => t.key === key)?.label ?? key) },
-            { title: 'Yard Lockup stock', kind: 'pdf', hint: 'Counts and low-stock flags', run: () => downloadLockup('pdf', who) },
+            { title: 'Yard Lockup stock', kind: 'pdf', hint: 'Counts and low-at levels', run: () => downloadLockup('pdf', who) },
             { title: 'Yard Lockup stock', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadLockup('csv', who) },
           ]} />
-          <button type="button" className={btn.primary} onClick={() => setAdding('any')}>
-            <Plus className="h-4 w-4" />Add kit
-          </button>
-      </PageBar>
+      </div>
 
       <ErrorNote message={error ?? ref.error} />
 
@@ -197,11 +205,10 @@ export const KitPlantPage: React.FC = () => {
           {view === 'lockup' ? (
             <div className="p-3 sm:p-4 bg-slate-50 rounded-b-xl">
               <LockupView
-                checklist={ref.checklist}
+                key={lockupVersion}
                 auditors={auditors}
                 people={ref.allTargets.filter((t) => t.kind === 'person')}
                 plantKit={all.filter((k) => k.status === 'spare')}
-                onAddPlantKit={() => setAdding('lockup')}
                 onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : a === 'delete' ? setDeleting(k) : setRemoving(k))}
               />
             </div>
@@ -219,6 +226,11 @@ export const KitPlantPage: React.FC = () => {
         </section>
       )}
 
+      {addingStock && (
+        <AddLockupSheet checklist={ref.checklist} auditors={auditors} onClose={() => setAddingStock(false)}
+          onSaved={() => { setAddingStock(false); setLockupVersion((v) => v + 1); load(); }}
+          onPlantKit={() => { setAddingStock(false); setAdding('lockup'); }} />
+      )}
       {adding && (
         <AddKitSheet mode="page" kitTypes={ref.kitTypes} targets={ref.allTargets} auditors={auditors} defaultWhere={adding === 'lockup' ? 'spare' : 'on_van'} onClose={() => setAdding(false)} onSaved={done}
           onTypeCreated={(t) => ref.setKitTypes((ts) => [...ts, t])} />

@@ -74,22 +74,18 @@ export interface ReportPhoto {
   takenAt: string | null;
 }
 
+/** Round 13: one column layout for every section (widths line up), plain answers and dates, no warning words. */
+const COLUMNS = ['Item', 'Fit for purpose', 'Qty / Plant no', 'Date', 'Expiry', 'Label / Gauge', 'Comment'];
 const SECTIONS: { key: ReportLine['section']; title: string; columns: string[] }[] = [
-  { key: 'ppe', title: 'PPE', columns: ['Item', 'Fit for purpose', 'Qty', 'Date', 'Expiry', 'Comment'] },
-  { key: 'hs', title: 'Health & safety', columns: ['Item', 'Fit for purpose', 'Qty', 'Expiry', 'Pressure gauge', 'Comment'] },
-  { key: 'kit', title: 'Kit', columns: ['Item', 'Fit for purpose', 'Plant no', 'Service', 'Expiry', 'Comment'] },
-  { key: 'other', title: 'Other', columns: ['Item', 'Fit for purpose', 'Qty', 'Label on', 'Comment'] },
+  { key: 'ppe', title: 'PPE', columns: COLUMNS },
+  { key: 'hs', title: 'Health & safety', columns: COLUMNS },
+  { key: 'kit', title: 'Kit', columns: COLUMNS },
+  { key: 'other', title: 'Other', columns: COLUMNS },
 ];
 
-const fitText = (r: ReportLine['result']) => (r === 'Y' ? 'Y' : r === 'N' ? 'N · FAIL' : r === 'not_carried' ? 'Not carried' : '—');
-const labelText = (v: ReportLine['label_on']) => (v === 'Y' ? 'Yes' : v === 'N' ? 'No · FAIL' : '');
-const gaugeText = (v: ReportLine['gauge']) => (v === 'green' ? 'Green' : v === 'amber' ? 'Amber · LOOK AT' : v === 'red' ? 'Red · FAIL' : '');
-function expiryText(l: ReportLine, auditDate: string) {
-  if (!l.expiry_date) return '';
-  if (l.result === 'not_carried') return longDate(l.expiry_date);
-  const { status } = getExpiryStatus(l.expiry_date, auditDate);
-  return `${longDate(l.expiry_date)}${status === 'expired' ? ' · EXPIRED' : status === 'due_soon' ? ' · DUE SOON' : ''}`;
-}
+const fitText = (r: ReportLine['result']) => (r === 'Y' ? 'Y' : r === 'N' ? 'N' : r === 'not_carried' ? 'Not carried' : '');
+const labelText = (v: ReportLine['label_on']) => (v === 'Y' ? 'Yes' : v === 'N' ? 'No' : '');
+const gaugeText = (v: ReportLine['gauge']) => (v === 'green' ? 'Green' : v === 'amber' ? 'Amber' : v === 'red' ? 'Red' : '');
 function toneOf(l: ReportLine, auditDate: string): RowTone {
   if (l.result === 'N' || l.label_on === 'N' || l.gauge === 'red') return 'fail';
   if (l.result !== 'not_carried' && l.section !== 'other') {
@@ -121,14 +117,16 @@ export function buildAuditReport(input: {
     columns: s.columns,
     rows: lines.filter((l) => l.section === s.key).map((l) => {
       const name = l.item_name + (l.expected_qty ? ` (${l.expected_qty})` : '');
-      const later = l.id ? input.since?.get(l.id) : undefined;
-      const sinceText = later ? `${later.resolved ? 'RESOLVED · ' : ''}Now: ${later.text.replace(/^Now: /, '')}` : '';
-      const comment = [l.comment ?? '', sinceText].filter(Boolean).join('\n');
-      const cells =
-        s.key === 'ppe' ? [l.item_name, fitText(l.result), l.qty ?? '', longDate(l.service_date), expiryText(l, date), comment]
-          : s.key === 'hs' ? [l.item_name, fitText(l.result), l.qty ?? '', expiryText(l, date), gaugeText(l.gauge), comment]
-            : s.key === 'kit' ? [l.item_name, fitText(l.result), l.plant_no_snapshot ?? '', longDate(l.service_date), expiryText(l, date), comment]
-              : [l.item_name, fitText(l.result), l.qty ?? '', labelText(l.label_on), comment];
+      // a record to show people: what was found, as written (the warnings live in the app)
+      const cells = [
+        l.item_name,
+        fitText(l.result),
+        (s.key === 'kit' ? l.plant_no_snapshot : l.qty) ?? '',
+        longDate(l.service_date),
+        longDate(l.expiry_date),
+        s.key === 'other' ? labelText(l.label_on) : gaugeText(l.gauge),
+        l.comment ?? '',
+      ];
       return { cells, tone: toneOf(l, date), fullName: name };
     }),
   })).filter((s) => s.rows.length > 0);
@@ -217,6 +215,8 @@ export function plantRegisterRows<T extends RegisterItem>(kit: T[], today: strin
       return {
         type: k.type_name,
         plantNo: k.plant_no ?? '',
+        serviceDate: k.service_date,
+        expiryDate: k.expiry_date,
         where: holderLabel(k),
         service: shortDate(k.service_date),
         expiry: shortDate(k.expiry_date),

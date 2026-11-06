@@ -28,22 +28,24 @@ describe('audit PDF content', () => {
     expect(report.title).toBe('Site Audit');
     expect(report.header).toEqual(expect.arrayContaining([['Audited by', 'Neil Foster'], ['Date', '05 Nov 2026'], ['Van reg', 'YE24 TNL'], ['Team', 'Dom Oliver'], ['Site', 'feerg']]));
   });
-  it('fails are marked in words, not only colour', () => {
+  it('round 13: a clean record: answers and dates as written, no warning words', () => {
     const ear = report.sections.find((s) => s.key === 'ppe')!.rows.find((r) => r.cells[0] === 'Ear defenders')!;
-    expect(ear.tone).toBe('fail');
-    expect(ear.cells).toContain('N · FAIL');
+    expect(ear.cells.slice(0, 2)).toEqual(['Ear defenders', 'N']);
     const water = report.sections.find((s) => s.key === 'other')!.rows[0];
-    expect(water.tone).toBe('fail');
-    expect(water.cells).toContain('No · FAIL');
-  });
-  it('expired / due-soon dates and the amber gauge are worded', () => {
+    expect(water.cells).toContain('No');
     const fire = report.sections.find((s) => s.key === 'hs')!.rows[0];
-    expect(fire.tone).toBe('expired');
-    expect(fire.cells.join(' ')).toMatch(/01 Oct 2026 · EXPIRED/);
-    expect(fire.cells).toContain('Amber · LOOK AT');
+    expect(fire.cells).toContain('01 Oct 2026');
+    expect(fire.cells).toContain('Amber');
     const cat = report.sections.find((s) => s.key === 'kit')!.rows[0];
-    expect(cat.tone).toBe('due_soon');
-    expect(cat.cells.join(' ')).toMatch(/20 Nov 2026 · DUE SOON/);
+    expect(cat.cells).toContain('20 Nov 2026');
+    const all = report.sections.flatMap((x) => x.rows.flatMap((r) => r.cells)).join(' | ');
+    expect(all).not.toMatch(/FAIL|EXPIRED|DUE SOON|LOOK AT|RESOLVED|Now:/);
+  });
+  it('round 13: every section has the same columns, so widths line up', () => {
+    const cols = report.sections.map((x) => x.columns.join(' | '));
+    expect(new Set(cols).size).toBe(1);
+    expect(report.sections[0].columns).toEqual(['Item', 'Fit for purpose', 'Qty / Plant no', 'Date', 'Expiry', 'Label / Gauge', 'Comment']);
+    expect(report.sections.every((x) => x.rows.every((r) => r.cells.length === 7))).toBe(true);
   });
   it('summary counts', () => {
     expect(report.summary).toEqual({ fails: 2, expired: 1, dueSoon: 1, toLookAt: 1 });
@@ -97,11 +99,11 @@ describe('CSV columns', () => {
   });
 });
 
-describe('round 12: the PDF shows the same "Now:" line', () => {
-  it('appends what has happened since to that line, with RESOLVED in words', () => {
-    const r = buildAuditReport({ audit, lines: [{ ...(lines[3] as object), id: 'cat-line' }] as never[], photos: [], slots: [], edits: [], company: 'Foster Utilities', generatedBy: 'X',
+describe('round 13: the PDF no longer carries the "Now:" line (that stays in the app)', () => {
+  it('the comment is just the comment', () => {
+    const r = buildAuditReport({ audit, lines: [{ ...(lines[3] as object), id: 'cat-line', comment: 'Bracket loose' }] as never[], photos: [], slots: [], edits: [], company: 'NSF Utilities Limited', generatedBy: 'X',
       now: new Date('2026-11-06T12:00:00Z'), since: new Map([['cat-line', { text: 'Re-serviced 05 Nov by Christina Pearson · now OK until 20 Nov 2027', resolved: true }]]) });
     const cells = r.sections.find((s) => s.key === 'kit')!.rows[0].cells;
-    expect(cells[cells.length - 1]).toBe('RESOLVED · Now: Re-serviced 05 Nov by Christina Pearson · now OK until 20 Nov 2027');
+    expect(cells[cells.length - 1]).toBe('Bracket loose');
   });
 });

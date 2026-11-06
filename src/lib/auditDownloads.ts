@@ -5,11 +5,11 @@
 import { supabase, AuditPpeItem, KitItemOverview } from './supabase';
 import { getAudit, getAuditFileUrl, listKit, listLineFollowups, loadAuditReferenceData } from './siteAuditService';
 import { followupText } from './followupLogic';
-import { listAuditEdits, getCompanyName } from './fleetService';
+import { listAuditEdits } from './fleetService';
 import { listLockup } from './lockupService';
 import { holderKey, holderLabel } from './siteAuditLogic';
 import { lockupCsv, plantRegisterCsv, longDate } from './auditReport';
-import { AuditPdfSource, HolderSheet, buildAuditPdfBlob, downloadAuditsZip, downloadCsv, downloadHolderSheetsPdf, downloadLockupPdf, downloadPlantRegisterPdf, saveBlob } from './auditPdf';
+import { PDF_COMPANY, AuditPdfSource, HolderSheet, buildAuditPdfBlob, downloadAuditsZip, downloadCsv, downloadHolderSheetsPdf, downloadLockupPdf, downloadPlantRegisterPdf, saveBlob } from './auditPdf';
 import { todayISO } from './siteAuditLogic';
 
 export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
@@ -32,14 +32,13 @@ export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
 }
 
 export async function downloadAuditPdf(id: string, generatedBy: string, onProgress?: (done: number, total: number) => void) {
-  const [src, company] = await Promise.all([fetchAuditSource(id), getCompanyName()]);
-  const { blob, filename } = await buildAuditPdfBlob(src, company, generatedBy, getAuditFileUrl, onProgress);
+  const src = await fetchAuditSource(id);
+  const { blob, filename } = await buildAuditPdfBlob(src, PDF_COMPANY, generatedBy, getAuditFileUrl, onProgress);
   saveBlob(blob, filename);
 }
 
 export async function downloadAllAudits(ids: string[], range: { from: string | null; to: string | null }, generatedBy: string, onProgress?: (done: number, total: number) => void) {
-  const company = await getCompanyName();
-  return downloadAuditsZip(ids, fetchAuditSource, company, generatedBy, getAuditFileUrl, range, onProgress);
+  return downloadAuditsZip(ids, fetchAuditSource, PDF_COMPANY, generatedBy, getAuditFileUrl, range, onProgress);
 }
 
 const fileDate = () => longDate(todayISO());
@@ -47,13 +46,13 @@ const fileDate = () => longDate(todayISO());
 export async function downloadPlantRegister(kind: 'pdf' | 'csv', generatedBy: string) {
   const kit = await listKit();
   if (kind === 'csv') return downloadCsv(plantRegisterCsv(kit), `Plant register ${fileDate()}.csv`);
-  return downloadPlantRegisterPdf(kit, await getCompanyName(), generatedBy);
+  return downloadPlantRegisterPdf(kit, PDF_COMPANY, generatedBy);
 }
 
 export async function downloadLockup(kind: 'pdf' | 'csv', generatedBy: string) {
   const lines = await listLockup();
   if (kind === 'csv') return downloadCsv(lockupCsv(lines), `Yard Lockup stock ${fileDate()}.csv`);
-  return downloadLockupPdf(lines, await getCompanyName(), generatedBy);
+  return downloadLockupPdf(lines, PDF_COMPANY, generatedBy);
 }
 
 /** One section per person / spare van: their kit, then their PPE and H&S dates. */
@@ -75,16 +74,15 @@ export function holderSheets(kit: KitItemOverview[], dates: (AuditPpeItem & { ho
 }
 
 export async function downloadByHolder(generatedBy: string, labelFor: (key: string) => string) {
-  const [kit, ppe, company] = await Promise.all([
+  const [kit, ppe] = await Promise.all([
     listKit(),
     supabase.from('audit_ppe_items').select('*').order('item_name'),
-    getCompanyName(),
   ]);
   const rows = ((ppe.error ? [] : ppe.data) as AuditPpeItem[]) ?? [];
-  return downloadHolderSheetsPdf(holderSheets(kit.filter((k) => k.status === 'on_van'), rows, labelFor), company, generatedBy);
+  return downloadHolderSheetsPdf(holderSheets(kit.filter((k) => k.status === 'on_van'), rows, labelFor), PDF_COMPANY, generatedBy);
 }
 
 /** "Download" on one person's or spare van's page. */
 export async function downloadOneHolder(title: string, heldKit: KitItemOverview[], dates: AuditPpeItem[], generatedBy: string) {
-  return downloadHolderSheetsPdf([{ title, kit: heldKit, dates }], await getCompanyName(), generatedBy, title);
+  return downloadHolderSheetsPdf([{ title, kit: heldKit, dates }], PDF_COMPANY, generatedBy, title);
 }

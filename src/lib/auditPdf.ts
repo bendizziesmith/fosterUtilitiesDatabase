@@ -6,8 +6,8 @@
  * jsPDF / autotable / jszip are loaded on first use, like the timesheet PDFs.
  * What goes in each file is in auditReport.ts (unit-tested).
  */
-import { AuditReport, RowTone, auditPdfFileName, auditsZipName, buildAuditReport, longDate, lockupRows, plantRegisterRows, RegisterItem, ReportLine } from './auditReport';
-import { expiryWording, todayISO } from './siteAuditLogic';
+import { AuditReport, auditPdfFileName, auditsZipName, buildAuditReport, longDate, lockupRows, plantRegisterRows, RegisterItem, ReportLine } from './auditReport';
+import { todayISO } from './siteAuditLogic';
 import { uniqueName } from './timesheetBulkExport';
 import { LockupLine } from './lockupLogic';
 import nsfLogoUrl from '../assets/brand/nsf-logo.png';
@@ -18,15 +18,14 @@ type RGB = [number, number, number];
 const SLATE: RGB = [15, 23, 42]; // slate-900
 const MUTED: RGB = [71, 85, 105]; // slate-600
 const LINE: RGB = [203, 213, 225]; // slate-300
+const GRID: RGB = [209, 213, 219]; // light grey grid
+const BLACK: RGB = [17, 17, 17];
 /** NSF navy, from the NSF audit sheet header (header rule, titles, table heads) */
 const NAVY: RGB = [0, 36, 92];
-const TONE: Record<Exclude<RowTone, null>, { fill: RGB; text: RGB }> = {
-  fail: { fill: [254, 226, 226], text: [153, 27, 27] },
-  expired: { fill: [254, 226, 226], text: [153, 27, 27] },
-  due_soon: { fill: [254, 243, 199], text: [146, 64, 14] },
-  look: { fill: [254, 243, 199], text: [146, 64, 14] },
-};
 const MARGIN = 40;
+
+/** The company on every PDF (logo, footer, file details): fixed, so it can never disagree with the NSF logo. */
+export const PDF_COMPANY = 'NSF Utilities Limited';
 
 // ---------------------------------------------------------------- brand (NSF Utilities Limited)
 
@@ -135,7 +134,11 @@ function footer(doc: Doc, text: string, company: string) {
 
 type AutoTable = Awaited<ReturnType<typeof newDoc>>['autoTable'];
 
-function table(doc: Doc, autoTable: AutoTable, y: number, head: string[], body: string[][], tones: RowTone[] = []): number {
+/**
+ * Round 13: a clean record. Navy header row, light grey grid, black text, generous spacing,
+ * no coloured rows and no bold warnings (the warnings live in the app).
+ */
+function table(doc: Doc, autoTable: AutoTable, y: number, head: string[], body: string[][], widths?: number[]): number {
   autoTable(doc, {
     startY: y,
     margin: { left: MARGIN, right: MARGIN, bottom: MARGIN + 20 },
@@ -144,19 +147,15 @@ function table(doc: Doc, autoTable: AutoTable, y: number, head: string[], body: 
     theme: 'grid',
     rowPageBreak: 'avoid',
     showHead: 'everyPage',
-    styles: { font: 'helvetica', fontSize: 8.5, textColor: SLATE, cellPadding: 4, lineColor: LINE, lineWidth: 0.5, overflow: 'linebreak' },
+    styles: { font: 'helvetica', fontSize: 9, textColor: BLACK, cellPadding: 6, lineColor: GRID, lineWidth: 0.5, overflow: 'linebreak', valign: 'top' },
     headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' },
-    didParseCell: (d) => {
-      if (d.section !== 'body') return;
-      const t = tones[d.row.index];
-      if (!t) return;
-      d.cell.styles.fillColor = TONE[t].fill;
-      d.cell.styles.textColor = TONE[t].text;
-      if (d.column.index === 0 || /FAIL|EXPIRED|DUE SOON|LOOK AT|LOW|Expired|Expires/.test(String(d.cell.raw))) d.cell.styles.fontStyle = 'bold';
-    },
+    columnStyles: widths ? Object.fromEntries(widths.map((w, i) => [i, { cellWidth: w }])) : {},
   });
-  return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 16;
+  return (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 18;
 }
+
+/** Audit sections share one layout (Item · Fit · Qty / Plant no · Date · Expiry · Label / Gauge · Comment): the same widths in every section. */
+const AUDIT_WIDTHS = [112, 52, 62, 62, 62, 54, 111];
 
 /** A paragraph, split across pages if long. */
 function paragraph(doc: Doc, text: string, y: number): number {
@@ -231,7 +230,7 @@ async function photoPages(doc: Doc, report: AuditReport, load: (path: string) =>
     } else {
       doc.setFont('helvetica', p.skip ? 'bold' : 'italic');
       doc.setFontSize(9);
-      doc.setTextColor(...(p.skip ? TONE.look.text : MUTED));
+      doc.setTextColor(...MUTED);
       doc.text(doc.splitTextToSize(p.skip ?? 'Photo not available (deleted)', cellW - 20) as string[], x + 10, y + imgH / 2);
     }
     doc.setFont('helvetica', 'bold');
@@ -266,19 +265,12 @@ export async function renderAuditPdf(report: AuditReport, load: (path: string) =
     doc.setTextColor(...SLATE);
     doc.text(v || '—', x + 62, y);
   });
-  y += 22;
-  const s = report.summary;
-  const parts = [`${s.fails} fail${s.fails === 1 ? '' : 's'}`, `${s.expired} expired`, `${s.dueSoon} due soon`, `${s.toLookAt} to look at`];
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(...(s.fails || s.expired ? TONE.fail.text : s.dueSoon || s.toLookAt ? TONE.look.text : [21, 128, 61] as RGB));
-  doc.text(parts.join('  ·  '), MARGIN, y);
-  y += 18;
+  y += 26;
 
   for (const sec of report.sections) {
     y = ensure(doc, y, 60);
     y = heading(doc, sec.title, y);
-    y = table(doc, autoTable, y, sec.columns, sec.rows.map((r) => r.cells), sec.rows.map((r) => r.tone));
+    y = table(doc, autoTable, y, sec.columns, sec.rows.map((r) => r.cells), AUDIT_WIDTHS);
   }
 
   y = ensure(doc, y, 50);
@@ -348,10 +340,6 @@ export async function downloadAuditsZip(ids: string[], fetchSource: (id: string)
 
 // ---------------------------------------------------------------- Kit & Plant sheets
 
-const toneOfExpiry = (expiry: string | null | undefined, today: string): RowTone => {
-  const t = expiryWording(expiry, today).tone;
-  return t === 'expired' ? 'expired' : t === 'due_soon' ? 'due_soon' : null;
-};
 const today = () => todayISO();
 const genLine = (by: string) => `Generated ${longDate(today())} ${new Date().toTimeString().slice(0, 5)} by ${by}`;
 const fileDate = () => longDate(today());
@@ -365,9 +353,9 @@ export async function renderPlantRegisterPdf<T extends RegisterItem>(kit: T[], c
     const tr = rows.filter((r) => r.type === t);
     y = ensure(doc, y, 60);
     y = heading(doc, `${t} (${tr.length})`, y);
-    y = table(doc, autoTable, y, ['Plant no', 'Who / where', 'Service', 'Expiry', 'Status', 'Expiry status'],
-      tr.map((r) => [r.plantNo || '—', r.where, r.service, r.expiry, r.status, r.expiryText]),
-      tr.map((r) => (r.tone === 'expired' ? 'expired' : r.tone === 'due_soon' ? 'due_soon' : null)));
+    y = table(doc, autoTable, y, ['Plant no', 'Who / where', 'Service', 'Expiry', 'Status'],
+      tr.map((r) => [r.plantNo || '—', r.where, longDate(r.serviceDate), longDate(r.expiryDate), r.status]),
+      [80, 175, 85, 85, 90]);
   }
   footer(doc, genLine(by), company);
   return doc;
@@ -384,16 +372,13 @@ export interface HolderSheet {
 }
 
 function holderSection(doc: Doc, autoTable: AutoTable, y: number, h: HolderSheet): number {
-  const t = today();
   y = ensure(doc, y, 80);
   y = heading(doc, h.title, y);
-  y = table(doc, autoTable, y, ['Kit', 'Plant no', 'Service', 'Expiry', 'Expiry status'],
-    h.kit.length ? h.kit.map((k) => [k.type_name, k.plant_no ?? '—', longDate(k.service_date), longDate(k.expiry_date), k.expiry_date ? expiryWording(k.expiry_date, t).text : '']) : [['No kit recorded', '', '', '', '']],
-    h.kit.map((k) => toneOfExpiry(k.expiry_date, t)));
+  y = table(doc, autoTable, y, ['Kit', 'Plant no', 'Service', 'Expiry'],
+    h.kit.length ? h.kit.map((k) => [k.type_name, k.plant_no ?? '—', longDate(k.service_date), longDate(k.expiry_date)]) : [['No kit recorded', '', '', '']],
+    [175, 120, 110, 110]);
   if (h.dates.length) {
-    y = table(doc, autoTable, y, ['PPE and H&S', 'Expiry', 'Expiry status'],
-      h.dates.map((d) => [d.item_name, longDate(d.expiry_date), d.expiry_date ? expiryWording(d.expiry_date, t).text : 'No expiry date']),
-      h.dates.map((d) => toneOfExpiry(d.expiry_date, t)));
+    y = table(doc, autoTable, y, ['PPE and H&S', 'Expiry'], h.dates.map((d) => [d.item_name, longDate(d.expiry_date)]), [295, 220]);
   }
   return y;
 }
@@ -411,14 +396,14 @@ export async function downloadHolderSheetsPdf(holders: HolderSheet[], company: s
 export async function downloadLockupPdf<T extends LockupLine>(lines: T[], company: string, by: string) {
   const { doc, autoTable, logo } = await newDoc('Yard Lockup Stock', company);
   const rows = lockupRows(lines);
-  let y = header(doc, company, 'Yard Lockup Stock', `${rows.filter((r) => r.low).length} low · ${longDate(today())}`, logo);
+  let y = header(doc, company, 'Yard Lockup Stock', longDate(today()), logo);
   for (const sec of [...new Set(rows.map((r) => r.section))]) {
     const sr = rows.filter((r) => r.section === sec);
     y = ensure(doc, y, 60);
     y = heading(doc, sec, y);
-    y = table(doc, autoTable, y, ['Item', 'Count', 'Low at', 'Low stock'],
-      sr.map((r) => [r.name, String(r.quantity), r.lowAt === null ? '' : String(r.lowAt), r.low ? 'LOW' : '']),
-      sr.map((r) => (r.low ? 'due_soon' : null)));
+    y = table(doc, autoTable, y, ['Item', 'Count', 'Low at'],
+      sr.map((r) => [r.name, String(r.quantity), r.lowAt === null ? '' : String(r.lowAt)]),
+      [315, 100, 100]);
   }
   footer(doc, genLine(by), company);
   saveBlob(blobOf(doc), `Yard Lockup stock ${fileDate()}.pdf`);

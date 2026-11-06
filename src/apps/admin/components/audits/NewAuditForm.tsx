@@ -697,12 +697,12 @@ function LineRow({
   const datedPpe = (line.section === 'ppe' || datedHs) && !!months;
   const hasExpiry = line.section === 'ppe' || isKit || datedHs;
 
-  const onPhoto = async (file: File | undefined) => {
+  const onPhoto = async (file: File | undefined, source: 'camera' | 'library') => {
     if (!file) return;
     setUploading(true);
     onError(null);
     try {
-      const { path, takenAt } = await uploadAuditPhoto(file, 'lines', stamp);
+      const { path, takenAt } = await uploadAuditPhoto(file, 'lines', stamp, undefined, source);
       onChange({ photo_path: path, photo_taken_at: takenAt });
       setPreview(URL.createObjectURL(file));
     } catch (e) {
@@ -820,11 +820,11 @@ function LineRow({
               <label className={`${btn.secondary} ${uploading ? 'opacity-50' : ''}`}>
                 <Camera className="h-4 w-4" aria-hidden="true" />
                 {uploading ? 'Uploading…' : line.photo_path ? 'Retake photo' : 'Take photo (optional)'}
-                <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+                <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0], 'camera'); e.target.value = ''; }} />
               </label>
               <label className={`${btn.secondary} ${uploading ? 'opacity-50' : ''}`}>
                 <ImagePlus className="h-4 w-4" aria-hidden="true" />Choose from library
-                <input type="file" accept="image/*" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+                <input type="file" accept="image/*" className="sr-only" onChange={(e) => { onPhoto(e.target.files?.[0], 'library'); e.target.value = ''; }} />
               </label>
             </div>
           )}

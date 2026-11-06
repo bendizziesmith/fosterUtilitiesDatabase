@@ -88,19 +88,6 @@ export async function getAuditInterval(): Promise<number> {
   return rows?.[0]?.audit_interval_months ?? 6;
 }
 
-/** Company name printed on the PDFs (default "NSF Utilities Limited"). */
-export async function getCompanyName(): Promise<string> {
-  const r = await supabase.from('audit_settings').select('company_name').limit(1);
-  const name = !r.error && (r.data as { company_name?: string }[])?.[0]?.company_name;
-  return name || 'NSF Utilities Limited';
-}
-
-export async function setCompanyName(name: string, byName: string | null): Promise<void> {
-  const n = name.trim();
-  if (!n) throw new Error('Type the company name.');
-  check(await supabase.from('audit_settings').update({ company_name: n, updated_by_name: byName, updated_at: new Date().toISOString() }).eq('id', true));
-}
-
 export async function setAuditInterval(months: number, byName: string | null): Promise<void> {
   if (!Number.isInteger(months) || months < 1 || months > 60) throw new Error('Audit every … months must be between 1 and 60.');
   check(await supabase.from('audit_settings').update({ audit_interval_months: months, updated_by_name: byName, updated_at: new Date().toISOString() }).eq('id', true));

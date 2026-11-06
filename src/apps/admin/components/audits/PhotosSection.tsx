@@ -10,7 +10,7 @@ import { btn, card, inputCls } from './styles';
 /** a photo row in the form, plus a local key and (just taken) a local preview */
 export type DraftPhoto = AuditPhotoRow & { key: string; localUrl?: string };
 
-type Pending = { key: string; slotId: string | null; file: File; status: 'preparing' | 'uploading' | 'error'; error?: string };
+type Pending = { key: string; slotId: string | null; file: File; source: 'camera' | 'library'; status: 'preparing' | 'uploading' | 'error'; error?: string };
 
 let seq = 0;
 const newKey = () => `ph:${Date.now()}:${seq++}`;
@@ -35,13 +35,13 @@ function Thumb({ photo, onOpen, label }: { photo: DraftPhoto; onOpen: () => void
 }
 
 /** Two buttons: back camera, or the photo library. */
-function PickButtons({ onFile, takeLabel = 'Take photo', disabled }: { onFile: (f: File) => void; takeLabel?: string; disabled?: boolean }) {
+function PickButtons({ onFile, takeLabel = 'Take photo', disabled }: { onFile: (f: File, source: 'camera' | 'library') => void; takeLabel?: string; disabled?: boolean }) {
   const cam = useRef<HTMLInputElement>(null);
   const lib = useRef<HTMLInputElement>(null);
-  const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pick = (source: 'camera' | 'library') => (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = '';
-    if (f) onFile(f);
+    if (f) onFile(f, source);
   };
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -51,8 +51,8 @@ function PickButtons({ onFile, takeLabel = 'Take photo', disabled }: { onFile: (
       <button type="button" className={btn.secondary} disabled={disabled} onClick={() => lib.current?.click()}>
         <ImagePlus className="h-4 w-4" aria-hidden="true" />Choose from library
       </button>
-      <input ref={cam} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={pick} />
-      <input ref={lib} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={pick} />
+      <input ref={cam} type="file" accept="image/*" capture="environment" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={pick('camera')} />
+      <input ref={lib} type="file" accept="image/*" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={pick('library')} />
     </div>
   );
 }
@@ -78,7 +78,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
     onError(null);
     try {
       const { path, takenAt } = await uploadAuditPhoto(p.file, 'photos', stamp,
-        () => setPending((xs) => xs.map((x) => (x.key === p.key ? { ...x, status: 'uploading' } : x))));
+        () => setPending((xs) => xs.map((x) => (x.key === p.key ? { ...x, status: 'uploading' } : x))), p.source);
       const slot = slots.find((s) => s.id === p.slotId);
       const localUrl = URL.createObjectURL(p.file);
       setPhotos((xs) => {
@@ -170,7 +170,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
               )}
               <div className="mt-3 space-y-2">
                 <PendingRows slotId={slot.id} />
-                <PickButtons takeLabel={mine.length ? 'Take another' : 'Take photo'} onFile={(file) => upload({ key: newKey(), slotId: slot.id, file, status: 'preparing' })} />
+                <PickButtons takeLabel={mine.length ? 'Take another' : 'Take photo'} onFile={(file, source) => upload({ key: newKey(), slotId: slot.id, file, source, status: 'preparing' })} />
               </div>
             </li>
           );
@@ -198,7 +198,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
           </ul>
         )}
         <PendingRows slotId={null} />
-        <PickButtons takeLabel="+ Add another photo" onFile={(file) => upload({ key: newKey(), slotId: null, file, status: 'preparing' })} />
+        <PickButtons takeLabel="+ Add another photo" onFile={(file, source) => upload({ key: newKey(), slotId: null, file, source, status: 'preparing' })} />
       </div>
 
       {viewing && (
@@ -209,7 +209,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
           footer={
             <>
               <button type="button" className={btn.danger} onClick={() => remove(viewing)}><Trash2 className="h-4 w-4" aria-hidden="true" />Delete photo</button>
-              <RetakeButton onFile={(file) => { const v = viewing; setViewing(null); upload({ key: newKey(), slotId: v.slot_id, file, status: 'preparing' }, v.key); if (v.path) removeDraftFile(v.path).catch(() => undefined); }} />
+              <RetakeButton onFile={(file) => { const v = viewing; setViewing(null); upload({ key: newKey(), slotId: v.slot_id, file, source: 'camera', status: 'preparing' }, v.key); if (v.path) removeDraftFile(v.path).catch(() => undefined); }} />
             </>
           }
         >

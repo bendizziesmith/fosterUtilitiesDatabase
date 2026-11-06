@@ -17,12 +17,15 @@ const report = buildAuditReport({
 });
 
 describe('renderAuditPdf', () => {
-  it('draws an A4 portrait PDF with the fails and expired dates in words, a photo page and page numbers', async () => {
+  it('round 13: a clean A4 record: plain dates, no warning words, no summary line, no coloured rows', async () => {
     const doc = await renderAuditPdf(report, async () => null);
     const text = (doc as unknown as { output: () => string }).output();
     expect(doc.getNumberOfPages()).toBe(2);
     expect(Math.round(doc.internal.pageSize.getWidth())).toBe(595);
-    for (const t of ['FOSTER UTILITIES', 'Site Audit', 'FAIL', 'EXPIRED', 'Van locked', 'Page 2 of 2', 'Generated']) expect(text).toContain(t);
+    for (const t of ['Site Audit', '01 Oct 2026', 'Ear defenders', 'Van locked', 'Page 2 of 2', 'Generated']) expect(text).toContain(t);
+    for (const t of ['FAIL', 'EXPIRED', 'DUE SOON', 'RESOLVED', 'to look at', 'due soon']) expect(text).not.toContain(t);
+    // the old red / amber row fills (254,226,226 and 254,243,199) are gone
+    expect(text).not.toMatch(/0\.996 0\.886 0\.886 rg|0\.996 0\.953 0\.78\d* rg/);
   });
 });
 
