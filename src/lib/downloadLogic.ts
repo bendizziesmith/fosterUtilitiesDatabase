@@ -26,11 +26,11 @@ export const downloadedLabel = (r: Pick<AuditDownloadRow, 'downloaded_at' | 'act
 /** Audit records filter: "Not downloaded yet". */
 export const notDownloaded = <A extends { id: string }>(audits: A[], latest: Map<string, unknown>): A[] => audits.filter((a) => !latest.has(a.id));
 
-/** "Delete CAT 1234 completely?" — the item's own plant no (or type name) goes to the database's safety check. */
+/** "Delete CAT 1234?" — the item's own plant no (or type name) goes to the database's safety check. */
 export function deleteKitConfirm(item: { type_name: string; plant_no: string | null }) {
   const name = `${item.type_name}${item.plant_no ? ` ${item.plant_no}` : ''}`;
   return {
-    question: `Delete ${name} completely?`,
+    question: `Delete ${name}?`,
     detail: 'It’s removed from Kit & Plant and its history. This can’t be undone.',
     token: item.plant_no ?? item.type_name,
   };

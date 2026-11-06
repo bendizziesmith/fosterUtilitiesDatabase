@@ -62,9 +62,9 @@ export function FileLink({
         type="button"
         aria-label={`Delete ${kind.toLowerCase()}`}
         onClick={() => setConfirming(true)}
-        className="inline-flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] rounded-lg text-slate-600 hover:bg-red-50 hover:text-red-700 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+        className={`${btn.smallDelete} min-w-[44px] sm:min-w-[36px]`}
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 className="h-4 w-4" aria-hidden="true" /><span className="sr-only sm:not-sr-only">Delete</span>
       </button>
       {confirming && (
         <Sheet
@@ -76,7 +76,7 @@ export function FileLink({
               <button type="button" className={btn.secondary} onClick={() => setConfirming(false)}>Keep it</button>
               <button
                 type="button"
-                className={btn.danger}
+                className={btn.delete}
                 disabled={busy}
                 onClick={async () => {
                   if (!actor) {

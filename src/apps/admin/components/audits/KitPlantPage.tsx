@@ -16,7 +16,7 @@ import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { LockupView } from './LockupView';
 import { AddLockupSheet } from './LockupSheets';
-import { DeletePlantSheet, ScrapSheet } from './FleetSheets';
+import { DeletePlantSheet } from './FleetSheets';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
@@ -60,7 +60,6 @@ export const KitPlantPage: React.FC = () => {
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
   const [assigning, setAssigning] = useState<{ item: KitItemOverview; back: boolean } | null>(null);
-  const [removing, setRemoving] = useState<KitItemOverview | null>(null);
   const [deleting, setDeleting] = useState<KitItemOverview | null>(null);
 
   const load = useCallback(async () => {
@@ -83,7 +82,6 @@ export const KitPlantPage: React.FC = () => {
     setUpdating(null);
     setSwapping(null);
     setAssigning(null);
-    setRemoving(null);
     setDeleting(null);
     load();
   };
@@ -189,7 +187,6 @@ export const KitPlantPage: React.FC = () => {
           onUpdate={(k) => setUpdating(kitUpdateTarget(k, ref.kitTypes))}
           onSwap={setSwapping}
           onAssign={(k, back) => setAssigning({ item: k, back })}
-          onRemove={setRemoving}
           onDelete={setDeleting}
           where={(k) => kitWhere(k)}
         />
@@ -209,7 +206,7 @@ export const KitPlantPage: React.FC = () => {
                 auditors={auditors}
                 people={ref.allTargets.filter((t) => t.kind === 'person')}
                 plantKit={all.filter((k) => k.status === 'spare')}
-                onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : a === 'delete' ? setDeleting(k) : setRemoving(k))}
+                onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : setDeleting(k))}
               />
             </div>
           ) : view === 'type' ? (
@@ -238,7 +235,6 @@ export const KitPlantPage: React.FC = () => {
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={auditors} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={auditors} onClose={() => setSwapping(null)} onSaved={done} />}
       {assigning && <AssignSheet {...assigning} targets={ref.allTargets} auditors={auditors} onClose={() => setAssigning(null)} onSaved={done} />}
-      {removing && <ScrapSheet item={removing} auditors={auditors} onClose={() => setRemoving(null)} onSaved={done} />}
       {deleting && <DeletePlantSheet item={deleting} auditors={auditors} onClose={() => setDeleting(null)} onDone={done} />}
     </div>
   );
@@ -341,7 +337,7 @@ function ByVan({ rows, changedPeople, onOpen }: { rows: ReturnType<typeof summar
 
 type Labelled = KitItemOverview & { vehicle_label: string | null };
 
-function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder, onUpdate, onSwap, onAssign, onRemove, onDelete, where }: {
+function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder, onUpdate, onSwap, onAssign, onDelete, where }: {
   typeName: string;
   months: number | null;
   initialQuery: string;
@@ -351,7 +347,6 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
   onUpdate: (k: KitItemOverview) => void;
   onSwap: (k: KitItemOverview) => void;
   onAssign: (k: KitItemOverview, back: boolean) => void;
-  onRemove: (k: KitItemOverview) => void;
   onDelete: (k: KitItemOverview) => void;
   where: (k: KitItemOverview) => string;
 }) {
@@ -379,8 +374,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
         {k.status === 'on_van' && <button type="button" className={cls} onClick={() => onSwap(k)}>Swap</button>}
         {k.status === 'spare' && <button type="button" className={cls} onClick={() => onAssign(k, false)}>Assign to van</button>}
         {k.status === 'away_for_service' && <button type="button" className={cls} onClick={() => onAssign(k, true)}>Back from service</button>}
-        {k.status !== 'on_van' && <button type="button" className={cls} onClick={() => onRemove(k)}>Scrapped (keep record)</button>}
-        <button type="button" className={`${cls} text-red-700`} onClick={() => onDelete(k)}>Delete completely</button>
+        <button type="button" className={`${btn.smallDelete} ${full ? 'flex-1' : ''}`} onClick={() => onDelete(k)}>Delete</button>
       </>
     );
   };
@@ -469,7 +463,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
                   </div>
                   <ExpiryPill expiry={k.expiry_date} />
                 </div>
-                <div className="flex gap-2 mt-3">{actions(k, true)}</div>
+                <div className="grid grid-flow-col auto-cols-fr gap-2 mt-3">{actions(k, true)}</div>
               </li>
             ))}
           </ul>

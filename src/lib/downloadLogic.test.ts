@@ -27,12 +27,12 @@ describe('"Downloaded" tick on audits (round 14)', () => {
 describe('Delete kit: a plain "are you sure?" (round 14)', () => {
   it('asks in words, and passes the item’s own plant no to the safety check', () => {
     expect(deleteKitConfirm({ type_name: 'CAT', plant_no: '1234' })).toEqual({
-      question: 'Delete CAT 1234 completely?',
+      question: 'Delete CAT 1234?',
       detail: 'It’s removed from Kit & Plant and its history. This can’t be undone.',
       token: '1234',
     });
   });
   it('no plant no: the type name is the token', () => {
-    expect(deleteKitConfirm({ type_name: 'Digger', plant_no: null })).toMatchObject({ question: 'Delete Digger completely?', token: 'Digger' });
+    expect(deleteKitConfirm({ type_name: 'Digger', plant_no: null })).toMatchObject({ question: 'Delete Digger?', token: 'Digger' });
   });
 });

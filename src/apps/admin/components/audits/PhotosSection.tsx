@@ -208,7 +208,7 @@ export function PhotosSection({ slots, photos, setPhotos, stamp, onError }: {
           onClose={() => setViewing(null)}
           footer={
             <>
-              <button type="button" className={btn.danger} onClick={() => remove(viewing)}><Trash2 className="h-4 w-4" aria-hidden="true" />Delete photo</button>
+              <button type="button" className={btn.delete} onClick={() => remove(viewing)}><Trash2 className="h-4 w-4" aria-hidden="true" />Delete photo</button>
               <RetakeButton onFile={(file) => { const v = viewing; setViewing(null); upload({ key: newKey(), slotId: v.slot_id, file, source: 'camera', status: 'preparing' }, v.key); if (v.path) removeDraftFile(v.path).catch(() => undefined); }} />
             </>
           }

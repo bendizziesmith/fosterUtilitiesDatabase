@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Download, Loader2, Check, CheckCircle2 } from 'lucide-react';
+import { Lock, Download, Loader2, Check, CheckCircle2, Trash2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { getAudit, getAuditFileUrl, listLineFollowups, listDownloads } from '../../../../lib/siteAuditService';
 import { downloadedLabel, AuditDownloadRow } from '../../../../lib/downloadLogic';
@@ -301,7 +301,7 @@ export const AuditDetail: React.FC = () => {
         {audit.status === 'submitted' && mode === 'view' && (
           <div className="flex flex-wrap gap-2 mt-4">
             <button type="button" className={btn.secondary} onClick={() => setMode('edit')}>Edit audit</button>
-            <button type="button" className={`${btn.secondary} text-red-700`} onClick={() => setMode('delete')}>Delete audit</button>
+            <button type="button" className={btn.delete} onClick={() => setMode('delete')}><Trash2 className="h-4 w-4" aria-hidden="true" />Delete audit</button>
           </div>
         )}
         {flash && <p role="status" className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">{flash}</p>}

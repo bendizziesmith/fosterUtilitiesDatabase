@@ -11,6 +11,12 @@ export const btn = {
     'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-white border border-slate-300 text-slate-800 text-base sm:text-sm font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
   small:
     'inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 rounded-lg bg-white border border-slate-300 text-slate-800 text-sm sm:text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+  /** every delete-type button: white, red text, thin grey border (like the other secondary buttons) */
+  delete:
+    'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-white border border-slate-300 text-red-700 text-base sm:text-sm font-semibold hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500',
+  /** the small row version (next to Update · Swap) */
+  smallDelete:
+    'inline-flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-3 rounded-lg bg-white border border-slate-300 text-red-700 text-sm sm:text-xs font-semibold hover:bg-red-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500',
   danger:
     'inline-flex items-center justify-center gap-2 min-h-[48px] sm:min-h-[44px] px-4 rounded-lg bg-red-600 text-white text-base sm:text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2',
 };

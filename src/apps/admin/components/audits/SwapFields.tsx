@@ -60,7 +60,6 @@ export function DestinationFields({ f, title }: { f: SwapForm; title: string }) 
     { value: 'away_for_service', label: 'Away for service' },
     { value: 'spare', label: 'Back to Yard Lockup' },
     { value: 'holder', label: 'Someone else (person or spare van)' },
-    { value: 'removed', label: 'Scrapped / remove' },
   ];
   return (
     <fieldset>

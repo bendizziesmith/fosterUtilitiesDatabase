@@ -8,7 +8,7 @@ import { LockupRow } from '../../../../lib/lockupService';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
-import { HomeSheet } from './FleetSheets';
+import { HomeSheet, DeletePlantSheet } from './FleetSheets';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { TestTag } from './ui';
 import { btn, card } from './styles';
@@ -36,6 +36,7 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
   const [homing, setHoming] = useState<AttentionRow | null>(null);
+  const [deleting, setDeleting] = useState<KitItemOverview | null>(null);
 
   const kitFor = (r: AttentionRow) => (r.source === 'kit' ? kit.find((k) => k.id === r.item_id) ?? null : null);
   const sectionOf = (r: AttentionRow) =>
@@ -58,6 +59,7 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
     setUpdating(null);
     setSwapping(null);
     setHoming(null);
+    setDeleting(null);
     onChanged();
   };
 
@@ -117,11 +119,12 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
                     <p className="text-sm text-slate-700">{where(r)}</p>
                   )}
                 </div>
-                <div className={`grid ${swappable ? 'grid-cols-2' : 'grid-cols-1'} sm:flex gap-2 sm:flex-shrink-0`}>
+                <div className="grid grid-flow-col auto-cols-fr sm:flex gap-2 sm:flex-shrink-0">
                   {r.expiry_status === 'no_home'
                     ? <button type="button" className={btn.small} onClick={() => setHoming(r)}>Find a home</button>
                     : <button type="button" className={btn.small} onClick={() => openUpdate(r)}>Update</button>}
                   {swappable && <button type="button" className={btn.small} onClick={() => setSwapping(kitFor(r))}>Swap</button>}
+                  {r.source === 'kit' && kitFor(r) && <button type="button" className={btn.smallDelete} onClick={() => setDeleting(kitFor(r))}>Delete</button>}
                 </div>
               </li>
             );
@@ -152,6 +155,7 @@ export function NeedsAttention({ rows, lowStock, kit, refData, onChanged }: {
         </div>
       )}
 
+      {deleting && <DeletePlantSheet item={deleting} auditors={refData.auditors} onClose={() => setDeleting(null)} onDone={done} />}
       {homing && (
         <HomeSheet item={{ id: homing.item_id, item_name: homing.item_name, plant_no: homing.plant_no }} targets={refData.allTargets} auditors={refData.auditors}
           onClose={() => setHoming(null)} onDone={done} />

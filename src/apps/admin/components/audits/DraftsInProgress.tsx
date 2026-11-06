@@ -71,7 +71,7 @@ export function DraftsInProgress() {
               <button type="button" className={`${btn.primary} flex-1 sm:flex-none`} onClick={() => navigate(`/audits/new?draft=${d.id}`)}>
                 Continue
               </button>
-              <button type="button" className={`${btn.secondary} flex-1 sm:flex-none`} onClick={() => setDiscarding(d)}>
+              <button type="button" className={`${btn.delete} flex-1 sm:flex-none`} onClick={() => setDiscarding(d)}>
                 <Trash2 className="h-4 w-4" />Discard draft
               </button>
             </div>
@@ -87,7 +87,7 @@ export function DraftsInProgress() {
           footer={
             <>
               <button type="button" className={btn.secondary} onClick={() => setDiscarding(null)}>Keep draft</button>
-              <button type="button" className={btn.danger} disabled={busy} onClick={onDiscard}>{busy ? 'Discarding…' : 'Discard draft'}</button>
+              <button type="button" className={btn.delete} disabled={busy} onClick={onDiscard}>{busy ? 'Discarding…' : 'Discard draft'}</button>
             </>
           }
         >
