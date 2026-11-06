@@ -3,11 +3,11 @@
  * Read-only: nothing here writes to the database.
  */
 import { supabase, AuditPpeItem, KitItemOverview } from './supabase';
-import { getAudit, getAuditFileUrl, listKit, listLineFollowups, loadAuditReferenceData } from './siteAuditService';
+import { getAudit, getAuditFileUrl, listKit, listLineFollowups, loadAuditReferenceData, recordDownloads } from './siteAuditService';
 import { followupText } from './followupLogic';
 import { listAuditEdits } from './fleetService';
 import { listLockup } from './lockupService';
-import { holderKey, holderLabel } from './siteAuditLogic';
+import { holderKey, holderLabel, whoName } from './siteAuditLogic';
 import { lockupCsv, plantRegisterCsv, longDate } from './auditReport';
 import { PDF_COMPANY, AuditPdfSource, HolderSheet, buildAuditPdfBlob, downloadAuditsZip, downloadCsv, downloadHolderSheetsPdf, downloadLockupPdf, downloadPlantRegisterPdf, saveBlob } from './auditPdf';
 import { todayISO } from './siteAuditLogic';
@@ -31,14 +31,21 @@ export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
   };
 }
 
-export async function downloadAuditPdf(id: string, generatedBy: string, onProgress?: (done: number, total: number) => void) {
+/** "Who's doing this?" (the last name used on this device), for "Generated … by …" and the Downloaded tick. */
+export type DownloadActor = { id: string; name: string } | null;
+
+export async function downloadAuditPdf(id: string, actor: DownloadActor, onProgress?: (done: number, total: number) => void) {
   const src = await fetchAuditSource(id);
-  const { blob, filename } = await buildAuditPdfBlob(src, PDF_COMPANY, generatedBy, getAuditFileUrl, onProgress);
+  const { blob, filename } = await buildAuditPdfBlob(src, PDF_COMPANY, whoName(actor?.name), getAuditFileUrl, onProgress);
   saveBlob(blob, filename);
+  // the tick on Audit records: never let a failed write stop the download itself
+  await recordDownloads([id], actor, 'single', import.meta.env.DEV).catch(() => undefined);
 }
 
-export async function downloadAllAudits(ids: string[], range: { from: string | null; to: string | null }, generatedBy: string, onProgress?: (done: number, total: number) => void) {
-  return downloadAuditsZip(ids, fetchAuditSource, PDF_COMPANY, generatedBy, getAuditFileUrl, range, onProgress);
+export async function downloadAllAudits(ids: string[], range: { from: string | null; to: string | null }, actor: DownloadActor, onProgress?: (done: number, total: number) => void) {
+  const r = await downloadAuditsZip(ids, fetchAuditSource, PDF_COMPANY, whoName(actor?.name), getAuditFileUrl, range, onProgress);
+  if (r.doneIds.length) await recordDownloads(r.doneIds, actor, 'zip', import.meta.env.DEV).catch(() => undefined);
+  return r;
 }
 
 const fileDate = () => longDate(todayISO());

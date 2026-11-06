@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ClipboardList, Download, Loader2 } from 'lucide-react';
+import { ChevronRight, ClipboardList, Download, Loader2, CheckCircle2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { listAuditSummaries, listResolutions } from '../../../../lib/siteAuditService';
+import { listAuditSummaries, listResolutions, listDownloads } from '../../../../lib/siteAuditService';
+import { downloadedLabel, latestDownloads, AuditDownloadRow } from '../../../../lib/downloadLogic';
+import { longDate } from '../../../../lib/auditReport';
 import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
 import { Field, ErrorNote, TestTag, ResolutionBadgeList } from './ui';
@@ -29,6 +31,17 @@ const vanKey = (a: SiteAuditSummary) => {
 /** the "Audited by" name; old test rows that only kept a login email show "Office login" */
 const byName = (a: SiteAuditSummary) => whoName(a.auditor_name);
 
+/** Green tick when the audit's PDF has been downloaded; the date / who on hover (title) and for screen readers. */
+function DownloadedTick({ row }: { row: AuditDownloadRow | undefined }) {
+  if (!row) return null;
+  const label = downloadedLabel(row);
+  return (
+    <span title={label} aria-label={label} className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-green-700">
+      <CheckCircle2 className="h-4 w-4" aria-hidden="true" />Downloaded <span className="font-normal text-slate-600">{longDate(row.downloaded_at).slice(0, 6)}</span>
+    </span>
+  );
+}
+
 function DraftBadge() {
   return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border bg-slate-100 text-slate-700 border-slate-200">Draft</span>;
 }
@@ -41,6 +54,9 @@ export const AuditRecords: React.FC = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [expiredOnly, setExpiredOnly] = useState(false);
+  const [notYet, setNotYet] = useState(false);
+  /** latest PDF download of each audit (the green "Downloaded" tick) */
+  const [downloads, setDownloads] = useState<Map<string, AuditDownloadRow>>(new Map());
   const [by, setBy] = useState('');
   const [zip, setZip] = useState<string | null>(null);
   const [resolutions, setResolutions] = useState<Map<string, AuditResolution>>(new Map());
@@ -52,6 +68,7 @@ export const AuditRecords: React.FC = () => {
 
   useEffect(() => {
     listResolutions().then(setResolutions).catch(() => undefined);
+    listDownloads().then((d) => setDownloads(latestDownloads(d))).catch(() => undefined);
     listAuditSummaries()
       .then(setRows)
       .catch((e) => {
@@ -69,6 +86,7 @@ export const AuditRecords: React.FC = () => {
       (!from || r.audit_date >= from) &&
       (!to || r.audit_date <= to) &&
       (!expiredOnly || r.expired_count > 0) &&
+      (!notYet || !downloads.has(r.id)) &&
       (!by || byName(r) === by)
   );
 
@@ -77,9 +95,10 @@ export const AuditRecords: React.FC = () => {
     setZip(`Making ${submitted.length} PDF${submitted.length === 1 ? '' : 's'}…`);
     setError(null);
     try {
-      const r = await downloadAllAudits(submitted.map((x) => x.id), { from: from || null, to: to || null }, whoName(actor?.name),
+      const r = await downloadAllAudits(submitted.map((x) => x.id), { from: from || null, to: to || null }, actor ? { id: actor.id, name: actor.name } : null,
         (done, total) => setZip(`Making PDFs: ${done} of ${total}…`));
       setZip(null);
+      listDownloads().then((d) => setDownloads(latestDownloads(d))).catch(() => undefined);
       if (r.failed.length) setError(`${r.failed.length} audit PDF${r.failed.length === 1 ? '' : 's'} could not be made: ${r.failed[0]}`);
     } catch (e) {
       setZip(null);
@@ -92,7 +111,7 @@ export const AuditRecords: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <section className={`${card} p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end`} aria-label="Filters">
+      <section className={`${card} p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end`} aria-label="Filters">
         <Field label="Gang or van">
           {(id) => (
             <select id={id} className={inputCls} value={who} onChange={(e) => setWho(e.target.value)}>
@@ -114,6 +133,10 @@ export const AuditRecords: React.FC = () => {
         <label className="flex items-center gap-2 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-700 cursor-pointer">
           <input type="checkbox" checked={expiredOnly} onChange={(e) => setExpiredOnly(e.target.checked)} className="h-4 w-4" />
           Expired only
+        </label>
+        <label className="flex items-center gap-2 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-700 cursor-pointer">
+          <input type="checkbox" checked={notYet} onChange={(e) => setNotYet(e.target.checked)} className="h-4 w-4" />
+          Not downloaded yet
         </label>
       </section>
 
@@ -167,7 +190,7 @@ export const AuditRecords: React.FC = () => {
                       <td className="px-3 py-3 text-slate-700">{r.vehicle_reg ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{r.site_visited ?? '—'}</td>
                       <td className="px-3 py-3 text-slate-700">{byName(r)}</td>
-                      <td className="px-3 py-3">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} res={resolutions.get(r.id) ?? null} />}</td>
+                      <td className="px-3 py-3">{r.status === 'draft' ? <DraftBadge /> : <><ResultBadges a={r} res={resolutions.get(r.id) ?? null} /><DownloadedTick row={downloads.get(r.id)} /></>}</td>
                       <td className="px-5 py-3 text-right">
                         <button type="button" onClick={(e) => { e.stopPropagation(); open(r); }} className="inline-flex items-center gap-1 min-h-[36px] px-2 rounded-lg text-xs font-semibold text-blue-700 hover:bg-blue-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
                           {r.status === 'draft' ? 'Continue' : 'View'}<ChevronRight className="h-4 w-4" />
@@ -185,7 +208,7 @@ export const AuditRecords: React.FC = () => {
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-base sm:text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
                       <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''} · {byName(r)}</span>
-                      <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <ResultBadges a={r} res={resolutions.get(r.id) ?? null} />}</span>
+                      <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <><ResultBadges a={r} res={resolutions.get(r.id) ?? null} /><DownloadedTick row={downloads.get(r.id)} /></>}</span>
                     </span>
                     <ChevronRight className="h-5 w-5 text-slate-400 flex-shrink-0" />
                   </button>

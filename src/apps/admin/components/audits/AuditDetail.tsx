@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Lock, Download, Loader2, Check } from 'lucide-react';
+import { Lock, Download, Loader2, Check, CheckCircle2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { getAudit, getAuditFileUrl, listLineFollowups } from '../../../../lib/siteAuditService';
+import { getAudit, getAuditFileUrl, listLineFollowups, listDownloads } from '../../../../lib/siteAuditService';
+import { downloadedLabel, AuditDownloadRow } from '../../../../lib/downloadLogic';
 import { followupText, resolutionBadges, resolutionFrom, LineFollowup } from '../../../../lib/followupLogic';
 import { downloadAuditPdf } from '../../../../lib/auditDownloads';
 import { useActor } from './useActor';
@@ -193,6 +194,8 @@ export const AuditDetail: React.FC = () => {
   const { actor } = useActor(ref.auditors);
   const [pdf, setPdf] = useState<string | null>(null);
   const [followups, setFollowups] = useState<LineFollowup[]>([]);
+  const [downloads, setDownloads] = useState<AuditDownloadRow[]>([]);
+  const [showDownloads, setShowDownloads] = useState(false);
   const [edits, setEdits] = useState<AuditEditRow[]>([]);
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [flash, setFlash] = useState<string | null>(null);
@@ -202,6 +205,7 @@ export const AuditDetail: React.FC = () => {
     getAudit(id).then(setData).catch((e) => setError(e.message));
     listAuditEdits(id).then(setEdits).catch(() => setEdits([]));
     listLineFollowups(id).then(setFollowups).catch(() => setFollowups([]));
+    listDownloads(id).then(setDownloads).catch(() => setDownloads([]));
   }, [id]);
   useEffect(() => {
     load();
@@ -217,8 +221,9 @@ export const AuditDetail: React.FC = () => {
   const onPdf = async () => {
     setPdf('Making the PDF…');
     try {
-      await downloadAuditPdf(audit.id, whoName(actor?.name), (done, total) => setPdf(`Adding photos ${done} of ${total}…`));
+      await downloadAuditPdf(audit.id, actor ? { id: actor.id, name: actor.name } : null, (done, total) => setPdf(`Adding photos ${done} of ${total}…`));
       setPdf(null);
+      listDownloads(audit.id).then(setDownloads).catch(() => undefined);
     } catch (e) {
       setPdf(null);
       setError(e instanceof Error ? e.message : 'Could not make the PDF.');
@@ -276,7 +281,23 @@ export const AuditDetail: React.FC = () => {
             {pdf ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}Download PDF
           </button>
           {pdf && <span role="status" className="text-sm text-slate-600">{pdf}</span>}
+          {!pdf && downloads.length > 0 && (
+            <button type="button" onClick={() => setShowDownloads(!showDownloads)} aria-expanded={showDownloads}
+              className="inline-flex items-center gap-1.5 min-h-[44px] sm:min-h-[36px] px-2 rounded-lg text-sm font-semibold text-green-700 hover:bg-green-50 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-green-600">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" />{downloadedLabel(downloads[0])}
+              {downloads.length > 1 && <span className="font-normal text-slate-600">· {downloads.length} times</span>}
+            </button>
+          )}
         </div>
+        {showDownloads && downloads.length > 0 && (
+          <ul className="mt-2 rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200" aria-label="Downloads">
+            {downloads.map((d, i) => (
+              <li key={`${d.downloaded_at}-${i}`} className="px-3 py-2 text-sm text-slate-700">
+                {downloadedLabel(d)} · {formatDateTime(d.downloaded_at).split(', ').pop()}{d.kind === 'zip' ? ' (in Download all)' : ''}
+              </li>
+            ))}
+          </ul>
+        )}
         {audit.status === 'submitted' && mode === 'view' && (
           <div className="flex flex-wrap gap-2 mt-4">
             <button type="button" className={btn.secondary} onClick={() => setMode('edit')}>Edit audit</button>

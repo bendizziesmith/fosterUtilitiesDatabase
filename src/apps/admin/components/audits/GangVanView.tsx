@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info, Warehouse, Undo2, LogOut, CircleOff } from 'lucide-react';
+import { Users, Truck, ClipboardPlus, Plus, History, Ban, Check, ShieldCheck, Wrench, ArrowRight, ArrowLeftRight, AlertTriangle, Info, Warehouse, Undo2, LogOut, CircleOff, MoreHorizontal } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, lastAudit, listHolderHistory, loadTeam, loadHolderRecord, setCarried, holderParams } from '../../../../lib/siteAuditService';
 import { TeamMember, whoName } from '../../../../lib/siteAuditLogic';
@@ -12,7 +12,7 @@ import { AddKitSheet } from './AddKitSheet';
 import { FileLink } from './FileLink';
 import { ChangeVanSheet } from './ChangeVanSheet';
 import { ReturnSheet } from './LockupSheets';
-import { TakeOutSheet, OffRoadSheet, BackOnRoadSheet } from './FleetSheets';
+import { TakeOutSheet, OffRoadSheet, BackOnRoadSheet, KitMoreSheet, ScrapSheet, DeletePlantSheet } from './FleetSheets';
 import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
@@ -55,6 +55,10 @@ export const GangVanView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<UpdateTarget | null>(null);
   const [swapping, setSwapping] = useState<KitItemOverview | null>(null);
+  /** "More" on a kit item: Scrapped (keep record) / Delete completely */
+  const [moreFor, setMoreFor] = useState<KitItemOverview | null>(null);
+  const [scrapping, setScrapping] = useState<KitItemOverview | null>(null);
+  const [deleting, setDeleting] = useState<KitItemOverview | null>(null);
   const [adding, setAdding] = useState(false);
   const [changing, setChanging] = useState<'change' | 'check' | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -226,6 +230,9 @@ export const GangVanView: React.FC = () => {
                 <div className="flex gap-2">
                   <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => setUpdating(kitUpdateTarget(k, ref.kitTypes))}>Update</button>
                   <button type="button" className={`${btn.small} flex-1 md:flex-none`} onClick={() => setSwapping(k)}>Swap</button>
+                  <button type="button" className={`${btn.small} flex-1 md:flex-none`} aria-label={`More for ${k.type_name} ${k.plant_no ?? ''}`} onClick={() => setMoreFor(k)}>
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />More
+                  </button>
                 </div>
               </li>
             ))}
@@ -366,6 +373,13 @@ export const GangVanView: React.FC = () => {
           onClose={() => setReturning(null)} onSaved={() => { setReturning(null); setFlash(`${returning.item_name} returned to the Yard Lockup.`); load(); }} />
       )}
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={ref.auditors} onClose={() => setUpdating(null)} onSaved={done} />}
+      {moreFor && (
+        <KitMoreSheet item={moreFor} onClose={() => setMoreFor(null)}
+          onScrap={() => { setScrapping(moreFor); setMoreFor(null); }}
+          onDelete={() => { setDeleting(moreFor); setMoreFor(null); }} />
+      )}
+      {scrapping && <ScrapSheet item={scrapping} auditors={ref.auditors} onClose={() => setScrapping(null)} onSaved={() => { setScrapping(null); load(); }} />}
+      {deleting && <DeletePlantSheet item={deleting} auditors={ref.auditors} onClose={() => setDeleting(null)} onDone={() => { setDeleting(null); load(); }} />}
       {swapping && (
         <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={ref.auditors}
           onClose={() => setSwapping(null)} onSaved={done} />

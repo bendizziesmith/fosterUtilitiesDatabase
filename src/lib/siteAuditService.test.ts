@@ -205,3 +205,21 @@ describe('createKitType', () => {
     expect(ins?.payload).toMatchObject({ name: 'Water pump', service_interval_months: 6 });
   });
 });
+
+describe('round 14: recording audit downloads', () => {
+  it('one row per audit, with who and the kind (single / zip), test-marked in a local build', async () => {
+    H.calls = [];
+    await svc.recordDownloads(['a1', 'a2'], { id: 'act1', name: 'Christina Pearson' }, 'zip', true);
+    const ins = H.calls.find((c) => c.table === 'audit_downloads' && c.op === 'insert')!;
+    expect(ins.payload).toEqual([
+      { audit_id: 'a1', actor_id: 'act1', actor_name: 'Christina Pearson', kind: 'zip', is_test: true },
+      { audit_id: 'a2', actor_id: 'act1', actor_name: 'Christina Pearson', kind: 'zip', is_test: true },
+    ]);
+    expect(H.calls.some((c) => c.table === 'audit_site_audits' && c.op !== 'select')).toBe(false);
+  });
+  it('nothing downloaded: nothing written', async () => {
+    H.calls = [];
+    await svc.recordDownloads([], null, 'zip', true);
+    expect(H.calls.length).toBe(0);
+  });
+});

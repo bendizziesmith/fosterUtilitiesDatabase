@@ -325,17 +325,19 @@ export async function downloadAuditsZip(ids: string[], fetchSource: (id: string)
   const zip = new JSZip();
   const used = new Set<string>();
   const failed: string[] = [];
+  const doneIds: string[] = [];
   for (let i = 0; i < ids.length; i++) {
     try {
       const { blob, filename } = await buildAuditPdfBlob(await fetchSource(ids[i]), company, generatedBy, getUrl);
       zip.file(uniqueName(filename, used), blob);
+      doneIds.push(ids[i]);
     } catch (e) {
       failed.push(e instanceof Error ? e.message : String(e));
     }
     onProgress?.(i + 1, ids.length);
   }
   if (used.size) saveBlob(await zip.generateAsync({ type: 'blob' }), auditsZipName(range.from, range.to));
-  return { done: used.size, failed };
+  return { done: used.size, failed, doneIds };
 }
 
 // ---------------------------------------------------------------- Kit & Plant sheets

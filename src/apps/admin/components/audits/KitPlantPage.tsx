@@ -16,7 +16,7 @@ import { KitItemOverview } from '../../../../lib/supabase';
 import { AddKitSheet } from './AddKitSheet';
 import { LockupView } from './LockupView';
 import { AddLockupSheet } from './LockupSheets';
-import { DeletePlantSheet } from './FleetSheets';
+import { DeletePlantSheet, ScrapSheet } from './FleetSheets';
 import { UpdateItemSheet, UpdateTarget } from './UpdateItemSheet';
 import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
@@ -238,7 +238,7 @@ export const KitPlantPage: React.FC = () => {
       {updating && <UpdateItemSheet target={updating} targets={ref.allTargets} auditors={auditors} onClose={() => setUpdating(null)} onSaved={done} />}
       {swapping && <SwapKitSheet item={swapping} targets={ref.allTargets} months={monthsForType(ref.kitTypes, swapping.kit_type_id)} auditors={auditors} onClose={() => setSwapping(null)} onSaved={done} />}
       {assigning && <AssignSheet {...assigning} targets={ref.allTargets} auditors={auditors} onClose={() => setAssigning(null)} onSaved={done} />}
-      {removing && <RemoveSheet item={removing} auditors={auditors} onClose={() => setRemoving(null)} onSaved={done} />}
+      {removing && <ScrapSheet item={removing} auditors={auditors} onClose={() => setRemoving(null)} onSaved={done} />}
       {deleting && <DeletePlantSheet item={deleting} auditors={auditors} onClose={() => setDeleting(null)} onDone={done} />}
     </div>
   );
@@ -540,30 +540,3 @@ function AssignSheet({ item, back, targets, auditors, onClose, onSaved }: { item
   );
 }
 
-function RemoveSheet({ item, auditors, onClose, onSaved }: { item: KitItemOverview; auditors: Auditor[]; onClose: () => void; onSaved: () => void }) {
-  const { actorId, setActorId } = useActor(auditors);
-  const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <Sheet title={`Scrapped: ${item.type_name} ${item.plant_no ?? ''}`} subtitle="Scrapped (keep record): it leaves the Kit & Plant list, its history is kept. To remove it from every record, use “Delete completely”." onClose={onClose}
-      footer={<>
-        <button type="button" className={btn.secondary} onClick={onClose}>Keep it</button>
-        <button type="button" className={btn.danger} disabled={busy} onClick={async () => {
-          if (!actorId) return setError('Pick who’s doing this.');
-          setBusy(true);
-          try {
-            await moveKit({ itemId: item.id, status: 'removed', holderEmployeeId: null, vehicleId: null, serviceCompany: null, note: note.trim() || null, actorId });
-            onSaved();
-          } catch (e) {
-            setError(e instanceof Error ? e.message : 'Could not remove.');
-            setBusy(false);
-          }
-        }}>{busy ? 'Saving…' : 'Scrapped (keep record)'}</button>
-      </>}>
-      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-      <Field label="Reason (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Scrapped, beyond repair" />}</Field>
-      <ErrorNote message={error} />
-    </Sheet>
-  );
-}

@@ -6,7 +6,7 @@
 
 BEGIN;
 
--- test audits (their members, lines and photo rows go with them)
+-- test audits (their members, lines, photo rows and download records go with them)
 DELETE FROM public.audit_site_audits WHERE is_test;
 
 -- test kit (its history goes with it)

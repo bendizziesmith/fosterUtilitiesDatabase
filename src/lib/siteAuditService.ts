@@ -17,6 +17,7 @@ import {
 } from './supabase';
 import { draftsInProgress } from './draftLogic';
 import type { AuditResolution, LineFollowup } from './followupLogic';
+import type { AuditDownloadRow } from './downloadLogic';
 import { preparePhoto, StampInfo } from './photoUpload';
 import { photoPath, TakenAtSource } from './photoLogic';
 import { AttentionRow, AuditTarget, DraftLine, FileDeletion, TeamMember, buildTeam } from './siteAuditLogic';
@@ -583,4 +584,22 @@ export async function listResolutions(): Promise<Map<string, AuditResolution>> {
   const r = await supabase.from('audit_resolution').select('*');
   const rows = r.error ? [] : ((r.data as (AuditResolution & { audit_id: string })[]) ?? []);
   return new Map(rows.map((x) => [x.audit_id, x]));
+}
+
+// ---------------------------------------------------------------- audit PDF downloads (round 14)
+
+/** Records that these audits' PDFs were downloaded (single "Download PDF" or inside "Download all"). */
+export async function recordDownloads(auditIds: string[], actor: { id: string; name: string } | null, kind: 'single' | 'zip', isTest: boolean): Promise<void> {
+  if (!auditIds.length) return;
+  check(await supabase.from('audit_downloads').insert(auditIds.map((id) => ({
+    audit_id: id, actor_id: actor?.id ?? null, actor_name: actor?.name ?? null, kind, is_test: isTest,
+  }))));
+}
+
+/** Every download (Audit records shows the latest per audit). */
+export async function listDownloads(auditId?: string): Promise<AuditDownloadRow[]> {
+  let q = supabase.from('audit_downloads').select('audit_id, downloaded_at, actor_name, kind');
+  if (auditId) q = q.eq('audit_id', auditId);
+  const r = await q.order('downloaded_at', { ascending: false });
+  return r.error ? [] : ((r.data as AuditDownloadRow[]) ?? []);
 }

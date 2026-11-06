@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Archive, Trash2 } from 'lucide-react';
+import { deleteKitConfirm } from '../../../../lib/downloadLogic';
 import { Sheet, Field, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
 import { ActorPicker } from './ActorPicker';
@@ -266,22 +267,20 @@ export function HomeSheet({ item, targets, auditors, onClose, onDone }: {
 
 // ---------------------------------------------------------------- delete plant completely
 
+/** "Delete CAT 1234 completely?" — a plain yes / no; the item's own plant no goes to the database's safety check. */
 export function DeletePlantSheet({ item, auditors, onClose, onDone }: {
   item: Pick<KitItemOverview, 'id' | 'type_name' | 'plant_no'>; auditors: Auditor[]; onClose: () => void; onDone: () => void;
 }) {
   const { actorId, setActorId } = useActor(auditors);
-  const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const expected = item.plant_no ?? item.type_name;
-  const matches = typed.trim().toLowerCase() === expected.trim().toLowerCase();
+  const c = deleteKitConfirm(item);
   const save = async () => {
     setError(null);
     if (!actorId) return setError('Pick who’s doing this.');
-    if (!matches) return setError(`Type ${expected} exactly to confirm.`);
     setBusy(true);
     try {
-      await deletePlant(item.id, typed, actorId);
+      await deletePlant(item.id, c.token, actorId);
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not delete it.');
@@ -289,12 +288,63 @@ export function DeletePlantSheet({ item, auditors, onClose, onDone }: {
     }
   };
   return (
-    <Sheet title={`Delete ${kitName(item)} completely?`} subtitle="Gone from Kit & Plant, gang / van pages, Needs attention and search" onClose={onClose}
-      footer={<><button type="button" className={btn.secondary} onClick={onClose}>Keep it</button><button type="button" className={btn.danger} disabled={busy || !matches} onClick={save}>{busy ? 'Deleting…' : 'Delete completely'}</button></>}>
+    <Sheet title={c.question} onClose={onClose}
+      footer={<><button type="button" className={btn.secondary} onClick={onClose}>No, keep it</button><button type="button" className={btn.danger} disabled={busy} onClick={save}>{busy ? 'Deleting…' : 'Yes, delete'}</button></>}>
+      <p className="text-base sm:text-sm text-slate-800">{c.detail}</p>
       <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
-      <p className="text-base sm:text-sm text-slate-700">Its kit history and certificates are deleted too. Past audits keep only their own line of text (e.g. “{kitName(item)}”). If it’s needed again, add it back with “+ Add kit”. To keep a record of scrapped kit, use “Scrapped (keep record)” instead.</p>
-      <Field label={`Type ${expected} to confirm`}>{(id) => <input id={id} className={inputCls} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />}</Field>
       <ErrorNote message={error} />
+    </Sheet>
+  );
+}
+
+/** Scrapped (keep record): it leaves Kit & Plant, its history is kept. */
+export function ScrapSheet({ item, auditors, onClose, onSaved }: {
+  item: Pick<KitItemOverview, 'id' | 'type_name' | 'plant_no'>; auditors: Auditor[]; onClose: () => void; onSaved: () => void;
+}) {
+  const { actorId, setActorId } = useActor(auditors);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Sheet title={`Scrapped: ${item.type_name} ${item.plant_no ?? ''}`} subtitle="Scrapped (keep record): it leaves the Kit & Plant list, its history is kept. To remove it from every record, use “Delete completely”." onClose={onClose}
+      footer={<>
+        <button type="button" className={btn.secondary} onClick={onClose}>Keep it</button>
+        <button type="button" className={btn.danger} disabled={busy} onClick={async () => {
+          if (!actorId) return setError('Pick who’s doing this.');
+          setBusy(true);
+          try {
+            await moveKit({ itemId: item.id, status: 'removed', holderEmployeeId: null, vehicleId: null, serviceCompany: null, note: note.trim() || null, actorId });
+            onSaved();
+          } catch (e) {
+            setError(e instanceof Error ? e.message : 'Could not remove.');
+            setBusy(false);
+          }
+        }}>{busy ? 'Saving…' : 'Scrapped (keep record)'}</button>
+      </>}>
+      <ActorPicker auditors={auditors} value={actorId} onChange={setActorId} />
+      <Field label="Reason (optional)">{(id) => <input id={id} className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Scrapped, beyond repair" />}</Field>
+      <ErrorNote message={error} />
+    </Sheet>
+  );
+}
+
+/** "More" on a kit item: Scrapped (keep record) / Delete completely. */
+export function KitMoreSheet({ item, onScrap, onDelete, onClose }: {
+  item: Pick<KitItemOverview, 'type_name' | 'plant_no'>; onScrap: () => void; onDelete: () => void; onClose: () => void;
+}) {
+  const opt = 'w-full min-h-[52px] flex items-center gap-3 px-3 rounded-lg border text-left cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  return (
+    <Sheet title={`${item.type_name}${item.plant_no ? ` ${item.plant_no}` : ''}`} subtitle="More actions" onClose={onClose}>
+      <button type="button" className={`${opt} border-slate-200 hover:bg-slate-50`} onClick={onScrap}>
+        <Archive className="h-5 w-5 text-slate-600 flex-shrink-0" aria-hidden="true" />
+        <span><span className="block text-base sm:text-sm font-semibold text-slate-900">Scrapped (keep record)</span>
+          <span className="block text-sm text-slate-600">Leaves Kit & Plant; its history is kept</span></span>
+      </button>
+      <button type="button" className={`${opt} border-red-200 hover:bg-red-50`} onClick={onDelete}>
+        <Trash2 className="h-5 w-5 text-red-700 flex-shrink-0" aria-hidden="true" />
+        <span><span className="block text-base sm:text-sm font-semibold text-red-700">Delete completely</span>
+          <span className="block text-sm text-slate-600">Removed from Kit & Plant and its history</span></span>
+      </button>
     </Sheet>
   );
 }
