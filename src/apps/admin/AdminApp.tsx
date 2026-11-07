@@ -11,6 +11,14 @@ import VehicleManagement from './components/VehicleManagement';
 import { HavsEmployerDashboard } from './components/HavsEmployerDashboard';
 import { TimesheetAdminDetail } from './components/TimesheetAdminDetail';
 import { WeeklyTimesheetDashboard } from './components/WeeklyTimesheetDashboard';
+import { SiteAuditsPage } from './components/audits/SiteAuditsPage';
+import { NewAuditForm } from './components/audits/NewAuditForm';
+import { AuditRecords } from './components/audits/AuditRecords';
+import { AuditDetail } from './components/audits/AuditDetail';
+import { KitPlantPage } from './components/audits/KitPlantPage';
+import { GangVanView } from './components/audits/GangVanView';
+import { AuditShell } from './components/audits/AuditNavBar';
+import { Wrench, ClipboardCheck } from 'lucide-react';
 import { supabase, VehicleInspection, Employee } from '../../lib/supabase';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 
@@ -163,6 +171,18 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Weekly Timesheets';
       case '/weekly-timesheet-detail':
         return 'Timesheet Detail';
+      case '/audits':
+        return 'Site Audits';
+      case '/audits/new':
+        return location.search.includes('draft=') ? 'Continue Audit' : 'New Audit';
+      case '/audits/records':
+        return 'Audit Records';
+      case '/audits/detail':
+        return 'Audit';
+      case '/kit':
+        return 'Kit & Plant';
+      case '/kit/van':
+        return 'Gang / Van';
       default:
         return 'Employer Dashboard';
     }
@@ -191,6 +211,18 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
         return 'Review and manage ganger timesheets';
       case '/weekly-timesheet-detail':
         return 'Timesheet review';
+      case '/audits':
+        return 'Gang audits: PPE, health & safety, kit';
+      case '/audits/new':
+        return 'On-site audit of a gang or van';
+      case '/audits/records':
+        return 'Every audit, newest first';
+      case '/audits/detail':
+        return 'Audit record';
+      case '/kit':
+        return "All kit and who it's assigned to";
+      case '/kit/van':
+        return 'Kit, PPE and history for one gang or van';
       default:
         return 'Management Overview';
     }
@@ -203,6 +235,14 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
     } else if (path === '/weekly-timesheet-detail') {
       setSelectedTimesheetId(null);
       navigate('/weekly-timesheets');
+    } else if (path === '/audits/detail') {
+      navigate('/audits/records');
+    } else if (path === '/kit/van') {
+      navigate('/kit?view=van');
+    } else if (path === '/kit' && location.search) {
+      navigate('/kit');
+    } else if (path === '/audits/new' || path === '/audits/records' || path === '/kit') {
+      navigate('/audits');
     } else if (path === '/') {
       onBack();
     } else {
@@ -229,6 +269,7 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
       subtitle={getPageSubtitle()} 
       showBackButton 
       onBack={handleBackNavigation}
+      icon={location.pathname.startsWith('/kit') ? Wrench : location.pathname.startsWith('/audits') ? ClipboardCheck : undefined}
     >
       <Routes>
         <Route
@@ -303,6 +344,12 @@ export const AdminApp: React.FC<AdminAppProps> = ({ onBack }) => {
             />
           }
         />
+        <Route path="/audits" element={<AuditShell><SiteAuditsPage /></AuditShell>} />
+        <Route path="/audits/new" element={<AuditShell><NewAuditForm key={location.search} /></AuditShell>} />
+        <Route path="/audits/records" element={<AuditShell><AuditRecords /></AuditShell>} />
+        <Route path="/audits/detail" element={<AuditShell><AuditDetail /></AuditShell>} />
+        <Route path="/kit" element={<AuditShell><KitPlantPage /></AuditShell>} />
+        <Route path="/kit/van" element={<AuditShell><GangVanView key={location.search} /></AuditShell>} />
         <Route
           path="/weekly-timesheet-detail"
           element={

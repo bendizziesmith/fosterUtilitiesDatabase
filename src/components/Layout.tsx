@@ -11,6 +11,8 @@ interface LayoutProps {
   showSignOutButton?: boolean;
   onBack?: () => void;
   onHome?: () => void;
+  /** header icon; the van by default (Site Audits / Kit & Plant pass their own) */
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
 export const Layout: React.FC<LayoutProps> = ({
@@ -21,6 +23,7 @@ export const Layout: React.FC<LayoutProps> = ({
   showSignOutButton = false,
   onBack,
   onHome,
+  icon: Icon = Car,
 }) => {
   const handleSignOut = async () => {
     try {
@@ -47,7 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({
               )}
               <div className="flex items-center space-x-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
-                  <Car className="h-6 w-6 text-blue-600" />
+                  <Icon className="h-6 w-6 text-blue-600" />
                 </div>
                 <div>
                   <h1 className="text-xl font-semibold text-slate-900">{title}</h1>

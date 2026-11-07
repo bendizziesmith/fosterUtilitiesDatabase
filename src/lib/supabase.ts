@@ -262,3 +262,219 @@ export const getWeekStartDate = (date: Date = new Date()): Date => {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
   return new Date(d.setDate(diff));
 };
+// Site Audits + Kit & Plant (tables audit_* / kit_*; see siteAuditService.ts)
+export type KitStatus = 'on_van' | 'spare' | 'away_for_service' | 'removed';
+export type AuditLineResult = 'Y' | 'N' | 'not_carried';
+
+export interface AuditChecklistItem {
+  id: string;
+  section: 'ppe' | 'hs' | 'other';
+  name: string;
+  expected_qty: string | null;
+  has_expiry: boolean;
+  has_date_tag: boolean;
+  sort_order: number;
+  is_active: boolean;
+  /** auto expiry = date + this many months (Hard hats: 36) */
+  service_interval_months: number | null;
+  /** label for the date the interval counts from, e.g. "Date on hat" */
+  date_label: string | null;
+  /** Other section: ask "Label on?" Y/N (round 7) */
+  has_label_check?: boolean;
+  /** fire extinguisher: ask "Pressure gauge" Green / Amber / Red (round 9) */
+  has_gauge?: boolean;
+}
+
+export interface KitType {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+  /** auto expiry = service date + this many months */
+  service_interval_months: number | null;
+}
+
+export interface KitItemOverview {
+  id: string;
+  kit_type_id: string;
+  type_name: string;
+  type_sort: number;
+  plant_no: string | null;
+  status: KitStatus;
+  vehicle_id: string | null;
+  vehicle_reg: string | null;
+  ganger_name: string | null;
+  service_company: string | null;
+  service_date: string | null;
+  expiry_date: string | null;
+  days_left: number | null;
+  expiry_status: 'expired' | 'due_soon' | 'ok' | null;
+  notes: string | null;
+  last_seen_at: string | null;
+  last_seen_source: 'audit' | 'swap' | 'update' | 'added' | 'moved' | null;
+  last_seen_audit_id: string | null;
+  removed_at: string | null;
+  is_test: boolean;
+  /** round 3: kit belongs to a person, or (no person) to a spare van */
+  holder_employee_id: string | null;
+  holder_name: string | null;
+  holder_role: string | null;
+  holder_kind: 'person' | 'spare_van' | 'none';
+  holder_reg: string | null;
+  spare_vehicle_id: string | null;
+}
+
+export interface Auditor {
+  id: string;
+  name: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface KitVanKitListRow {
+  id: string;
+  holder_employee_id: string | null;
+  vehicle_id: string | null;
+  kit_type_id: string;
+  carried: boolean;
+  is_test: boolean;
+}
+
+export interface SiteAuditSummary {
+  id: string;
+  audit_date: string;
+  audited_by: string | null;
+  audited_by_name: string;
+  vehicle_id: string | null;
+  vehicle_reg: string | null;
+  ganger_id: string | null;
+  ganger_name_snapshot: string | null;
+  team_name_snapshot: string;
+  site_visited: string | null;
+  status: 'draft' | 'submitted';
+  submitted_at: string | null;
+  is_test: boolean;
+  created_at?: string;
+  /** last saved (drafts) */
+  updated_at?: string;
+  fail_count: number;
+  expired_count: number;
+  due_soon_count: number;
+  not_carried_count: number;
+  member_names: string | null;
+  auditor_id: string | null;
+  auditor_name: string | null;
+  holder_employee_id: string | null;
+  /** amber pressure gauges: "to look at", not a fail (round 9) */
+  look_count?: number;
+}
+
+/** A standard photo on every audit (round 9); the list is data. */
+export interface AuditPhotoSlot {
+  id: string;
+  name: string;
+  hint: string | null;
+  sort_order: number;
+  required: boolean;
+  is_active: boolean;
+}
+
+/** A slot photo, a "Can't take photo" reason, or an additional photo (slot_id null). */
+export interface AuditPhotoRow {
+  id?: string;
+  audit_id?: string;
+  slot_id: string | null;
+  slot_name: string | null;
+  path: string | null;
+  caption: string | null;
+  skip_reason: string | null;
+  taken_at: string | null;
+  sort_order: number;
+}
+
+export interface SiteAudit {
+  id: string;
+  audit_date: string;
+  audited_by: string | null;
+  audited_by_name: string;
+  vehicle_id: string | null;
+  vehicle_reg_snapshot: string | null;
+  ganger_id: string | null;
+  ganger_name_snapshot: string | null;
+  team_name_snapshot: string;
+  site_visited: string | null;
+  notes: string | null;
+  status: 'draft' | 'submitted';
+  submitted_at: string | null;
+  is_test: boolean;
+  auditor_id: string | null;
+  auditor_name: string | null;
+  holder_employee_id: string | null;
+}
+
+export interface AuditMemberRow {
+  id: string;
+  audit_id: string;
+  employee_id: string | null;
+  name: string;
+  sort_order: number;
+}
+
+export interface AuditLineRow {
+  id: string;
+  audit_id: string;
+  section: 'ppe' | 'hs' | 'kit' | 'other';
+  checklist_item_id: string | null;
+  kit_type_id: string | null;
+  item_name: string;
+  expected_qty: string | null;
+  result: AuditLineResult | null;
+  qty: string | null;
+  expiry_date: string | null;
+  service_date: string | null;
+  plant_no_snapshot: string | null;
+  date_tag: string | null;
+  /** "Label on?" Y / N (Other section, round 7) */
+  label_on?: 'Y' | 'N' | null;
+  /** pressure gauge (round 9): red = fail, amber = to look at */
+  gauge?: 'green' | 'amber' | 'red' | null;
+  photo_taken_at?: string | null;
+  comment: string | null;
+  photo_path: string | null;
+  kit_item_id: string | null;
+  sort_order: number;
+}
+
+export interface KitRecentUpdate {
+  id: string;
+  action: string;
+  created_at: string;
+  by_name: string | null;
+  note: string | null;
+  source: 'kit' | 'ppe';
+  item_name: string | null;
+  plant_no: string | null;
+  vehicle_reg: string | null;
+  is_test: boolean;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  certificate_path: string | null;
+  related_vehicle_ids: string[];
+  /** the "Who's doing this?" name; null on old rows → "Office login" */
+  actor_name: string | null;
+  related_holder_ids: string[];
+}
+
+export interface AuditPpeItem {
+  id: string;
+  holder_employee_id: string | null;
+  vehicle_id: string | null;
+  vehicle_reg_snapshot: string | null;
+  checklist_item_id: string;
+  item_name: string;
+  expiry_date: string | null;
+  source: 'audit' | 'update';
+  source_audit_id: string | null;
+  is_test: boolean;
+  updated_at: string;
+}
