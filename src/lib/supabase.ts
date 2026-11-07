@@ -322,6 +322,8 @@ export interface KitItemOverview {
   holder_kind: 'person' | 'spare_van' | 'none';
   holder_reg: string | null;
   spare_vehicle_id: string | null;
+  /** Fosters | Hire (7 Nov 2026), read from kit_items by listKit */
+  ownership?: 'fosters' | 'hire';
 }
 
 export interface Auditor {
@@ -438,6 +440,8 @@ export interface AuditLineRow {
   label_on?: 'Y' | 'N' | null;
   /** pressure gauge (round 9): red = fail, amber = to look at */
   gauge?: 'green' | 'amber' | 'red' | null;
+  /** kit lines: Fosters | Hire (7 Nov 2026); empty on lines saved before it */
+  ownership?: 'fosters' | 'hire' | null;
   photo_taken_at?: string | null;
   comment: string | null;
   photo_path: string | null;

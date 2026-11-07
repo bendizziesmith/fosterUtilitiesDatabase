@@ -16,7 +16,7 @@ import { ActorPicker } from './ActorPicker';
 import { btn } from './styles';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
 import { AuditLineRow, AuditMemberRow, AuditPhotoRow, AuditPhotoSlot, Auditor, SiteAudit } from '../../../../lib/supabase';
-import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag, Sheet, Field, ResolutionBadgeList } from './ui';
+import { CountBadge, ErrorNote, ExpiryPill, GaugeText, TestTag, Sheet, Field, ResolutionBadgeList, OwnershipTag } from './ui';
 import { card, inputCls, formatDate, formatDateTime } from './styles';
 
 const SECTIONS: { key: AuditLineRow['section']; title: string }[] = [
@@ -90,7 +90,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
       <td className="px-3 py-2.5"><Result r={l.result} /></td>
       {isKit ? (
         <>
-          <td className="px-3 py-2.5 text-slate-700">{l.plant_no_snapshot ?? '—'}</td>
+          <td className="px-3 py-2.5 text-slate-700"><span className="inline-flex items-center gap-2">{l.plant_no_snapshot ?? '—'}{l.ownership && <OwnershipTag value={l.ownership} />}</span></td>
           <td className="px-3 py-2.5 text-slate-700 whitespace-nowrap">{formatDate(l.service_date)}</td>
         </>
       ) : (
@@ -145,7 +145,7 @@ function SectionTable({ title, lines, auditDate, section, deletions, auditors, o
         {[...flagged, ...(showAll ? rest : [])].map((l) => (
           <li key={l.id} className={`px-4 py-3 ${l.result === 'not_carried' ? 'bg-slate-50' : ''}`}>
             <div className="flex items-start justify-between gap-2">
-              <p className="text-base sm:text-sm font-bold text-slate-900">{l.item_name}</p>
+              <p className="text-base sm:text-sm font-bold text-slate-900 flex flex-wrap items-center gap-2">{l.item_name}{isKit && l.ownership && <OwnershipTag value={l.ownership} />}</p>
               <Result r={l.result} />
             </div>
             <p className="text-xs text-slate-600 mt-1">

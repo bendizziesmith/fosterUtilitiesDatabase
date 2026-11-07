@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { listKit, swapKit } from '../../../../lib/siteAuditService';
+import { listKit, setKitOwnership, swapKit } from '../../../../lib/siteAuditService';
+import type { Ownership } from '../../../../lib/ownershipLogic';
 import { previewSwap, holderKey, holderLabel, spareOptions, AuditTarget, ServiceExpiryState, SwapDestination, SwapReplacement } from '../../../../lib/siteAuditLogic';
 import { KitItemOverview } from '../../../../lib/supabase';
 
@@ -19,6 +20,8 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
   const [destKey, setDestKey] = useState('');
   const [repl, setRepl] = useState(''); // spare id | 'new' | 'none'
   const [newPlant, setNewPlant] = useState('');
+  /** Fosters | Hire for a new replacement (Fosters by default) */
+  const [newOwnership, setNewOwnership] = useState<Ownership>('fosters');
   const [dates, setDates] = useState<ServiceExpiryState>({ serviceDate: null, expiry: null, expiryManual: false });
   const [note, setNote] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -60,7 +63,7 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
     if (dest === 'holder' && !destHolder) throw new Error('Pick who it is going to.');
     if (!repl) throw new Error('Choose what goes on the van instead.');
     const isSpare = repl !== 'new' && repl !== 'none';
-    await swapKit({
+    const newId = await swapKit({
       itemId: item.id,
       destination: dest,
       destHolderEmployeeId: dest === 'holder' && destHolder?.kind === 'person' ? destHolder.personId : null,
@@ -74,11 +77,12 @@ export function useSwapForm(item: SwapItem, targets: AuditTarget[]) {
       note: note.trim() || null,
       actorId,
     });
+    if (repl === 'new' && newId && newOwnership === 'hire') await setKitOwnership(newId, 'hire');
   };
 
   return {
     item, targets, currentKey, spares, spareGroups, dest, setDest, company, setCompany, destKey, setDestKey, repl, setRepl,
-    newPlant, setNewPlant, dates, setDates, note, setNote, preview, save, loadError,
+    newPlant, setNewPlant, newOwnership, setNewOwnership, dates, setDates, note, setNote, preview, save, loadError,
   };
 }
 

@@ -9,7 +9,7 @@ import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
 import { Field, ErrorNote, TestTag, ResolutionBadgeList } from './ui';
 import { resolutionBadges, AuditResolution } from '../../../../lib/followupLogic';
-import { btn, card, inputCls, formatDate } from './styles';
+import { btn, card, inputCls, formatDate, dateCls } from './styles';
 import { downloadAllAudits } from '../../../../lib/auditDownloads';
 import { loadAuditReferenceData } from '../../../../lib/siteAuditService';
 import { Auditor } from '../../../../lib/supabase';
@@ -120,8 +120,8 @@ export const AuditRecords: React.FC = () => {
             </select>
           )}
         </Field>
-        <Field label="From">{(id) => <input id={id} type="date" className={inputCls} value={from} onChange={(e) => setFrom(e.target.value)} />}</Field>
-        <Field label="To">{(id) => <input id={id} type="date" className={inputCls} value={to} onChange={(e) => setTo(e.target.value)} />}</Field>
+        <Field label="From">{(id) => <input id={id} type="date" className={dateCls} value={from} onChange={(e) => setFrom(e.target.value)} />}</Field>
+        <Field label="To">{(id) => <input id={id} type="date" className={dateCls} value={to} onChange={(e) => setTo(e.target.value)} />}</Field>
         <Field label="Audited by">
           {(id) => (
             <select id={id} className={inputCls} value={by} onChange={(e) => setBy(e.target.value)}>

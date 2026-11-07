@@ -2,7 +2,7 @@ import { applyExpiry, ServiceExpiryState } from '../../../../lib/siteAuditLogic'
 import { FIRE_EXT_MONTHS, HsDateKind } from '../../../../lib/hsDatesLogic';
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 import { Field, ExpiryNote } from './ui';
-import { inputCls, expiryRing } from './styles';
+import { expiryRing, dateCls } from './styles';
 
 /**
  * Dates for the 4 dated H&S items (round 15).
@@ -26,7 +26,7 @@ export function HsDateFields({ kind, state, onChange, expiryLabel }: {
     <Field label={expiryLabel ?? 'Expiry'} hint="Type it from the label">
       {(id) => (
         <>
-          <input id={id} type="date" className={`${inputCls} ${expiryRing(state.expiry)}`} value={state.expiry ?? ''}
+          <input id={id} type="date" className={`${dateCls} ${expiryRing(state.expiry)}`} value={state.expiry ?? ''}
             onChange={(e) => onChange(applyExpiry(state, e.target.value || null))} />
           <ExpiryNote expiry={state.expiry} />
         </>

@@ -17,7 +17,7 @@ import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { listLockupMovements, listPersonIssues, LockupMovementRow, PersonIssue } from '../../../../lib/lockupService';
 import { kitUpdateTarget, monthsForType, ppeUpdateTarget } from './updateTargets';
 import { hsDateKind } from '../../../../lib/hsDatesLogic';
-import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag } from './ui';
+import { CountBadge, ErrorNote, ExpiryPill, TestModeBanner, TestTag, OwnershipTag } from './ui';
 import { DownloadMenu } from './DownloadMenu';
 import { downloadOneHolder } from '../../../../lib/auditDownloads';
 import { useActor } from './useActor';
@@ -219,7 +219,7 @@ export const GangVanView: React.FC = () => {
             {kit.map((k) => (
               <li key={k.id} className="px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                 <div className="md:w-48 min-w-0">
-                  <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
+                  <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<OwnershipTag value={k.ownership} /><TestTag show={k.is_test} /></p>
                   <p className="text-xs text-slate-600">{k.plant_no ?? 'No plant no'}</p>
                 </div>
                 <p className="text-xs text-slate-600 md:w-40">Service {formatDate(k.service_date)}</p>

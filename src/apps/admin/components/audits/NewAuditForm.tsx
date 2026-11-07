@@ -23,6 +23,8 @@ import {
   summariseAuditLines,
   todayISO,
   applyServiceDate,
+  expiryOrigin,
+  expiryOriginText,
   applyExpiry,
   mergeKitLinesAfterSwap,
   restoreDraftLines,
@@ -41,11 +43,12 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { listLockupMovements } from '../../../../lib/lockupService';
 import { issuedSince } from '../../../../lib/lockupLogic';
-import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
+import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons, FostersHire } from './ui';
 import { PhotosSection, DraftPhoto } from './PhotosSection';
 import { photoProgress, suggestedNote } from '../../../../lib/photoLogic';
 import { StampInfo } from '../../../../lib/photoUpload';
-import { btn, card, inputCls, TEST_MODE, expiryRing } from './styles';
+import { btn, card, inputCls, TEST_MODE, expiryRing, dateCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 
 const SECTIONS: { key: DraftLine['section']; title: string; note: string }[] = [
   { key: 'ppe', title: 'PPE', note: 'Qty per person' },
@@ -348,7 +351,7 @@ export const NewAuditForm: React.FC = () => {
                 </p>
               </div>
               <Field label="Date">
-                {(id) => <input id={id} type="date" className={inputCls} value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />}
+                {(id) => <input id={id} type="date" className={dateCls} value={auditDate} onChange={(e) => setAuditDate(e.target.value)} />}
               </Field>
               <Field label="Site visited">
                 {(id) => <input id={id} className={inputCls} value={site} onChange={(e) => setSite(e.target.value)} placeholder="Street / job" />}
@@ -519,7 +522,7 @@ export const NewAuditForm: React.FC = () => {
 
       {/* ------------------------------------------------ summary + actions: fixed above the Home / Site Audits / Kit & Plant bar on phone */}
       {target && (
-        <div className="fixed sm:static inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 bg-white border-t sm:border border-slate-200 sm:rounded-xl px-4 py-2.5 sm:py-3 shadow-[0_-2px_8px_rgba(15,23,42,0.08)] sm:shadow-none">
+        <div className="kb-hide fixed sm:static inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 bg-white border-t sm:border border-slate-200 sm:rounded-xl px-4 py-2.5 sm:py-3 shadow-[0_-2px_8px_rgba(15,23,42,0.08)] sm:shadow-none">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <p className="text-base sm:text-sm font-semibold text-slate-900" aria-live="polite">
               <span className={summary.fails ? 'text-red-700' : ''}>{summary.fails} fail{summary.fails === 1 ? '' : 's'}</span>,{' '}
@@ -563,6 +566,7 @@ export const NewAuditForm: React.FC = () => {
                 service_date: n.serviceDate,
                 expiry_date: n.expiryDate,
                 expiryManual: n.expiryManual,
+                ownership: n.ownership,
                 result: null,
                 comment: '',
               },
@@ -643,7 +647,8 @@ export const NewAuditForm: React.FC = () => {
 
 // ---------------------------------------------------------------- one line
 
-function LineRow({
+/** One audit line card (exported so it can be shown on its own for screenshots). */
+export function LineRow({
   line,
   auditDate,
   months,
@@ -691,7 +696,7 @@ function LineRow({
       v,
       months
     );
-    onChange({ service_date: next.serviceDate, expiry_date: next.expiry });
+    onChange({ service_date: next.serviceDate, expiry_date: next.expiry, expiryManual: next.expiryManual });
   };
   // a date the expiry counts from: hard hats "Date on hat", fire extinguisher "Service date"
   const datedPpe = (line.section === 'ppe' || datedHs) && !!months;
@@ -732,18 +737,26 @@ function LineRow({
 
       {!notCarried && (
         // every field has the same fixed label line, so all inputs start on one top line
-        <div className="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-x-3 gap-y-3 items-start">
+        // Qty + Expiry side by side (first aid kit, eye wash, burns kit, PPE with an expiry only): Qty needs little room,
+        // so Expiry gets 3/5 and the date and its X fit on a phone
+        <div className={`mt-3 grid ${!isKit && hasExpiry && !datedPpe ? 'grid-cols-[minmax(0,2fr)_minmax(0,3fr)]' : 'grid-cols-2'} lg:grid-cols-4 gap-x-3 gap-y-3 items-start`}>
           <div className="col-span-2 lg:col-span-1">
             <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fit for purpose</span></div>
             <YesNo value={line.result} label={line.item_name} onChange={(v) => onChange({ result: v })} />
           </div>
+          {isKit && (
+            <div className="col-span-2 lg:col-span-1">
+              <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fosters or Hire</span></div>
+              <FostersHire value={line.ownership} label={line.item_name} onChange={(v) => onChange({ ownership: v })} />
+            </div>
+          )}
           {isKit ? (
             <>
               <Field label="Plant no">
-                {(id) => <input id={id} className={inputCls} value={line.plant_no_snapshot ?? ''} onChange={(e) => onChange({ plant_no_snapshot: e.target.value })} autoCapitalize="characters" />}
+                {(id) => <PlantNoInput id={id} label={`${line.item_name} plant no`} value={line.plant_no_snapshot ?? ''} onChange={(v) => onChange({ plant_no_snapshot: v })} />}
               </Field>
               <Field label="Service date">
-                {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
+                {(id) => <input id={id} type="date" className={dateCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
               </Field>
             </>
           ) : (
@@ -753,12 +766,13 @@ function LineRow({
           )}
           {datedPpe && (
             <Field label={dateLabel ?? 'Date'}>
-              {(id) => <input id={id} type="date" className={inputCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
+              {(id) => <input id={id} type="date" className={dateCls} value={line.service_date ?? ''} onChange={(e) => setServiceDate(e.target.value || null)} />}
             </Field>
           )}
           {hasExpiry && (
-            <div className={datedPpe || isKit ? 'col-span-2 lg:col-span-1' : ''}>
-              <ExpiryInput line={line} auditDate={auditDate} months={months} onChange={onChange} />
+            <div className={`min-w-0 ${datedPpe || isKit ? 'col-span-2 lg:col-span-1' : ''}`}>
+              <ExpiryInput line={line} auditDate={auditDate} months={months} fromLabel={isKit ? 'Service date' : dateLabel ?? 'Service date'}
+                required={datedHs && !months} onChange={onChange} />
             </div>
           )}
           {hasGauge && (
@@ -835,25 +849,36 @@ function LineRow({
 }
 
 /**
- * Expiry: the badge sits in a fixed spot on the label line and the "Auto: N months" note
+ * Expiry: the badge sits in a fixed spot on the label line and the "where it came from" note
  * has its line reserved, so nothing moves when the expiry fills itself in.
+ * First aid kit, eye wash, burns kit (required): the box is always shown, marked "Required"
+ * and highlighted while blank (visual only, Submit is not blocked).
  */
-function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; auditDate: string; months: number | null; onChange: (p: Partial<DraftLine>) => void }) {
+function ExpiryInput({ line, auditDate, months, fromLabel, required = false, onChange }: {
+  line: DraftLine; auditDate: string; months: number | null;
+  /** what the expiry counts from: "Service date", "Date on hat" */
+  fromLabel: string;
+  required?: boolean;
+  onChange: (p: Partial<DraftLine>) => void;
+}) {
   const [open, setOpen] = useState(!!line.expiry_date);
-  const showInput = open || !!line.expiry_date;
-  const auto = !!months && !line.expiryManual && !!line.expiry_date;
+  const showInput = required || open || !!line.expiry_date;
+  const missing = required && !line.expiry_date;
+  const origin = expiryOrigin({ serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual }, months);
   return (
-    <div>
+    <div className="min-w-0">
       <div className={LABEL_LINE}>
         <label htmlFor={`exp-${line.key}`} className={LABEL_TEXT}>Expiry</label>
+        {missing && <span className="flex-shrink-0 text-xs font-bold text-amber-800 bg-amber-100 border border-amber-300 rounded px-1.5 leading-5">Required</span>}
       </div>
       {showInput ? (
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 min-w-0">
           <input
             id={`exp-${line.key}`}
             type="date"
             aria-describedby={`exp-note-${line.key}`}
-            className={`${inputCls} ${expiryRing(line.expiry_date, auditDate)}`}
+            aria-required={required || undefined}
+            className={`${dateCls} flex-1 ${missing ? 'ring-2 ring-amber-500 bg-amber-50' : expiryRing(line.expiry_date, auditDate)}`}
             value={line.expiry_date ?? ''}
             onChange={(e) => {
               const s = applyExpiry({ serviceDate: line.service_date ?? null, expiry: line.expiry_date, expiryManual: !!line.expiryManual }, e.target.value || null);
@@ -867,7 +892,7 @@ function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; a
               onChange({ expiry_date: null, expiryManual: false });
               setOpen(false);
             }}
-            className="flex-shrink-0 min-w-[48px] min-h-[48px] sm:min-h-[44px] rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="flex-shrink-0 min-w-[44px] min-h-[48px] sm:min-h-[44px] rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             <X className="h-4 w-4" />
           </button>
@@ -877,9 +902,9 @@ function ExpiryInput({ line, auditDate, months, onChange }: { line: DraftLine; a
           N/A · add date
         </button>
       )}
-      {/* status straight under the field (coloured + worded), then the auto note; both lines always reserved */}
+      {/* status straight under the field (coloured + worded), then where it came from; both lines always reserved */}
       <ExpiryNote id={`exp-note-${line.key}`} expiry={line.expiry_date} today={auditDate} />
-      <p className="text-xs text-slate-600 min-h-[1rem] leading-4">{auto ? `Auto: ${months} months, change if needed` : ''}</p>
+      <p className="text-xs text-slate-600 min-h-[1rem] leading-4">{missing ? 'Type it from the label' : expiryOriginText(origin, months, fromLabel)}</p>
     </div>
   );
 }

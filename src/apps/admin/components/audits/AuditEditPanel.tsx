@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Field, ErrorNote, YesNo, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
+import { Field, ErrorNote, YesNo, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons, FostersHire } from './ui';
 import { AlertTriangle } from 'lucide-react';
-import { btn, inputCls, card, expiryRing } from './styles';
+import { btn, inputCls, card, expiryRing, dateCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { Auditor, AuditLineRow } from '../../../../lib/supabase';
@@ -25,7 +26,7 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
   const before = useMemo<EditableLine[]>(() => lines.map((l) => ({
     id: l.id, item_name: l.item_name, result: l.result, qty: l.qty, comment: l.comment, expiry_date: l.expiry_date,
     service_date: l.service_date, plant_no_snapshot: l.plant_no_snapshot, date_tag: l.date_tag, label_on: l.label_on ?? null,
-    gauge: l.gauge ?? null,
+    gauge: l.gauge ?? null, ownership: l.ownership ?? null,
   })), [lines]);
   const [edited, setEdited] = useState<EditableLine[]>(before);
   const { actorId, setActorId } = useActor(auditors);
@@ -97,14 +98,20 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
                       <YesNo value={l.result as 'Y' | 'N' | null} label={l.item_name} onChange={(v) => set(l.id, { result: v })} />
                     )}
                   </div>
+                  {sec === 'kit' && (
+                    <div className="col-span-2 lg:col-span-1">
+                      <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fosters or Hire</span></div>
+                      <FostersHire value={l.ownership as 'fosters' | 'hire' | null} label={l.item_name} onChange={(v) => set(l.id, { ownership: v })} />
+                    </div>
+                  )}
                   {sec === 'kit' ? (
-                    <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={l.plant_no_snapshot ?? ''} onChange={(e) => set(l.id, { plant_no_snapshot: e.target.value })} />}</Field>
+                    <Field label="Plant no">{(id) => <PlantNoInput id={id} value={l.plant_no_snapshot ?? ''} onChange={(v) => set(l.id, { plant_no_snapshot: v })} />}</Field>
                   ) : (
                     <Field label="Qty">{(id) => <input id={id} inputMode="numeric" className={inputCls} value={l.qty ?? ''} onChange={(e) => set(l.id, { qty: e.target.value })} />}</Field>
                   )}
                   {(sec === 'ppe' || sec === 'kit' || (sec === 'hs' && lineOf(l.id) && isDated(lineOf(l.id)!))) ? (
                     <div>
-                      <Field label="Expiry">{(id) => <input id={id} type="date" className={`${inputCls} ${expiryRing(l.expiry_date, auditDate)}`} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
+                      <Field label="Expiry">{(id) => <input id={id} type="date" className={`${dateCls} ${expiryRing(l.expiry_date, auditDate)}`} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
                       <ExpiryNote expiry={l.expiry_date} today={auditDate} />
                     </div>
                   ) : sec === 'other' && answerOf(l.id) === 'label' ? (

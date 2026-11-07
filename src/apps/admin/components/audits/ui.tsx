@@ -1,3 +1,4 @@
+import { ownershipLabel, type Ownership } from '../../../../lib/ownershipLogic';
 import React, { useEffect, useId, useRef } from 'react';
 import { X, FlaskConical, Check, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 import { expiryWording, todayISO } from '../../../../lib/siteAuditLogic';
@@ -32,7 +33,7 @@ export function Field({
 }) {
   const id = useId();
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className}`}>
       <div className={LABEL_LINE}>
         <label htmlFor={id} className={LABEL_TEXT}>{label}</label>
         {aside}
@@ -167,6 +168,39 @@ export function YesNo({
         <X className="h-5 w-5" aria-hidden="true" strokeWidth={3} />N
       </button>
     </div>
+  );
+}
+
+/** Fosters | Hire on a kit item: same size and style as Y / N; one is always selected (Fosters by default). */
+export function FostersHire({ value, onChange, label, disabled }: {
+  value: Ownership | null | undefined;
+  onChange: (v: Ownership) => void;
+  /** item name, read out with the buttons */
+  label: string;
+  disabled?: boolean;
+}) {
+  const on = value === 'hire' ? 'hire' : 'fosters';
+  const base =
+    'inline-flex items-center justify-center min-h-[48px] px-3 rounded-lg text-base font-bold border-2 transition-colors duration-150 cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed';
+  return (
+    <div role="group" aria-label={`${label}: Fosters or Hire`} className="grid grid-cols-2 gap-2 w-full">
+      {(['fosters', 'hire'] as Ownership[]).map((o) => (
+        <button key={o} type="button" disabled={disabled} aria-pressed={on === o} onClick={() => onChange(o)}
+          className={`${base} ${on === o ? 'bg-blue-700 border-blue-700 text-white' : 'bg-white border-slate-300 text-slate-800 hover:bg-slate-50'}`}>
+          {ownershipLabel(o)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Small "Fosters" / "Hire" tag next to a kit item. */
+export function OwnershipTag({ value }: { value: Ownership | null | undefined }) {
+  const o = value === 'hire' ? 'hire' : 'fosters';
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold border whitespace-nowrap ${o === 'hire' ? 'bg-violet-50 text-violet-800 border-violet-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+      {ownershipLabel(o)}
+    </span>
   );
 }
 

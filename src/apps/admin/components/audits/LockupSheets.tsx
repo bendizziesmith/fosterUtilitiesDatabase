@@ -1,7 +1,7 @@
 import { Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { Sheet, Field, ErrorNote } from './ui';
-import { btn, inputCls, TEST_MODE, formatDate } from './styles';
+import { btn, inputCls, TEST_MODE, formatDate, dateCls } from './styles';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { TargetPicker } from './TargetPicker';
@@ -188,7 +188,7 @@ export function IssueSheet({ line: first, lines, people, auditors, onClose, onSa
         <Field label="Quantity" hint={`Up to ${line.quantity}`} reserveHint={2}>{(id) => <input id={id} inputMode="numeric" className={inputCls} value={qty} onChange={(e) => setQty(wholeNumber(e.target.value))} />}</Field>
         {dated && (
           <Field label={line.date_label ?? 'Date'} reserveHint={2} hint={newExpiry ? `Their PPE expiry becomes ${formatDate(newExpiry)} (${line.service_interval_months} months)` : undefined}>
-            {(id) => <input id={id} type="date" className={inputCls} value={hat} onChange={(e) => setHat(e.target.value)} />}
+            {(id) => <input id={id} type="date" className={dateCls} value={hat} onChange={(e) => setHat(e.target.value)} />}
           </Field>
         )}
       </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, PackagePlus, X, Plus, Search, Ban } from 'lucide-react';
 import { ExpiryPill, Field } from './ui';
 import { btn, inputCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 import { ServiceExpiryState } from '../../../../lib/siteAuditLogic';
 
@@ -54,7 +55,7 @@ export function TakeSpareLine({ title, typeName, groups, state, onChange, months
           </div>
           {state.mode === 'new' && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={state.plant} autoCapitalize="characters" onChange={(e) => onChange({ ...state, plant: e.target.value })} />}</Field>
+              <Field label="Plant no">{(id) => <PlantNoInput id={id} value={state.plant} onChange={(v) => onChange({ ...state, plant: v })} />}</Field>
               <ServiceExpiryFields state={state.dates} onChange={(d) => onChange({ ...state, dates: d })} months={months} />
             </div>
           )}

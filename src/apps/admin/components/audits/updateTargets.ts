@@ -20,6 +20,7 @@ export function kitUpdateTarget(k: KitItemOverview, kitTypes: KitType[]): Update
     expiryDate: k.expiry_date,
     swapItem: k.status === 'on_van' && k.holder_kind !== 'none' ? k : null,
     months: monthsForType(kitTypes, k.kit_type_id),
+    ownership: k.ownership ?? null,
   };
 }
 

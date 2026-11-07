@@ -1,3 +1,4 @@
+import { withOwnership, type Ownership } from './ownershipLogic';
 import {
   supabase,
   AuditChecklistItem,
@@ -180,8 +181,13 @@ export async function loadHolderRecord(t: Pick<AuditTarget, 'kind' | 'personId' 
   const lastLines = last
     ? ((check(await supabase.from('audit_lines').select('*').eq('audit_id', last.id).order('sort_order')) as AuditLineRow[]) ?? [])
     : [];
+  // Fosters | Hire is on kit_items itself: the audit's kit rows show each item's saved setting
+  const heldRows = (check(kit) as unknown as KitItemOverview[]) ?? [];
+  const saved = heldRows.length
+    ? ((check(await supabase.from('kit_items').select('id, ownership').in('id', heldRows.map((k) => k.id))) as { id: string; ownership: Ownership | null }[]) ?? [])
+    : [];
   return {
-    heldKit: (check(kit) as unknown as KitItemOverview[]) ?? [],
+    heldKit: withOwnership(heldRows, saved),
     ppe: (check(ppe) as unknown as AuditPpeItem[]) ?? [],
     notCarried: (check(vkl) as unknown as KitVanKitListRow[]) ?? [],
     lastLines,
@@ -197,7 +203,7 @@ export type AuditHeader = Omit<SiteAudit, 'id' | 'status' | 'submitted_at'>;
 
 const LINE_COLUMNS = [
   'section', 'checklist_item_id', 'kit_type_id', 'item_name', 'expected_qty', 'result', 'qty',
-  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'label_on', 'gauge', 'comment', 'photo_path', 'photo_taken_at', 'kit_item_id',
+  'expiry_date', 'service_date', 'plant_no_snapshot', 'date_tag', 'label_on', 'gauge', 'comment', 'photo_path', 'photo_taken_at', 'kit_item_id', 'ownership',
 ] as const;
 
 function lineToRow(auditId: string, line: DraftLine, index: number) {
@@ -354,9 +360,17 @@ export async function getDashboardCounts(): Promise<{
 // ---------------------------------------------------------------- Kit & Plant
 
 export async function listKit(): Promise<KitItemOverview[]> {
-  return check(
-    await supabase.from('kit_items_overview').select('*').neq('status', 'removed').order('type_sort').order('plant_no')
-  ) ?? [];
+  const [rows, saved] = await Promise.all([
+    supabase.from('kit_items_overview').select('*').neq('status', 'removed').order('type_sort').order('plant_no'),
+    // Fosters | Hire is on kit_items itself (the overview view is unchanged)
+    supabase.from('kit_items').select('id, ownership'),
+  ]);
+  return withOwnership((check(rows) as KitItemOverview[]) ?? [], (check(saved) as { id: string; ownership: Ownership | null }[]) ?? []);
+}
+
+/** Fosters | Hire on one kit item (Add kit, Swap → Add new, Update, Yard Lockup, Kit & Plant). */
+export async function setKitOwnership(itemId: string, ownership: Ownership): Promise<void> {
+  check(await supabase.from('kit_items').update({ ownership }).eq('id', itemId));
 }
 
 export async function listVanKitLists(): Promise<KitVanKitListRow[]> {

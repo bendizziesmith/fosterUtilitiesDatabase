@@ -3,6 +3,7 @@
  * rule is unit-tested in siteAuditLogic.test.ts). Data access lives in
  * siteAuditService.ts.
  */
+import { ownershipOf, type Ownership } from './ownershipLogic';
 
 export type ExpiryStatus = 'expired' | 'due_soon' | 'ok';
 export type AuditSection = 'ppe' | 'hs' | 'kit' | 'other';
@@ -279,10 +280,12 @@ export interface DraftLine {
   photo_path?: string | null;
   /** set when the van's kit list already says this type is not carried */
   notCarriedBefore?: boolean;
-  /** local only: the person typed this expiry, so a new service date won't overwrite it */
+  /** local only: the person typed this expiry ("Entered by hand"); a new service date still recalculates it */
   expiryManual?: boolean;
   /** local-only key for React lists */
   key?: string;
+  /** kit lines: Fosters or Hire (7 Nov 2026); copied onto the kit item when the audit is submitted */
+  ownership?: Ownership | null;
 }
 
 /** "N fails, N expired, N due soon". Not carried is not a fail; H&S has no dates. */
@@ -317,6 +320,7 @@ export function buildKitLines(
     plant_no: string | null;
     service_date: string | null;
     expiry_date: string | null;
+    ownership?: Ownership | null;
   }[]
 ): DraftLine[] {
   const notCarried = new Set(vanKitList.filter((l) => !l.carried).map((l) => l.kit_type_id));
@@ -342,6 +346,7 @@ export function buildKitLines(
           plant_no_snapshot: null,
           service_date: null,
           expiry_date: null,
+          ownership: 'fosters',
         });
         return;
       }
@@ -355,6 +360,7 @@ export function buildKitLines(
           plant_no_snapshot: i.plant_no,
           service_date: i.service_date,
           expiry_date: i.expiry_date,
+          ownership: ownershipOf(i),
         })
       );
     });
@@ -498,7 +504,7 @@ export function otherAnswerFor(
 export function buildAuditPrefill(input: {
   checklist: { id: string; section: string; name: string; expected_qty: string | null; sort_order: number; has_expiry?: boolean }[];
   kitTypes: { id: string; name: string; sort_order: number }[];
-  heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null }[];
+  heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null; ownership?: Ownership | null }[];
   ppe: { checklist_item_id: string; expiry_date: string | null }[];
   notCarried: { kit_type_id: string; carried: boolean }[];
   lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null; label_on?: string | null }[];
@@ -564,14 +570,36 @@ export interface ServiceExpiryState {
   expiryManual: boolean;
 }
 
-/** New service date: refill expiry unless the person typed their own. */
+/**
+ * New service date (or date on hat / date tested): the expiry is ALWAYS recalculated from it, even
+ * one typed by hand (Justin, 7 Nov 2026), and is automatic again. Clearing the service date clears
+ * an automatic expiry but keeps a typed one. No interval: the expiry is left alone.
+ */
 export function applyServiceDate(state: ServiceExpiryState, serviceDate: string | null, months: number | null | undefined): ServiceExpiryState {
   const next = { ...state, serviceDate };
-  if (!state.expiryManual && months) {
-    const auto = autoExpiry(serviceDate, months);
-    if (auto || !serviceDate) next.expiry = auto;
-  }
+  if (!months) return next;
+  const auto = autoExpiry(serviceDate, months);
+  if (auto) return { ...next, expiry: auto, expiryManual: false };
+  if (!serviceDate && !state.expiryManual) next.expiry = null;
   return next;
+}
+
+/** Where an expiry came from: calculated, typed, or carried over from the record without matching. */
+export type ExpiryOrigin = 'auto' | 'manual' | 'saved';
+
+export function expiryOrigin(state: ServiceExpiryState, months: number | null | undefined): ExpiryOrigin | null {
+  if (!state.expiry || !months) return null;
+  if (state.expiryManual) return 'manual';
+  return autoExpiry(state.serviceDate, months) === state.expiry ? 'auto' : 'saved';
+}
+
+/** The note under the expiry: "Auto: 12 months from service date" / "Entered by hand" / … */
+export function expiryOriginText(origin: ExpiryOrigin | null, months: number | null | undefined, fromLabel: string): string {
+  const from = fromLabel.toLowerCase();
+  if (origin === 'auto') return `Auto: ${months} months from ${from}`;
+  if (origin === 'manual') return 'Entered by hand';
+  if (origin === 'saved') return `From the last record, not ${months} months from ${from}`;
+  return '';
 }
 
 /** Typed expiry: keep it; clearing it hands control back to the automatic date. */
@@ -719,6 +747,7 @@ export function mergeKitLinesAfterSwap(onScreen: DraftLine[], rebuilt: DraftLine
       service_date: prev.service_date,
       expiry_date: prev.expiry_date,
       expiryManual: prev.expiryManual,
+      ownership: prev.ownership ?? n.ownership,
       comment: prev.comment,
       photo_path: prev.photo_path,
       photo_taken_at: prev.photo_taken_at,

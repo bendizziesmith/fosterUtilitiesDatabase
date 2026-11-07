@@ -178,3 +178,15 @@ describe('round 9: Edit audit — gauge in the log, and the expired / due-soon s
     expect(dateAlerts([], '2026-11-05').text).toBe('');
   });
 });
+
+describe('Fosters | Hire in Edit audit (through audit_edit, so the submitted-audit lock still holds)', () => {
+  const line = { id: 'l1', item_name: 'CAT', result: 'Y', qty: null, comment: null, expiry_date: null, service_date: null, plant_no_snapshot: '1234', date_tag: null, ownership: 'fosters' };
+  it('Fosters → Hire is one change, logged as "CAT Fosters / Hire: Fosters → Hire"', () => {
+    const d = diffAuditLines([line], [{ ...line, ownership: 'hire' }]);
+    expect(d.changes).toEqual([{ line_id: 'l1', field: 'ownership', from: 'fosters', to: 'hire' }]);
+    expect(d.summary).toEqual(['CAT Fosters / Hire: Fosters → Hire']);
+  });
+  it('no change when it stays the same', () => {
+    expect(diffAuditLines([line], [{ ...line }]).changes).toEqual([]);
+  });
+});

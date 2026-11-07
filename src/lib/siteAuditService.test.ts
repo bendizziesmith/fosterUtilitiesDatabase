@@ -111,6 +111,26 @@ describe('saveDraftAudit', () => {
     expect((ins.payload as Record<string, unknown>[]).some((r) => 'expiryManual' in r)).toBe(false);
   });
 
+  it('Fosters | Hire: Save draft sends each kit line’s choice (audit → kit item on submit)', async () => {
+    H.calls = [];
+    await svc.saveDraftAudit('a1', header, [], [
+      { section: 'kit', item_name: 'CAT', kit_type_id: 't-c', kit_item_id: 'k-c', result: 'Y', plant_no_snapshot: '1234', expiry_date: null, ownership: 'hire' },
+      { section: 'kit', item_name: 'Digger', kit_type_id: 't-d', kit_item_id: null, result: 'Y', plant_no_snapshot: 'D1', expiry_date: null, ownership: 'fosters' },
+      { section: 'ppe', item_name: 'Hard hats', checklist_item_id: 'c-hat', result: 'Y', expiry_date: null },
+    ]);
+    const ins = H.calls.find((c) => c.table === 'audit_lines' && c.op === 'insert')!;
+    expect((ins.payload as Record<string, unknown>[]).map((r) => [r.item_name, r.ownership])).toEqual([
+      ['CAT', 'hire'], ['Digger', 'fosters'], ['Hard hats', null],
+    ]);
+  });
+
+  it('Fosters | Hire: set on a kit item outside an audit (Add kit, Swap → Add new, Update, Yard Lockup)', async () => {
+    H.calls = [];
+    await svc.setKitOwnership('k-1', 'hire');
+    expect(H.calls[0]).toMatchObject({ table: 'kit_items', op: 'update', payload: { ownership: 'hire' } });
+    expect(H.calls[0].filters).toContainEqual(['eq', 'id', 'k-1']);
+  });
+
   it('round 9: Save draft keeps the photos already uploaded (slot photos, reasons, additional with caption)', async () => {
     H.calls = [];
     await svc.saveDraftAudit('a1', header, [], [], [

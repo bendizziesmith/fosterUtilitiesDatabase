@@ -1,6 +1,7 @@
 import { ArrowRight } from 'lucide-react';
-import { Field, ExpiryPill } from './ui';
+import { Field, ExpiryPill, FostersHire } from './ui';
 import { inputCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { TargetPicker } from './TargetPicker';
 import { ServiceExpiryFields } from './ServiceExpiryFields';
 import type { Dest, SwapForm } from './useSwapForm';
@@ -41,8 +42,12 @@ export function ReplacementFields({ f, months, title }: { f: SwapForm; months: n
           </label>
           {f.repl === 'new' && (
             <div className="ml-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={f.newPlant} onChange={(e) => f.setNewPlant(e.target.value)} />}</Field>
+              <Field label="Plant no">{(id) => <PlantNoInput id={id} value={f.newPlant} onChange={f.setNewPlant} />}</Field>
               <ServiceExpiryFields state={f.dates} onChange={f.setDates} months={months} />
+              <div className="sm:col-span-3">
+                <p className="block text-xs font-semibold text-slate-600 mb-1">Fosters or Hire</p>
+                <FostersHire value={f.newOwnership} onChange={f.setNewOwnership} label={`New ${f.item.type_name}`} />
+              </div>
             </div>
           )}
           <label className={radio(f.repl === 'none')}>
