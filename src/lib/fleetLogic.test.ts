@@ -6,6 +6,7 @@ import {
   kitTiles,
   planOffRoad,
   diffAuditLines,
+  nextAuditFor,
   type ScheduleAudit,
 } from './fleetLogic';
 import { buildAuditTargets, auditTargetsOf } from './siteAuditLogic';
@@ -188,5 +189,31 @@ describe('Fosters | Hire in Edit audit (through audit_edit, so the submitted-aud
   });
   it('no change when it stays the same', () => {
     expect(diffAuditLines([line], [{ ...line }]).changes).toEqual([]);
+  });
+});
+
+describe('Next audit date: the same rule as Upcoming Audits', () => {
+  const audits = [
+    { id: 'old', status: 'submitted' as const, audit_date: '2026-03-01', holder_employee_id: 'e1', ganger_id: 'e1', vehicle_id: 'v1' },
+    { id: 'new', status: 'submitted' as const, audit_date: '2026-11-07', holder_employee_id: 'e1', ganger_id: 'e1', vehicle_id: 'v1' },
+    { id: 'draft', status: 'draft' as const, audit_date: '2026-12-01', holder_employee_id: 'e1', ganger_id: 'e1', vehicle_id: 'v1' },
+    { id: 'van', status: 'submitted' as const, audit_date: '2026-10-01', holder_employee_id: null, ganger_id: null, vehicle_id: 'v9' },
+  ];
+  it('latest submitted audit + the interval (6 months)', () => {
+    expect(nextAuditFor(audits[0], audits, 6)).toBe('2027-05-07');
+  });
+  it('every record of the same gang shows the same next date (from their latest audit)', () => {
+    expect(nextAuditFor(audits[1], audits, 6)).toBe('2027-05-07');
+  });
+  it('follows the interval setting', () => {
+    expect(nextAuditFor(audits[1], audits, 3)).toBe('2027-02-07');
+  });
+  it('a spare van counts from its own audits', () => {
+    expect(nextAuditFor(audits[3], audits, 6)).toBe('2027-04-01');
+  });
+  it('matches Upcoming Audits exactly', () => {
+    const target = { key: 'person:e1', kind: 'person' as const, personId: 'e1', vehicleId: 'v1', label: 'Ben' };
+    const row = auditSchedule([target as never], audits, 6, '2026-11-07')[0];
+    expect(nextAuditFor(audits[1], audits, 6)).toBe(row.due);
   });
 });

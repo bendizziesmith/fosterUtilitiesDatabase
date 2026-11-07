@@ -2,6 +2,7 @@
  * What goes in the downloads (round 9): the audit PDF content, file names and CSVs.
  * Pure, unit-tested in auditReport.test.ts; drawing the PDFs is in auditPdf.ts.
  */
+import { ownershipLabel, ownershipOf, type Ownership } from './ownershipLogic';
 import { expiryWording, getExpiryStatus, holderLabel, summariseAuditLines, todayISO, HolderLike, DraftLine } from './siteAuditLogic';
 import { sanitizeName } from './timesheetUtils';
 import { isLowStock, sortLockup, LockupLine } from './lockupLogic';
@@ -203,6 +204,8 @@ export const KIT_STATUS_TEXT: Record<string, string> = { on_van: 'On van', spare
 export type RegisterItem = HolderLike & {
   kit_type_id: string; type_name: string; type_sort: number; plant_no: string | null;
   service_date: string | null; expiry_date: string | null;
+  /** Fosters | Hire (7 Nov 2026) */
+  ownership?: Ownership | null;
 };
 
 /** Plant register rows: every item (not scrapped), grouped by kit type, then plant no. */
@@ -215,6 +218,7 @@ export function plantRegisterRows<T extends RegisterItem>(kit: T[], today: strin
       return {
         type: k.type_name,
         plantNo: k.plant_no ?? '',
+        owner: ownershipLabel(ownershipOf(k)),
         serviceDate: k.service_date,
         expiryDate: k.expiry_date,
         where: holderLabel(k),

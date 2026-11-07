@@ -56,7 +56,41 @@ describe('PDF branding: NSF Utilities Limited (PDFs only)', () => {
     setBrandLogoLoader(async () => ({ dataUrl: PNG, width: 164, height: 78 }));
     const out = text(await renderPlantRegisterPdf([], 'NSF Utilities Limited', 'Neil Foster'));
     expect(out).toContain('/Subtype /Image');
-    expect(out).toContain('Plant Register');
+    // 7 Nov 2026: titled "Kit & Plant – All kit / Fosters kit / Hire kit" (was "Plant Register")
+    expect(out).toContain('Kit & Plant');
     expect(out).toContain('/Author (NSF Utilities Limited)');
+  });
+});
+
+describe('Kit & Plant PDF: All / Fosters kit / Hire kit (7 Nov 2026)', () => {
+  const item = (o: object) => ({ kit_type_id: 't', type_name: 'CAT', type_sort: 10, plant_no: '1', status: 'on_van', service_date: null, expiry_date: null,
+    holder_kind: 'person', holder_name: 'Ben Smith', holder_reg: 'YE24 TNL', vehicle_reg: 'YE24 TNL', ...o });
+  const kit = [item({ plant_no: 'F-100', ownership: 'fosters' }), item({ plant_no: 'H-200', ownership: 'hire' }), item({ plant_no: 'N-300' })];
+  // jsPDF writes "&" as-is but the en dash is encoded, so check the words either side
+  it('All: every item, each marked Fosters or Hire, titled "All kit"', async () => {
+    setBrandLogoLoader(async () => null);
+    const out = text(await renderPlantRegisterPdf(kit as never[], 'NSF Utilities Limited', 'Neil', 'all'));
+    for (const t of ['Kit & Plant', 'All kit', 'F-100', 'H-200', 'N-300', 'Fosters', 'Hire']) expect(out).toContain(t);
+  });
+  it('Hire kit: only hired items, titled "Hire kit"', async () => {
+    setBrandLogoLoader(async () => null);
+    const out = text(await renderPlantRegisterPdf(kit as never[], 'NSF Utilities Limited', 'Neil', 'hire'));
+    expect(out).toContain('Hire kit');
+    expect(out).toContain('H-200');
+    expect(out).not.toContain('F-100');
+    expect(out).not.toContain('N-300');
+  });
+  it('Fosters kit: ours, including items with no setting yet, titled "Fosters kit"', async () => {
+    setBrandLogoLoader(async () => null);
+    const out = text(await renderPlantRegisterPdf(kit as never[], 'NSF Utilities Limited', 'Neil', 'fosters'));
+    expect(out).toContain('Fosters kit');
+    expect(out).toContain('F-100');
+    expect(out).toContain('N-300');
+    expect(out).not.toContain('H-200');
+  });
+  it('keeps the clean style: no coloured row fills', async () => {
+    setBrandLogoLoader(async () => null);
+    const out = text(await renderPlantRegisterPdf(kit as never[], 'NSF Utilities Limited', 'Neil', 'all'));
+    expect(out).not.toMatch(/0\.996 0\.886 0\.886 rg|0\.996 0\.953 0\.78\d* rg/);
   });
 });

@@ -136,7 +136,9 @@ export const KitPlantPage: React.FC = () => {
             <PackagePlus className="h-4 w-4" aria-hidden="true" />Add to lockup
           </button>
           <DownloadMenu choices={[
-            { title: 'Full plant register', kind: 'pdf', hint: 'Every item by kit type: plant no, who / where, service, expiry, status', run: () => downloadPlantRegister('pdf', who) },
+            { title: 'Full plant register', kind: 'pdf', hint: 'Every item by kit type: plant no, Fosters / Hire, who / where, service, expiry, status',
+              options: OWNERSHIP_FILTERS.map((f) => ({ value: f.value, label: f.label })), optionsTitle: 'All kit, Fosters kit or Hire kit?',
+              run: (f) => downloadPlantRegister('pdf', who, (f as OwnershipFilter | undefined) ?? 'all') },
             { title: 'Full plant register', kind: 'csv', hint: 'The same, for a spreadsheet', run: () => downloadPlantRegister('csv', who) },
             { title: 'By person / spare van', kind: 'pdf', hint: 'One section each: their kit, PPE and H&S dates', run: () => downloadByHolder(who, (key) => ref.allTargets.find((t) => t.key === key)?.label ?? key) },
             { title: 'Yard Lockup stock', kind: 'pdf', hint: 'Counts and low-at levels', run: () => downloadLockup('pdf', who) },

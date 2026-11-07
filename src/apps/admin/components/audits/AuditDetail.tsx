@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Download, Loader2, Check, CheckCircle2, Trash2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
-import { getAudit, getAuditFileUrl, listLineFollowups, listDownloads } from '../../../../lib/siteAuditService';
+import { getAudit, getAuditFileUrl, listLineFollowups, listDownloads, listAuditSummaries } from '../../../../lib/siteAuditService';
 import { downloadedLabel, AuditDownloadRow } from '../../../../lib/downloadLogic';
 import { followupText, resolutionBadges, resolutionFrom, LineFollowup } from '../../../../lib/followupLogic';
 import { downloadAuditPdf } from '../../../../lib/auditDownloads';
@@ -11,7 +11,8 @@ import { getExpiryStatus, summariseAuditLines, whoName, otherAnswerFor, isFileDe
 import { FileLink } from './FileLink';
 import { AuditEditPanel } from './AuditEditPanel';
 import { DeleteAuditSheet } from './FleetSheets';
-import { listAuditEdits, setPhotoCaption, AuditEditRow } from '../../../../lib/fleetService';
+import { listAuditEdits, setPhotoCaption, AuditEditRow, getAuditInterval } from '../../../../lib/fleetService';
+import { nextAuditFor } from '../../../../lib/fleetLogic';
 import { ActorPicker } from './ActorPicker';
 import { btn } from './styles';
 import { useAuditRef, useFileDeletions } from './useAuditRef';
@@ -199,6 +200,10 @@ export const AuditDetail: React.FC = () => {
   const [edits, setEdits] = useState<AuditEditRow[]>([]);
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [flash, setFlash] = useState<string | null>(null);
+  /** the PDF downloaded but its "Downloaded" record could not be saved: say so (never hidden) */
+  const [tickError, setTickError] = useState<string | null>(null);
+  /** "Next audit": the same rule as Upcoming Audits (latest audit of this person / van + the interval) */
+  const [nextAudit, setNextAudit] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -211,6 +216,28 @@ export const AuditDetail: React.FC = () => {
     load();
   }, [load]);
 
+  // back from the PDF viewer (iPhone switches the tab to it): show the new Downloaded tick
+  useEffect(() => {
+    if (!id) return;
+    const onBack = () => {
+      if (document.visibilityState === 'visible') listDownloads(id).then(setDownloads).catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onBack);
+    window.addEventListener('pageshow', onBack);
+    return () => {
+      document.removeEventListener('visibilitychange', onBack);
+      window.removeEventListener('pageshow', onBack);
+    };
+  }, [id]);
+
+  const audit0 = data?.audit;
+  useEffect(() => {
+    if (!audit0 || audit0.status !== 'submitted') return setNextAudit(null);
+    Promise.all([listAuditSummaries(), getAuditInterval()])
+      .then(([all, months]) => setNextAudit(nextAuditFor(audit0, all, months)))
+      .catch(() => setNextAudit(null));
+  }, [audit0]);
+
   if (!id) return <p className="text-base sm:text-sm text-slate-600">No audit selected.</p>;
   if (error) return <ErrorNote message={error} />;
   if (!data) return <LoadingSpinner />;
@@ -220,8 +247,10 @@ export const AuditDetail: React.FC = () => {
   const s = summariseAuditLines(lines, audit.audit_date);
   const onPdf = async () => {
     setPdf('Making the PDF…');
+    setTickError(null);
     try {
-      await downloadAuditPdf(audit.id, actor ? { id: actor.id, name: actor.name } : null, (done, total) => setPdf(`Adding photos ${done} of ${total}…`));
+      const r = await downloadAuditPdf(audit.id, actor ? { id: actor.id, name: actor.name } : null, (done, total) => setPdf(`Adding photos ${done} of ${total}…`));
+      if (!r.recorded) setTickError(`The PDF downloaded, but the “Downloaded” tick could not be saved: ${r.recordError}`);
       setPdf(null);
       listDownloads(audit.id).then(setDownloads).catch(() => undefined);
     } catch (e) {
@@ -261,6 +290,7 @@ export const AuditDetail: React.FC = () => {
             ['Date', formatDate(audit.audit_date)],
             ['Van reg', audit.vehicle_reg_snapshot ?? '—'],
             ['Site', audit.site_visited ?? '—'],
+            ...(nextAudit ? [['Next audit', formatDate(nextAudit)]] : []),
           ].map(([k, v]) => (
             <div key={k}>
               <dt className="text-xs font-semibold text-slate-600">{k}</dt>
@@ -289,6 +319,7 @@ export const AuditDetail: React.FC = () => {
             </button>
           )}
         </div>
+        <ErrorNote message={tickError} />
         {showDownloads && downloads.length > 0 && (
           <ul className="mt-2 rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200" aria-label="Downloads">
             {downloads.map((d, i) => (

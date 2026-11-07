@@ -11,6 +11,7 @@ import { holderKey, holderLabel, whoName } from './siteAuditLogic';
 import { lockupCsv, plantRegisterCsv, longDate } from './auditReport';
 import { PDF_COMPANY, AuditPdfSource, HolderSheet, buildAuditPdfBlob, downloadAuditsZip, downloadCsv, downloadHolderSheetsPdf, downloadLockupPdf, downloadPlantRegisterPdf, saveBlob } from './auditPdf';
 import { todayISO } from './siteAuditLogic';
+import type { OwnershipFilter } from './ownershipLogic';
 
 export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
   const [{ audit, lines, photos }, edits, ref, followups] = await Promise.all([
@@ -34,26 +35,44 @@ export async function fetchAuditSource(id: string): Promise<AuditPdfSource> {
 /** "Who's doing this?" (the last name used on this device), for "Generated … by …" and the Downloaded tick. */
 export type DownloadActor = { id: string; name: string } | null;
 
-export async function downloadAuditPdf(id: string, actor: DownloadActor, onProgress?: (done: number, total: number) => void) {
+/** Whether the "Downloaded" record was saved, and why not if it wasn't (shown to the person, never swallowed). */
+export interface RecordResult { recorded: boolean; recordError: string | null }
+
+/** Saves the Downloaded record; a failure is returned, it doesn't stop the download. */
+async function record(ids: string[], actor: DownloadActor, kind: 'single' | 'zip'): Promise<RecordResult> {
+  try {
+    await recordDownloads(ids, actor, kind, import.meta.env.DEV);
+    return { recorded: true, recordError: null };
+  } catch (e) {
+    return { recorded: false, recordError: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * The record is saved BEFORE the file is handed over: on iPhone, handing over a PDF switches the tab to
+ * the PDF viewer and the page stops, so anything after it may never reach the database (7 Nov 2026 bug).
+ */
+export async function downloadAuditPdf(id: string, actor: DownloadActor, onProgress?: (done: number, total: number) => void): Promise<RecordResult> {
   const src = await fetchAuditSource(id);
   const { blob, filename } = await buildAuditPdfBlob(src, PDF_COMPANY, whoName(actor?.name), getAuditFileUrl, onProgress);
+  const r = await record([id], actor, 'single');
   saveBlob(blob, filename);
-  // the tick on Audit records: never let a failed write stop the download itself
-  await recordDownloads([id], actor, 'single', import.meta.env.DEV).catch(() => undefined);
+  return r;
 }
 
 export async function downloadAllAudits(ids: string[], range: { from: string | null; to: string | null }, actor: DownloadActor, onProgress?: (done: number, total: number) => void) {
-  const r = await downloadAuditsZip(ids, fetchAuditSource, PDF_COMPANY, whoName(actor?.name), getAuditFileUrl, range, onProgress);
-  if (r.doneIds.length) await recordDownloads(r.doneIds, actor, 'zip', import.meta.env.DEV).catch(() => undefined);
-  return r;
+  let rec: RecordResult = { recorded: true, recordError: null };
+  const r = await downloadAuditsZip(ids, fetchAuditSource, PDF_COMPANY, whoName(actor?.name), getAuditFileUrl, range, onProgress,
+    async (doneIds) => { rec = await record(doneIds, actor, 'zip'); });
+  return { ...r, ...rec };
 }
 
 const fileDate = () => longDate(todayISO());
 
-export async function downloadPlantRegister(kind: 'pdf' | 'csv', generatedBy: string) {
+export async function downloadPlantRegister(kind: 'pdf' | 'csv', generatedBy: string, filter: OwnershipFilter = 'all') {
   const kit = await listKit();
   if (kind === 'csv') return downloadCsv(plantRegisterCsv(kit), `Plant register ${fileDate()}.csv`);
-  return downloadPlantRegisterPdf(kit, PDF_COMPANY, generatedBy);
+  return downloadPlantRegisterPdf(kit, PDF_COMPANY, generatedBy, filter);
 }
 
 export async function downloadLockup(kind: 'pdf' | 'csv', generatedBy: string) {
