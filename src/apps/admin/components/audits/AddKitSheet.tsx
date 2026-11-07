@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Sheet, Field, ErrorNote } from './ui';
+import { Sheet, Field, ErrorNote, FostersHire } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
 import { PlantNoInput } from './PlantNoInput';
-import { addKit, createKitType } from '../../../../lib/siteAuditService';
+import { addKit, createKitType, setKitOwnership } from '../../../../lib/siteAuditService';
+import type { Ownership } from '../../../../lib/ownershipLogic';
 import { AuditTarget, ServiceExpiryState, autoExpiry } from '../../../../lib/siteAuditLogic';
 import { Auditor, KitType } from '../../../../lib/supabase';
 import { ActorPicker } from './ActorPicker';
@@ -17,6 +18,7 @@ export interface NewKitLine {
   serviceDate: string | null;
   expiryDate: string | null;
   expiryManual: boolean;
+  ownership: Ownership;
 }
 
 type Where = 'on_van' | 'spare' | 'away_for_service';
@@ -57,6 +59,7 @@ export function AddKitSheet({
   const [newType, setNewType] = useState('');
   const [newMonths, setNewMonths] = useState('');
   const [plantNo, setPlantNo] = useState('');
+  const [ownership, setOwnership] = useState<Ownership>('fosters');
   const [dates, setDates] = useState<ServiceExpiryState>({ serviceDate: null, expiry: null, expiryManual: false });
   const [where, setWhere] = useState<Where>(defaultWhere);
   const [holderKeyValue, setHolderKey] = useState(defaultHolderKey ?? '');
@@ -98,10 +101,11 @@ export function AddKitSheet({
           serviceDate: dates.serviceDate,
           expiryDate: dates.expiry,
           expiryManual: dates.expiryManual,
+          ownership,
         });
         return;
       }
-      await addKit({
+      const newId = await addKit({
         kitTypeId: type.id,
         plantNo: plantNo.trim() || null,
         serviceDate: dates.serviceDate,
@@ -114,6 +118,7 @@ export function AddKitSheet({
         isTest: TEST_MODE,
         actorId: actorId || null,
       });
+      if (ownership === 'hire') await setKitOwnership(newId, 'hire');
       onSaved?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not add the kit.';
@@ -158,6 +163,10 @@ export function AddKitSheet({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Plant no">{(id) => <PlantNoInput id={id} value={plantNo} onChange={setPlantNo} />}</Field>
         <ServiceExpiryFields state={dates} onChange={setDates} months={months} />
+      </div>
+      <div>
+        <p className="block text-xs font-semibold text-slate-600 mb-1">Fosters or Hire</p>
+        <FostersHire value={ownership} onChange={setOwnership} label="New kit" />
       </div>
 
       {mode === 'page' && (

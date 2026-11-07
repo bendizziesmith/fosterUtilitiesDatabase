@@ -43,7 +43,7 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { listLockupMovements } from '../../../../lib/lockupService';
 import { issuedSince } from '../../../../lib/lockupLogic';
-import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
+import { Field, YesNo, ErrorNote, TestModeBanner, Sheet, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons, FostersHire } from './ui';
 import { PhotosSection, DraftPhoto } from './PhotosSection';
 import { photoProgress, suggestedNote } from '../../../../lib/photoLogic';
 import { StampInfo } from '../../../../lib/photoUpload';
@@ -566,6 +566,7 @@ export const NewAuditForm: React.FC = () => {
                 service_date: n.serviceDate,
                 expiry_date: n.expiryDate,
                 expiryManual: n.expiryManual,
+                ownership: n.ownership,
                 result: null,
                 comment: '',
               },
@@ -743,6 +744,12 @@ export function LineRow({
             <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fit for purpose</span></div>
             <YesNo value={line.result} label={line.item_name} onChange={(v) => onChange({ result: v })} />
           </div>
+          {isKit && (
+            <div className="col-span-2 lg:col-span-1">
+              <div className={LABEL_LINE}><span className={LABEL_TEXT}>Fosters or Hire</span></div>
+              <FostersHire value={line.ownership} label={line.item_name} onChange={(v) => onChange({ ownership: v })} />
+            </div>
+          )}
           {isKit ? (
             <>
               <Field label="Plant no">

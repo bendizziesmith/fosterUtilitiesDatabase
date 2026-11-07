@@ -3,6 +3,7 @@
  * rule is unit-tested in siteAuditLogic.test.ts). Data access lives in
  * siteAuditService.ts.
  */
+import { ownershipOf, type Ownership } from './ownershipLogic';
 
 export type ExpiryStatus = 'expired' | 'due_soon' | 'ok';
 export type AuditSection = 'ppe' | 'hs' | 'kit' | 'other';
@@ -283,6 +284,8 @@ export interface DraftLine {
   expiryManual?: boolean;
   /** local-only key for React lists */
   key?: string;
+  /** kit lines: Fosters or Hire (7 Nov 2026); copied onto the kit item when the audit is submitted */
+  ownership?: Ownership | null;
 }
 
 /** "N fails, N expired, N due soon". Not carried is not a fail; H&S has no dates. */
@@ -317,6 +320,7 @@ export function buildKitLines(
     plant_no: string | null;
     service_date: string | null;
     expiry_date: string | null;
+    ownership?: Ownership | null;
   }[]
 ): DraftLine[] {
   const notCarried = new Set(vanKitList.filter((l) => !l.carried).map((l) => l.kit_type_id));
@@ -342,6 +346,7 @@ export function buildKitLines(
           plant_no_snapshot: null,
           service_date: null,
           expiry_date: null,
+          ownership: 'fosters',
         });
         return;
       }
@@ -355,6 +360,7 @@ export function buildKitLines(
           plant_no_snapshot: i.plant_no,
           service_date: i.service_date,
           expiry_date: i.expiry_date,
+          ownership: ownershipOf(i),
         })
       );
     });
@@ -498,7 +504,7 @@ export function otherAnswerFor(
 export function buildAuditPrefill(input: {
   checklist: { id: string; section: string; name: string; expected_qty: string | null; sort_order: number; has_expiry?: boolean }[];
   kitTypes: { id: string; name: string; sort_order: number }[];
-  heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null }[];
+  heldKit: { id: string; kit_type_id: string; plant_no: string | null; service_date: string | null; expiry_date: string | null; ownership?: Ownership | null }[];
   ppe: { checklist_item_id: string; expiry_date: string | null }[];
   notCarried: { kit_type_id: string; carried: boolean }[];
   lastLines: { section: string; checklist_item_id: string | null; qty: string | null; service_date: string | null; date_tag: string | null; label_on?: string | null }[];
@@ -741,6 +747,7 @@ export function mergeKitLinesAfterSwap(onScreen: DraftLine[], rebuilt: DraftLine
       service_date: prev.service_date,
       expiry_date: prev.expiry_date,
       expiryManual: prev.expiryManual,
+      ownership: prev.ownership ?? n.ownership,
       comment: prev.comment,
       photo_path: prev.photo_path,
       photo_taken_at: prev.photo_taken_at,

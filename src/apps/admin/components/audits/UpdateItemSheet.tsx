@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
-import { Sheet, Field, ErrorNote, ExpiryPill } from './ui';
+import { Sheet, Field, ErrorNote, ExpiryPill, FostersHire } from './ui';
 import { btn, inputCls, dateCls } from './styles';
 import { PlantNoInput } from './PlantNoInput';
-import { updateAttentionItem, updateHsItem, uploadAuditFile } from '../../../../lib/siteAuditService';
+import { setKitOwnership, updateAttentionItem, updateHsItem, uploadAuditFile } from '../../../../lib/siteAuditService';
+import { ownershipOf, type Ownership } from '../../../../lib/ownershipLogic';
 import { HsDateKind, hsStartDates, hsUpdateFields, hsUpdateInput, hsUpdateOptions } from '../../../../lib/hsDatesLogic';
 import { HsDateFields } from './HsDateFields';
 import { todayISO, autoExpiry, applyExpiry, AuditTarget, ServiceExpiryState } from '../../../../lib/siteAuditLogic';
@@ -30,6 +31,8 @@ export interface UpdateTarget {
   dateLabel?: string | null;
   /** the 4 dated H&S items: fire extinguisher 'tested', first aid / eye wash / burns kit 'expiry' */
   hsKind?: HsDateKind | null;
+  /** kit: Fosters | Hire as saved */
+  ownership?: Ownership | null;
 }
 
 type What = 'reserviced' | 'replaced' | 'swap' | 'tested';
@@ -58,6 +61,7 @@ export function UpdateItemSheet({
     expiryManual: false,
   });
   const [plantNo, setPlantNo] = useState(target.plantNo ?? '');
+  const [ownership, setOwnership] = useState<Ownership>(ownershipOf(target));
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -127,6 +131,7 @@ export function UpdateItemSheet({
         note: [hatNote, note.trim()].filter(Boolean).join(' · ') || null,
         actorId,
       });
+      if (!isPpe && ownership !== ownershipOf(target)) await setKitOwnership(target.itemId, ownership);
       onSaved();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the update.');
@@ -193,6 +198,12 @@ export function UpdateItemSheet({
             <Field label="Plant no" hint={what === 'replaced' ? 'Change it if the new item has a different number' : undefined}>
               {(id) => <PlantNoInput id={id} value={plantNo} onChange={setPlantNo} />}
             </Field>
+          )}
+          {!isPpe && (
+            <div>
+              <p className="block text-xs font-semibold text-slate-600 mb-1">Fosters or Hire</p>
+              <FostersHire value={ownership} onChange={setOwnership} label={target.itemName} />
+            </div>
           )}
           <Field label="Certificate or photo (optional)">
             {(id) => (

@@ -9,7 +9,7 @@ import { AuditTarget } from '../../../../lib/siteAuditLogic';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { IssueSheet } from './LockupSheets';
-import { ExpiryPill, ErrorNote, Field, Sheet, TestTag } from './ui';
+import { ExpiryPill, ErrorNote, Field, Sheet, TestTag, OwnershipTag } from './ui';
 import { btn, card, inputCls, formatDate } from './styles';
 
 type SectionKey = LockupSection | 'kit';
@@ -173,7 +173,7 @@ export function LockupView({ auditors, people, plantKit, onPlantAction, onChange
                   {kitShown.map((k) => (
                     <li key={k.id} className="px-4 sm:px-5 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                       <div className="md:w-56 min-w-0">
-                        <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<TestTag show={k.is_test} /></p>
+                        <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.type_name}<OwnershipTag value={k.ownership} /><TestTag show={k.is_test} /></p>
                         <p className="text-xs text-slate-600">{k.plant_no ?? 'No plant no'} · expiry {formatDate(k.expiry_date)}</p>
                       </div>
                       <div className="md:flex-1"><ExpiryPill expiry={k.expiry_date} /></div>

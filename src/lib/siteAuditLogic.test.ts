@@ -880,3 +880,21 @@ describe('expiryOrigin / expiryOriginText — where the expiry came from, shown 
     expect(expiryOriginText(null, 12, 'Service date')).toBe('');
   });
 });
+
+describe('Fosters | Hire on audit kit rows (two-way sync, Kit & Plant → audit)', () => {
+  const types = [{ id: 't1', name: 'CAT', sort_order: 10 }, { id: 't2', name: 'Digger', sort_order: 30 }];
+  it('a kit row filled from the register shows that item’s saved setting', () => {
+    const lines = buildKitLines(types, [], [{ id: 'k1', kit_type_id: 't1', plant_no: '1234', service_date: null, expiry_date: null, ownership: 'hire' }]);
+    expect(lines.find((l) => l.kit_item_id === 'k1')?.ownership).toBe('hire');
+  });
+  it('rows with no item yet, and items with no setting, start on Fosters', () => {
+    const lines = buildKitLines(types, [], [{ id: 'k1', kit_type_id: 't1', plant_no: '1234', service_date: null, expiry_date: null }]);
+    expect(lines.map((l) => l.ownership)).toEqual(['fosters', 'fosters']);
+  });
+  it('a swap keeps the Fosters / Hire chosen on screen for the rows that did not change', () => {
+    const record = [{ id: 'k1', kit_type_id: 't1', plant_no: '1234', service_date: null, expiry_date: null, ownership: 'fosters' as const }];
+    const onScreen = buildKitLines(types, [], record).map((l) => (l.kit_item_id === 'k1' ? { ...l, ownership: 'hire' as const } : l));
+    const merged = mergeKitLinesAfterSwap(onScreen, buildKitLines(types, [], record));
+    expect(merged.find((l) => l.kit_item_id === 'k1')?.ownership).toBe('hire');
+  });
+});

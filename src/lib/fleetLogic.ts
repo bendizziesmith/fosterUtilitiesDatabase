@@ -130,6 +130,8 @@ export interface EditableLine {
   date_tag: string | null;
   label_on?: string | null;
   gauge?: string | null;
+  /** kit: Fosters | Hire */
+  ownership?: string | null;
 }
 
 const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
@@ -141,12 +143,13 @@ const FIELDS: { key: keyof EditableLine; label: string | null }[] = [
   { key: 'date_tag', label: 'date/tag' },
   { key: 'label_on', label: 'label on' },
   { key: 'gauge', label: 'gauge' },
+  { key: 'ownership', label: 'Fosters / Hire' },
   { key: 'comment', label: 'comment' },
 ];
 
 const norm = (v: string | null | undefined) => (v === null || v === undefined || v.trim() === '' ? null : v.trim());
 const show = (field: keyof EditableLine, v: string | null) =>
-  v === null ? '—' : field === 'result' && v === 'not_carried' ? 'Not carried' : v;
+  v === null ? '—' : field === 'result' && v === 'not_carried' ? 'Not carried' : field === 'ownership' ? (v === 'hire' ? 'Hire' : 'Fosters') : v;
 
 /** What an edit changed, line by line, plus readable lines for the log ("Ear defenders N → Y"). */
 export function diffAuditLines(before: EditableLine[], after: EditableLine[]) {

@@ -5,6 +5,7 @@ import { LoadingSpinner } from '../../../../components/LoadingSpinner';
 import { listKit, moveKit, listAttention } from '../../../../lib/siteAuditService';
 import { listLockup, LockupRow } from '../../../../lib/lockupService';
 import { lowStockLines } from '../../../../lib/lockupLogic';
+import { filterByOwnership, OWNERSHIP_FILTERS, type OwnershipFilter } from '../../../../lib/ownershipLogic';
 import { lockupAttentionRows } from '../../../../lib/hsDatesLogic';
 import { kitPageTiles } from '../../../../lib/dashboardLogic';
 import { sortAttention, AttentionRow, todayISO } from '../../../../lib/siteAuditLogic';
@@ -23,7 +24,7 @@ import { SwapKitSheet } from './SwapKitSheet';
 import { TargetPicker } from './TargetPicker';
 import { useAuditRef } from './useAuditRef';
 import { kitUpdateTarget, kitWhere, monthsForType } from './updateTargets';
-import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge, StatTiles } from './ui';
+import { Field, Sheet, ExpiryPill, ErrorNote, TestModeBanner, TestTag, CountBadge, StatTiles, OwnershipTag } from './ui';
 import { DownloadMenu } from './DownloadMenu';
 import { downloadByHolder, downloadLockup, downloadPlantRegister } from '../../../../lib/auditDownloads';
 import { whoName } from '../../../../lib/siteAuditLogic';
@@ -55,6 +56,8 @@ export const KitPlantPage: React.FC = () => {
   const [lockupLines, setLockupLines] = useState<LockupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [topQ, setTopQ] = useState('');
+  /** All | Fosters kit | Hire kit: applies to by kit type, by person / spare van and the Yard Lockup kit */
+  const [own, setOwn] = useState<OwnershipFilter>('all');
   const [adding, setAdding] = useState<false | 'any' | 'lockup'>(false);
   /** "Add to lockup" (stock counted by quantity); the Yard Lockup tab reloads after */
   const [addingStock, setAddingStock] = useState(false);
@@ -106,6 +109,8 @@ export const KitPlantPage: React.FC = () => {
   };
 
   const tiles = kitPageTiles(all, attention ?? [], lowStock.length);
+  const shownKit = filterByOwnership(all, own);
+  const shownLabelled = filterByOwnership(labelled, own);
 
   // ---------------------------------------------------------- top search
   const q = topQ.trim().toLowerCase();
@@ -182,13 +187,21 @@ export const KitPlantPage: React.FC = () => {
 
       {!type && <NeedsAttention rows={attention} lowStock={lowStock} kit={all} refData={ref} onChanged={load} />}
 
+      <div role="radiogroup" aria-label="Show Fosters or Hire kit" className="grid grid-cols-3 sm:inline-flex gap-1 bg-slate-100 p-1 rounded-lg">
+        {OWNERSHIP_FILTERS.map((f) => (
+          <button key={f.value} type="button" role="radio" aria-checked={own === f.value} className={tabCls(own === f.value)} onClick={() => setOwn(f.value)}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {type ? (
         <TypeItems
           key={`${type.id}:${params.get('q') ?? ''}`}
           typeName={type.name}
           months={type.service_interval_months}
           initialQuery={params.get('q') ?? ''}
-          items={labelled.filter((k) => k.kit_type_id === type.id)}
+          items={shownLabelled.filter((k) => k.kit_type_id === type.id)}
           onBack={() => setParams({})}
           onOpenHolder={openHolder}
           onUpdate={(k) => setUpdating(kitUpdateTarget(k, ref.kitTypes))}
@@ -212,17 +225,19 @@ export const KitPlantPage: React.FC = () => {
                 key={lockupVersion}
                 auditors={auditors}
                 people={ref.allTargets.filter((t) => t.kind === 'person')}
-                plantKit={all.filter((k) => k.status === 'spare')}
+                plantKit={shownKit.filter((k) => k.status === 'spare')}
                 onChanged={load}
                 onPlantAction={(k, a) => (a === 'update' ? setUpdating(kitUpdateTarget(k, ref.kitTypes)) : a === 'assign' ? setAssigning({ item: k, back: false }) : setDeleting(k))}
               />
             </div>
           ) : view === 'type' ? (
-            <ByType rows={summariseKitByType(ref.kitTypes, all)} onOpen={(id) => setParams({ type: id })} />
+            <ByType rows={summariseKitByType(ref.kitTypes, shownKit).filter((r) => own === 'all' || r.total > 0)} onOpen={(id) => setParams({ type: id })} />
           ) : (
             <ByVan
-              rows={summariseKitByHolder(ref.allTargets, all).filter((r, i) => {
+              rows={summariseKitByHolder(ref.allTargets, shownKit).filter((r, i) => {
                 const t = ref.allTargets[i];
+                // filtered to Fosters or Hire: only people / vans that have some
+                if (own !== 'all') return r.items > 0;
                 return r.items > 0 || t.isGanger || t.kind === 'spare_van' || !!t.vehicleId;
               })}
               changedPeople={new Set(ref.vanChanges.map((c) => c.employeeId))}
@@ -448,7 +463,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
               <tbody className="divide-y divide-slate-200">
                 {page.map((k) => (
                   <tr key={k.id}>
-                    <td className="px-5 py-3 font-semibold text-slate-900"><span className="inline-flex items-center gap-2">{k.plant_no ?? '—'}<TestTag show={k.is_test} /></span></td>
+                    <td className="px-5 py-3 font-semibold text-slate-900"><span className="inline-flex items-center gap-2">{k.plant_no ?? '—'}<OwnershipTag value={k.ownership} /><TestTag show={k.is_test} /></span></td>
                     <td className="px-3 py-3">{whereCell(k)}</td>
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{formatDate(k.service_date)}</td>
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap">{formatDate(k.expiry_date)}</td>
@@ -465,7 +480,7 @@ function TypeItems({ typeName, months, initialQuery, items, onBack, onOpenHolder
               <li key={k.id} className="px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.plant_no ?? 'No plant no'}<TestTag show={k.is_test} /></p>
+                    <p className="text-base sm:text-sm font-bold text-slate-900 flex items-center gap-2">{k.plant_no ?? 'No plant no'}<OwnershipTag value={k.ownership} /><TestTag show={k.is_test} /></p>
                     <p className="text-xs mt-0.5">{whereCell(k)}</p>
                     <p className="text-xs text-slate-600 mt-0.5">Service {formatDate(k.service_date)} · expiry {formatDate(k.expiry_date)}</p>
                   </div>
