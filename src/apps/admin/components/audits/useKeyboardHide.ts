@@ -8,6 +8,8 @@ import { isTypingField, keyboardLooksOpen } from '../../../../lib/phoneInput';
  * (moving from one box to the next keeps them hidden).
  * Bottom sheets (Change van, Swap, Issue to, Add kit…) hide their Next / Cancel footer the same way, and
  * --vv-top / --vv-height (the part of the screen above the keyboard) let them fit in it.
+ * Also re-checked after every tap: a focused box that is removed from the page (a picker swapping its
+ * search box for the chosen item) sends no "focus left" signal, which left the buttons hidden.
  */
 export function useKeyboardHide() {
   useEffect(() => {
@@ -37,14 +39,18 @@ export function useKeyboardHide() {
         if (!looksOpen()) root.classList.remove('kb-open');
       }, 250);
     };
+    // after the tap's own handlers and re-render: catches a focused box that was removed
+    const afterTap = () => window.setTimeout(update, 0);
     document.addEventListener('focusin', update);
     document.addEventListener('focusout', update);
+    document.addEventListener('click', afterTap, true);
     vv?.addEventListener('resize', update);
     vv?.addEventListener('scroll', setVisibleArea);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener('focusin', update);
       document.removeEventListener('focusout', update);
+      document.removeEventListener('click', afterTap, true);
       vv?.removeEventListener('resize', update);
       vv?.removeEventListener('scroll', setVisibleArea);
       root.classList.remove('kb-open');
