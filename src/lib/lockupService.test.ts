@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 type Call = { table?: string; rpc?: string; op: string; payload?: unknown; filters: unknown[][] };
-const H = vi.hoisted(() => ({ calls: [] as Call[] }));
+const H = vi.hoisted(() => ({ calls: [] as Call[], current: 0 }));
 
 vi.mock('./supabase', () => {
   const builder = (call: Call) => {
@@ -13,8 +13,9 @@ vi.mock('./supabase', () => {
       } else call.filters.push([op, ...args]);
       return b;
     };
-    ['insert', 'update', 'upsert', 'delete', 'select', 'eq', 'in', 'order', 'gt'].forEach((m) => (b[m] = chain(m)));
-    b.then = (resolve: (r: unknown) => unknown) => resolve({ data: [], error: null });
+    ['insert', 'update', 'upsert', 'delete', 'select', 'eq', 'in', 'order', 'gt', 'single'].forEach((m) => (b[m] = chain(m)));
+    b.then = (resolve: (r: unknown) => unknown) =>
+      resolve({ data: call.filters.some((f) => f[0] === 'single') ? { quantity: H.current } : [], error: null });
     return b;
   };
   return {
@@ -96,6 +97,27 @@ describe('Yard Lockup service', () => {
     await svc.setLockupLowAt(['s1', 's2'], 4);
     expect(H.calls[0]).toMatchObject({ table: 'kit_lockup_stock', op: 'update', payload: { low_at: 4 } });
     expect(H.calls[0].filters).toContainEqual(['in', 'id', ['s1', 's2']]);
+  });
+
+  it('stock-take: reads the latest count, then saves the difference with who and a note (logged like − / +)', async () => {
+    H.calls = [];
+    H.current = 9;
+    await svc.setLockupCount('s1', 12, 'a1');
+    expect(H.calls[0]).toMatchObject({ table: 'kit_lockup_stock', op: 'select' });
+    expect(H.calls[1]).toMatchObject({ rpc: 'kit_lockup_adjust', payload: { p_stock_id: 's1', p_delta: 3, p_note: 'Count set to 12', p_actor_id: 'a1' } });
+  });
+
+  it('stock-take to the count it already is: nothing is saved', async () => {
+    H.calls = [];
+    H.current = 12;
+    await expect(svc.setLockupCount('s1', 12, 'a1')).rejects.toThrow('already the count');
+    expect(H.calls.some((c) => c.rpc)).toBe(false);
+  });
+
+  it('Add: adds what came in, with who and a note', async () => {
+    H.calls = [];
+    await svc.addToLockupCount('s1', 10, 'a1');
+    expect(H.calls[0]).toMatchObject({ rpc: 'kit_lockup_adjust', payload: { p_stock_id: 's1', p_delta: 10, p_note: '10 came in', p_actor_id: 'a1' } });
   });
 
   it('refuses a negative "Low at" before calling the database', async () => {

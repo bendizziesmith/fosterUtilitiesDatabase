@@ -47,6 +47,21 @@ export function applyStockDelta(quantity: number, delta: number): { ok: boolean;
   return { ok: true, quantity: next };
 }
 
+/** Stock-take: the typed count as a change to the current count (whole number, 0 or more). */
+export function countChange(current: number, typed: string): { ok: true; delta: number } | { ok: false; error: string } {
+  const n = Number(typed.trim());
+  if (typed.trim() === '' || !Number.isInteger(n) || n < 0) return { ok: false, error: 'Type the count (a whole number, 0 or more).' };
+  if (n === current) return { ok: false, error: 'That’s already the count.' };
+  return { ok: true, delta: n - current };
+}
+
+/** "Add": how many came in, added to the current count (10 + 10 = 20). */
+export function addedChange(current: number, typed: string): { ok: true; delta: number; after: number } | { ok: false; error: string } {
+  const n = Number(typed.trim());
+  if (typed.trim() === '' || !Number.isInteger(n) || n < 1) return { ok: false, error: 'Type how many came in (1 or more).' };
+  return { ok: true, delta: n, after: current + n };
+}
+
 const SECTION_ORDER: Record<LockupSection, number> = { ppe: 0, hs: 1, other: 2 };
 
 /** Always grouped by section in audit-sheet order; the sort applies inside each section. */
