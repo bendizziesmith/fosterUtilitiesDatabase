@@ -32,7 +32,7 @@ export function Field({
 }) {
   const id = useId();
   return (
-    <div className={className}>
+    <div className={`min-w-0 ${className}`}>
       <div className={LABEL_LINE}>
         <label htmlFor={id} className={LABEL_TEXT}>{label}</label>
         {aside}

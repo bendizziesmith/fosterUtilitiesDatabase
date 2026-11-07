@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Field, ErrorNote, YesNo, LABEL_LINE, LABEL_TEXT, ExpiryNote, GaugeButtons } from './ui';
 import { AlertTriangle } from 'lucide-react';
-import { btn, inputCls, card, expiryRing } from './styles';
+import { btn, inputCls, card, expiryRing, dateCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { ActorPicker } from './ActorPicker';
 import { useActor } from './useActor';
 import { Auditor, AuditLineRow } from '../../../../lib/supabase';
@@ -98,13 +99,13 @@ export function AuditEditPanel({ auditId, lines, auditors, onCancel, onSaved, ot
                     )}
                   </div>
                   {sec === 'kit' ? (
-                    <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={l.plant_no_snapshot ?? ''} onChange={(e) => set(l.id, { plant_no_snapshot: e.target.value })} />}</Field>
+                    <Field label="Plant no">{(id) => <PlantNoInput id={id} value={l.plant_no_snapshot ?? ''} onChange={(v) => set(l.id, { plant_no_snapshot: v })} />}</Field>
                   ) : (
                     <Field label="Qty">{(id) => <input id={id} inputMode="numeric" className={inputCls} value={l.qty ?? ''} onChange={(e) => set(l.id, { qty: e.target.value })} />}</Field>
                   )}
                   {(sec === 'ppe' || sec === 'kit' || (sec === 'hs' && lineOf(l.id) && isDated(lineOf(l.id)!))) ? (
                     <div>
-                      <Field label="Expiry">{(id) => <input id={id} type="date" className={`${inputCls} ${expiryRing(l.expiry_date, auditDate)}`} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
+                      <Field label="Expiry">{(id) => <input id={id} type="date" className={`${dateCls} ${expiryRing(l.expiry_date, auditDate)}`} value={l.expiry_date ?? ''} onChange={(e) => set(l.id, { expiry_date: e.target.value || null })} />}</Field>
                       <ExpiryNote expiry={l.expiry_date} today={auditDate} />
                     </div>
                   ) : sec === 'other' && answerOf(l.id) === 'label' ? (

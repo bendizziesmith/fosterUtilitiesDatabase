@@ -168,3 +168,43 @@ html.dark ::-webkit-scrollbar-thumb:hover { background: #475569; }
 html.dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.18) !important; }
 html.dark .text-violet-700, html.dark .text-violet-800 { color: #c4b5fd !important; }
 html.dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.4) !important; }
+
+/* Site Audits + Kit & Plant date boxes (7 Nov 2026). iPhone Safari gives date inputs a built-in
+   minimum width and its own height, so they poked out of the card and the date sat high.
+   Only boxes with the audit-date class (audit pages) are affected. */
+input.audit-date {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  height: 48px;
+  padding: 0 8px;
+  line-height: 46px;
+}
+@media (min-width: 640px) {
+  input.audit-date {
+    height: 44px;
+    padding: 0 12px;
+    line-height: 42px;
+  }
+  input.audit-date::-webkit-date-and-time-value {
+    line-height: 42px;
+  }
+}
+input.audit-date::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+  line-height: 46px;
+}
+input.audit-date::-webkit-datetime-edit {
+  padding: 0;
+}
+
+/* Site Audits + Kit & Plant on phones (7 Nov 2026): the fixed bottom bar and the audit footer are
+   hidden while the keyboard is open (useKeyboardHide sets html.kb-open), so they don't ride up over
+   the form. Computer widths are not affected. */
+@media (max-width: 639px) {
+  html.kb-open .kb-hide {
+    display: none;
+  }
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Sheet, Field, ErrorNote } from './ui';
 import { btn, inputCls, TEST_MODE } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { addKit, createKitType } from '../../../../lib/siteAuditService';
 import { AuditTarget, ServiceExpiryState, autoExpiry } from '../../../../lib/siteAuditLogic';
 import { Auditor, KitType } from '../../../../lib/supabase';
@@ -155,7 +156,7 @@ export function AddKitSheet({
         </div>
       )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Field label="Plant no">{(id) => <input id={id} className={inputCls} value={plantNo} onChange={(e) => setPlantNo(e.target.value)} />}</Field>
+        <Field label="Plant no">{(id) => <PlantNoInput id={id} value={plantNo} onChange={setPlantNo} />}</Field>
         <ServiceExpiryFields state={dates} onChange={setDates} months={months} />
       </div>
 

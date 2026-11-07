@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Home, ClipboardCheck, Wrench } from 'lucide-react';
 import { currentArea, AuditArea } from '../../../../lib/auditNav';
+import { useKeyboardHide } from './useKeyboardHide';
 
 const ITEMS: { area: AuditArea; label: string; path: string; icon: typeof Home }[] = [
   { area: 'home', label: 'Home', path: '/', icon: Home },
@@ -20,7 +21,7 @@ export function AuditNavBar() {
   return (
     <nav
       aria-label="Site Audits and Kit & Plant"
-      className="fixed sm:static bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 sm:border sm:rounded-xl sm:mt-8 px-2 sm:px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:py-3 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] sm:shadow-none"
+      className="kb-hide fixed sm:static bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 sm:border sm:rounded-xl sm:mt-8 px-2 sm:px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:py-3 shadow-[0_-2px_8px_rgba(15,23,42,0.06)] sm:shadow-none"
     >
       <ul className="grid grid-cols-3 gap-2 max-w-4xl mx-auto">
         {ITEMS.map(({ area, label, path, icon: Icon }) => {
@@ -46,8 +47,12 @@ export function AuditNavBar() {
   );
 }
 
-/** Wraps every Site Audits / Kit & Plant page: content, then the nav bar; phone content is padded so the bar never covers it. */
+/**
+ * Wraps every Site Audits / Kit & Plant page: content, then the nav bar; phone content is padded so the
+ * bar never covers it. While the phone keyboard is open the bar (and the audit footer) are hidden.
+ */
 export function AuditShell({ children }: { children: React.ReactNode }) {
+  useKeyboardHide();
   return (
     <div className="pb-[calc(4rem+env(safe-area-inset-bottom)+1rem)] sm:pb-0">
       {children}

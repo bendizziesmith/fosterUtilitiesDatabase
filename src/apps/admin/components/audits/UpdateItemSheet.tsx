@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { Sheet, Field, ErrorNote, ExpiryPill } from './ui';
-import { btn, inputCls } from './styles';
+import { btn, inputCls, dateCls } from './styles';
+import { PlantNoInput } from './PlantNoInput';
 import { updateAttentionItem, updateHsItem, uploadAuditFile } from '../../../../lib/siteAuditService';
 import { HsDateKind, hsStartDates, hsUpdateFields, hsUpdateInput, hsUpdateOptions } from '../../../../lib/hsDatesLogic';
 import { HsDateFields } from './HsDateFields';
@@ -180,7 +181,7 @@ export function UpdateItemSheet({
             <HsDateFields kind={hsKind} state={dates} onChange={setDates} expiryLabel={hsUpdateFields(hsKind).expiryLabel} />
           ) : isPpe && !months ? (
             <Field label="New expiry date">
-              {(id) => <input id={id} type="date" className={inputCls} value={dates.expiry ?? ''} onChange={(e) => setDates(applyExpiry(dates, e.target.value || null))} />}
+              {(id) => <input id={id} type="date" className={dateCls} value={dates.expiry ?? ''} onChange={(e) => setDates(applyExpiry(dates, e.target.value || null))} />}
             </Field>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -190,7 +191,7 @@ export function UpdateItemSheet({
           )}
           {!isPpe && (
             <Field label="Plant no" hint={what === 'replaced' ? 'Change it if the new item has a different number' : undefined}>
-              {(id) => <input id={id} className={inputCls} value={plantNo} onChange={(e) => setPlantNo(e.target.value)} />}
+              {(id) => <PlantNoInput id={id} value={plantNo} onChange={setPlantNo} />}
             </Field>
           )}
           <Field label="Certificate or photo (optional)">

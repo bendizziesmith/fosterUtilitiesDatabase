@@ -29,6 +29,8 @@ import {
   addMonths,
   autoExpiry,
   applyServiceDate,
+  expiryOrigin,
+  expiryOriginText,
   applyExpiry,
   summariseKitByType,
   sortKit,
@@ -411,7 +413,7 @@ describe('autoExpiry', () => {
   });
 });
 
-describe('applyServiceDate / applyExpiry — expiry fills itself unless typed by hand', () => {
+describe('applyServiceDate / applyExpiry — a new service date always sets the expiry', () => {
   const blank = { serviceDate: null, expiry: null, expiryManual: false };
 
   it('fills expiry from the service date', () => {
@@ -421,10 +423,26 @@ describe('applyServiceDate / applyExpiry — expiry fills itself unless typed by
     const s1 = applyServiceDate(blank, '2026-11-04', 12);
     expect(applyServiceDate(s1, '2026-12-01', 12).expiry).toBe('2027-12-01');
   });
-  it('keeps an expiry the person typed', () => {
+  // 7 Nov 2026 (Justin, after the first live audit): changing the service date ALWAYS recalculates
+  // the expiry, even one typed by hand (replaces the earlier "keeps an expiry the person typed").
+  it('a new service date recalculates even a typed expiry (and it is automatic again)', () => {
     const typed = applyExpiry(applyServiceDate(blank, '2026-11-04', 12), '2027-06-30');
     expect(typed.expiryManual).toBe(true);
-    expect(applyServiceDate(typed, '2026-12-01', 12).expiry).toBe('2027-06-30');
+    expect(applyServiceDate(typed, '2026-12-01', 12)).toEqual({ serviceDate: '2026-12-01', expiry: '2027-12-01', expiryManual: false });
+  });
+  it('typing an expiry never changes the service date', () => {
+    expect(applyExpiry({ serviceDate: '2026-11-04', expiry: '2027-11-04', expiryManual: false }, '2027-06-30').serviceDate).toBe('2026-11-04');
+  });
+  it('the live fire extinguisher row: service 18 Sep 2026, expiry 17 May 2026 (carried over) follows a new service date', () => {
+    const fire = { serviceDate: '2026-09-18', expiry: '2026-05-17', expiryManual: true };
+    expect(applyServiceDate(fire, '2026-09-19', 12).expiry).toBe('2027-09-19');
+  });
+  it('hard hats: 36 months from the date on hat', () => {
+    expect(applyServiceDate({ serviceDate: '2025-01-01', expiry: '2027-06-01', expiryManual: true }, '2026-11-07', 36).expiry).toBe('2029-11-07');
+  });
+  it('clearing the service date clears an automatic expiry but keeps a typed one', () => {
+    expect(applyServiceDate({ serviceDate: '2026-11-04', expiry: '2027-11-04', expiryManual: false }, null, 12).expiry).toBeNull();
+    expect(applyServiceDate({ serviceDate: '2026-11-04', expiry: '2027-06-30', expiryManual: true }, null, 12).expiry).toBe('2027-06-30');
   });
   it('goes back to automatic when the typed expiry is cleared', () => {
     const cleared = applyExpiry({ serviceDate: '2026-11-04', expiry: '2027-06-30', expiryManual: true }, null);
@@ -831,5 +849,34 @@ describe('round 12 bug: dates changed on the audit form must be what is saved', 
     expect(changed.expiry).toBe('2027-11-05');
     const changed2 = applyServiceDate({ serviceDate: reopened[1].service_date ?? null, expiry: reopened[1].expiry_date, expiryManual: !!reopened[1].expiryManual }, '2026-12-20', 12);
     expect(changed2.expiry).toBe('2027-12-20');
+  });
+});
+
+describe('expiryOrigin / expiryOriginText — where the expiry came from, shown under it', () => {
+  it('calculated: "Auto: 12 months from service date"', () => {
+    const o = expiryOrigin({ serviceDate: '2026-11-04', expiry: '2027-11-04', expiryManual: false }, 12);
+    expect(o).toBe('auto');
+    expect(expiryOriginText(o, 12, 'Service date')).toBe('Auto: 12 months from service date');
+  });
+  it('hard hats keep their wording: "Auto: 36 months from date on hat"', () => {
+    expect(expiryOriginText('auto', 36, 'Date on hat')).toBe('Auto: 36 months from date on hat');
+  });
+  it('typed: "Entered by hand"', () => {
+    const o = expiryOrigin({ serviceDate: '2026-11-04', expiry: '2027-06-30', expiryManual: true }, 12);
+    expect(o).toBe('manual');
+    expect(expiryOriginText(o, 12, 'Service date')).toBe('Entered by hand');
+  });
+  it('carried over and not service date + interval: says so', () => {
+    const o = expiryOrigin({ serviceDate: '2026-09-18', expiry: '2026-05-17', expiryManual: false }, 12);
+    expect(o).toBe('saved');
+    expect(expiryOriginText(o, 12, 'Service date')).toBe('From the last record, not 12 months from service date');
+  });
+  it('carried over and matching: automatic', () => {
+    expect(expiryOrigin({ serviceDate: '2026-09-18', expiry: '2027-09-18', expiryManual: false }, 12)).toBe('auto');
+  });
+  it('no expiry, or no interval (first aid kit): nothing to say', () => {
+    expect(expiryOrigin({ serviceDate: '2026-09-18', expiry: null, expiryManual: false }, 12)).toBeNull();
+    expect(expiryOrigin({ serviceDate: null, expiry: '2028-03-01', expiryManual: true }, null)).toBeNull();
+    expect(expiryOriginText(null, 12, 'Service date')).toBe('');
   });
 });

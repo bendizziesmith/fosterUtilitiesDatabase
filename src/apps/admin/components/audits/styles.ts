@@ -25,6 +25,9 @@ export const btn = {
 export const inputCls =
   'block w-full min-h-[48px] sm:min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
 
+/** Date boxes: like inputCls, but iPhone's built-in date width is switched off (see .audit-date in index.css) so they stay inside the card. */
+export const dateCls = `${inputCls} audit-date`;
+
 export const card = 'bg-white border border-slate-200 rounded-xl';
 
 export function formatDate(d: string | null | undefined): string {
