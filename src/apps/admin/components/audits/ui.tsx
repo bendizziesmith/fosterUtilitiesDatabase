@@ -233,7 +233,8 @@ export function Sheet({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+    // kb-sheet / kb-hide (index.css): while the phone keyboard is up the sheet fits above it and the footer hides
+    <div className="kb-sheet fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
       <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/50 cursor-default" />
       <div
         ref={panel}
@@ -241,7 +242,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-xl shadow-xl max-h-[92vh] flex flex-col focus:outline-none"
+        className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-xl shadow-xl max-h-[92%] flex flex-col focus:outline-none"
       >
         <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b border-slate-200">
           <div className="min-w-0">
@@ -254,7 +255,7 @@ export function Sheet({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-4">{children}</div>
-        {footer && <div className="px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">{footer}</div>}
+        {footer && <div className="kb-hide px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );

@@ -207,4 +207,10 @@ input.audit-date::-webkit-datetime-edit {
   html.kb-open .kb-hide {
     display: none;
   }
+  /* bottom sheets fit the part of the screen above the keyboard (set by useKeyboardHide) */
+  html.kb-open .kb-sheet {
+    top: var(--vv-top, 0px);
+    bottom: auto;
+    height: var(--vv-height, 100%);
+  }
 }

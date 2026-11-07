@@ -126,3 +126,30 @@ describe('lowStockLines / lowStockBadgeText — one count for the dashboard badg
     expect(lowStockBadgeText(0)).toBeNull();
   });
 });
+
+import { countChange, addedChange } from './lockupLogic';
+
+describe('Yard Lockup: type the count (stock-take) or Add what came in (7 Nov 2026)', () => {
+  it('a stock-take of 12 when the screen says 10 is +2', () => {
+    expect(countChange(10, '12')).toEqual({ ok: true, delta: 2 });
+  });
+  it('down to a lower count, including 0', () => {
+    expect(countChange(10, '7')).toEqual({ ok: true, delta: -3 });
+    expect(countChange(10, '0')).toEqual({ ok: true, delta: -10 });
+  });
+  it('the same count is nothing to save', () => {
+    expect(countChange(10, '10')).toEqual({ ok: false, error: 'That’s already the count.' });
+  });
+  it('whole numbers only, never below 0', () => {
+    expect(countChange(10, '')).toEqual({ ok: false, error: 'Type the count (a whole number, 0 or more).' });
+    expect(countChange(10, '-1')).toEqual({ ok: false, error: 'Type the count (a whole number, 0 or more).' });
+    expect(countChange(10, '2.5')).toEqual({ ok: false, error: 'Type the count (a whole number, 0 or more).' });
+  });
+  it('Add: 10 in stock + an order of 10 = 20', () => {
+    expect(addedChange(10, '10')).toEqual({ ok: true, delta: 10, after: 20 });
+  });
+  it('Add needs 1 or more', () => {
+    expect(addedChange(10, '0')).toEqual({ ok: false, error: 'Type how many came in (1 or more).' });
+    expect(addedChange(10, 'x')).toEqual({ ok: false, error: 'Type how many came in (1 or more).' });
+  });
+});

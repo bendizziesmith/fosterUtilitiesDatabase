@@ -111,7 +111,7 @@ export function TargetPicker({
                 setOpen(true);
               }}
               onKeyDown={onKey}
-              className="w-full min-h-[44px] pl-9 pr-10 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full min-h-[48px] sm:min-h-[44px] pl-9 pr-10 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             {(query || selected) && (
               <button

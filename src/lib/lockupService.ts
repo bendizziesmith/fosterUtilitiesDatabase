@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { applyStockDelta, LockupMovement, LockupSection } from './lockupLogic';
+import { addedChange, applyStockDelta, countChange, LockupMovement, LockupSection } from './lockupLogic';
 import type { HsDateKind } from './hsDatesLogic';
 
 /**
@@ -104,8 +104,26 @@ export async function addToLockup(input: {
   })) as string;
 }
 
-export async function adjustLockup(stockId: string, delta: number, actorId: string | null): Promise<number> {
-  return check(await supabase.rpc('kit_lockup_adjust', { p_stock_id: stockId, p_delta: delta, p_note: null, p_actor_id: actorId })) as number;
+export async function adjustLockup(stockId: string, delta: number, actorId: string | null, note: string | null = null): Promise<number> {
+  return check(await supabase.rpc('kit_lockup_adjust', { p_stock_id: stockId, p_delta: delta, p_note: note, p_actor_id: actorId })) as number;
+}
+
+/**
+ * Stock-take: set the exact count. Reads the latest count first (someone may have changed it), then saves
+ * the difference through the same logged change as − / +, with who and "Count set to 12".
+ */
+export async function setLockupCount(stockId: string, count: number, actorId: string | null): Promise<number> {
+  const row = check(await supabase.from('kit_lockup_stock').select('quantity').eq('id', stockId).single()) as { quantity: number };
+  const c = countChange(row.quantity, String(count));
+  if (!c.ok) throw new Error(c.error);
+  return adjustLockup(stockId, c.delta, actorId, `Count set to ${count}`);
+}
+
+/** "Add": what came in, added to the count (logged like + with "10 came in"). */
+export async function addToLockupCount(stockId: string, quantity: number, actorId: string | null): Promise<number> {
+  const a = addedChange(0, String(quantity));
+  if (!a.ok) throw new Error(a.error);
+  return adjustLockup(stockId, a.delta, actorId, `${quantity} came in`);
 }
 
 /** − / + with the same rule as the database, so the message shows without a round trip. */
