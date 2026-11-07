@@ -40,6 +40,9 @@ export function TargetPicker({
   );
 
   const pick = (t: AuditTarget) => {
+    // let go of the search box first: it's about to be removed, and a removed box sends no "focus left"
+    // signal, so the phone keyboard (and the hidden sheet buttons) would stay stuck (7 Nov 2026)
+    inputRef.current?.blur();
     onChange(t.key);
     setQuery('');
     setOpen(false);
