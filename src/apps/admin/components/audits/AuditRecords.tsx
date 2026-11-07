@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, ClipboardList, Download, Loader2, CheckCircle2 } from 'lucide-react';
 import { LoadingSpinner } from '../../../../components/LoadingSpinner';
@@ -7,10 +7,12 @@ import { downloadedLabel, latestDownloads, AuditDownloadRow } from '../../../../
 import { longDate } from '../../../../lib/auditReport';
 import { SiteAuditSummary } from '../../../../lib/supabase';
 import { whoName } from '../../../../lib/siteAuditLogic';
-import { Field, ErrorNote, TestTag, ResolutionBadgeList } from './ui';
+import { ErrorNote, TestTag, ResolutionBadgeList } from './ui';
 import { resolutionBadges, AuditResolution } from '../../../../lib/followupLogic';
-import { btn, card, inputCls, formatDate, dateCls } from './styles';
+import { btn, card, formatDate } from './styles';
 import { downloadAllAudits } from '../../../../lib/auditDownloads';
+import { getAuditInterval } from '../../../../lib/fleetService';
+import { nextAuditFor } from '../../../../lib/fleetLogic';
 import { loadAuditReferenceData } from '../../../../lib/siteAuditService';
 import { Auditor } from '../../../../lib/supabase';
 import { useActor } from './useActor';
@@ -50,14 +52,12 @@ export const AuditRecords: React.FC = () => {
   const navigate = useNavigate();
   const [rows, setRows] = useState<SiteAuditSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [who, setWho] = useState('');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
   const [expiredOnly, setExpiredOnly] = useState(false);
   const [notYet, setNotYet] = useState(false);
   /** latest PDF download of each audit (the green "Downloaded" tick) */
   const [downloads, setDownloads] = useState<Map<string, AuditDownloadRow>>(new Map());
-  const [by, setBy] = useState('');
+  /** the audit interval (months): "Next audit" uses the same rule as Upcoming Audits */
+  const [intervalMonths, setIntervalMonths] = useState<number | null>(null);
   const [zip, setZip] = useState<string | null>(null);
   const [resolutions, setResolutions] = useState<Map<string, AuditResolution>>(new Map());
   const [auditorList, setAuditorList] = useState<Auditor[]>([]);
@@ -68,6 +68,7 @@ export const AuditRecords: React.FC = () => {
 
   useEffect(() => {
     listResolutions().then(setResolutions).catch(() => undefined);
+    getAuditInterval().then(setIntervalMonths).catch(() => setIntervalMonths(null));
     listDownloads().then((d) => setDownloads(latestDownloads(d))).catch(() => undefined);
     listAuditSummaries()
       .then(setRows)
@@ -77,29 +78,23 @@ export const AuditRecords: React.FC = () => {
       });
   }, []);
 
-  const teams = useMemo(() => [...new Set((rows ?? []).map(whoLabel))].sort(), [rows]);
-  const auditors = useMemo(() => [...new Set((rows ?? []).map(byName))].sort(), [rows]);
-
   const filtered = (rows ?? []).filter(
-    (r) =>
-      (!who || whoLabel(r) === who) &&
-      (!from || r.audit_date >= from) &&
-      (!to || r.audit_date <= to) &&
-      (!expiredOnly || r.expired_count > 0) &&
-      (!notYet || !downloads.has(r.id)) &&
-      (!by || byName(r) === by)
+    (r) => (!expiredOnly || r.expired_count > 0) && (!notYet || !downloads.has(r.id))
   );
+  const nextAudit = (r: SiteAuditSummary) =>
+    r.status === 'submitted' && intervalMonths ? formatDate(nextAuditFor(r, rows ?? [], intervalMonths)) : null;
 
   const submitted = filtered.filter((r) => r.status === 'submitted');
   const onZip = async () => {
     setZip(`Making ${submitted.length} PDF${submitted.length === 1 ? '' : 's'}…`);
     setError(null);
     try {
-      const r = await downloadAllAudits(submitted.map((x) => x.id), { from: from || null, to: to || null }, actor ? { id: actor.id, name: actor.name } : null,
+      const r = await downloadAllAudits(submitted.map((x) => x.id), { from: null, to: null }, actor ? { id: actor.id, name: actor.name } : null,
         (done, total) => setZip(`Making PDFs: ${done} of ${total}…`));
       setZip(null);
       listDownloads().then((d) => setDownloads(latestDownloads(d))).catch(() => undefined);
-      if (r.failed.length) setError(`${r.failed.length} audit PDF${r.failed.length === 1 ? '' : 's'} could not be made: ${r.failed[0]}`);
+      if (!r.recorded) setError(`The ZIP downloaded, but the “Downloaded” ticks could not be saved: ${r.recordError}`);
+      else if (r.failed.length) setError(`${r.failed.length} audit PDF${r.failed.length === 1 ? '' : 's'} could not be made: ${r.failed[0]}`);
     } catch (e) {
       setZip(null);
       setError(e instanceof Error ? e.message : 'Could not make the ZIP.');
@@ -111,25 +106,7 @@ export const AuditRecords: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <section className={`${card} p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end`} aria-label="Filters">
-        <Field label="Gang or van">
-          {(id) => (
-            <select id={id} className={inputCls} value={who} onChange={(e) => setWho(e.target.value)}>
-              <option value="">All</option>
-              {teams.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          )}
-        </Field>
-        <Field label="From">{(id) => <input id={id} type="date" className={dateCls} value={from} onChange={(e) => setFrom(e.target.value)} />}</Field>
-        <Field label="To">{(id) => <input id={id} type="date" className={dateCls} value={to} onChange={(e) => setTo(e.target.value)} />}</Field>
-        <Field label="Audited by">
-          {(id) => (
-            <select id={id} className={inputCls} value={by} onChange={(e) => setBy(e.target.value)}>
-              <option value="">Anyone</option>
-              {auditors.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          )}
-        </Field>
+      <section className={`${card} p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end`} aria-label="Filters">
         <label className="flex items-center gap-2 min-h-[44px] px-3 rounded-lg border border-slate-300 bg-white text-base sm:text-sm text-slate-700 cursor-pointer">
           <input type="checkbox" checked={expiredOnly} onChange={(e) => setExpiredOnly(e.target.checked)} className="h-4 w-4" />
           Expired only
@@ -178,7 +155,7 @@ export const AuditRecords: React.FC = () => {
                 <tbody className="divide-y divide-slate-200">
                   {filtered.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => open(r)}>
-                      <td className="px-5 py-3 whitespace-nowrap text-slate-900 font-semibold">{formatDate(r.audit_date)}</td>
+                      <td className="px-5 py-3 whitespace-nowrap text-slate-900 font-semibold">{formatDate(r.audit_date)}{nextAudit(r) && <span className="block text-xs font-normal text-slate-600">Next audit: {nextAudit(r)}</span>}</td>
                       <td className="px-3 py-3 text-slate-800">
                         <span className="inline-flex items-center gap-2">
                           {vanKey(r) ? (
@@ -208,6 +185,7 @@ export const AuditRecords: React.FC = () => {
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-base sm:text-sm font-bold text-slate-900">{whoLabel(r)}<TestTag show={r.is_test} /></span>
                       <span className="block text-xs text-slate-600 mt-0.5">{formatDate(r.audit_date)} · {r.vehicle_reg ?? 'no van'}{r.site_visited ? ` · ${r.site_visited}` : ''} · {byName(r)}</span>
+                      {nextAudit(r) && <span className="block text-xs font-semibold text-slate-700 mt-0.5">Next audit: {nextAudit(r)}</span>}
                       <span className="block mt-1.5">{r.status === 'draft' ? <DraftBadge /> : <><ResultBadges a={r} res={resolutions.get(r.id) ?? null} /><DownloadedTick row={downloads.get(r.id)} /></>}</span>
                     </span>
                     <ChevronRight className="h-5 w-5 text-slate-400 flex-shrink-0" />

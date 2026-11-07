@@ -46,12 +46,28 @@ function auditsFor(t: AuditTarget, audits: ScheduleAudit[]) {
 
 const ORDER: Record<ScheduleStatus, number> = { never: 0, overdue: 1, due_soon: 2, ok: 3 };
 
+/** The one rule for when a gang or van is next due: its latest submitted audit + the interval. */
+export const nextAuditDate = (lastAuditDate: string, intervalMonths: number) => addMonths(lastAuditDate, intervalMonths);
+
+/**
+ * "Next audit: …" on an audit record (Audit records card, audit page): counted from the latest submitted
+ * audit of the same person or spare van, exactly as Upcoming Audits does, so the two never disagree.
+ */
+export function nextAuditFor(audit: ScheduleAudit, audits: ScheduleAudit[], intervalMonths: number): string {
+  const person = audit.holder_employee_id ?? audit.ganger_id;
+  const target = person
+    ? ({ kind: 'person', personId: person } as AuditTarget)
+    : ({ kind: 'spare_van', vehicleId: audit.vehicle_id } as AuditTarget);
+  const latest = auditsFor(target, audits).reduce((d, a) => (a.audit_date > d ? a.audit_date : d), audit.audit_date);
+  return nextAuditDate(latest, intervalMonths);
+}
+
 /** Next audit due = last submitted audit + interval. Never audited = due now. */
 export function auditSchedule(targets: AuditTarget[], audits: ScheduleAudit[], intervalMonths: number, today: string): ScheduleRow[] {
   const rows = targets.map((t): ScheduleRow => {
     const last = auditsFor(t, audits).sort((a, b) => b.audit_date.localeCompare(a.audit_date))[0];
     if (!last) return { key: t.key, label: t.label, target: t, lastAudit: null, lastAuditId: null, due: null, daysLeft: null, status: 'never' };
-    const due = addMonths(last.audit_date, intervalMonths);
+    const due = nextAuditDate(last.audit_date, intervalMonths);
     const daysLeft = daysBetween(today, due);
     return {
       key: t.key, label: t.label, target: t, lastAudit: last.audit_date, lastAuditId: last.id, due, daysLeft,

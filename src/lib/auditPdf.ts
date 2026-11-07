@@ -6,6 +6,7 @@
  * jsPDF / autotable / jszip are loaded on first use, like the timesheet PDFs.
  * What goes in each file is in auditReport.ts (unit-tested).
  */
+import { filterByOwnership, type OwnershipFilter } from './ownershipLogic';
 import { AuditReport, auditPdfFileName, auditsZipName, buildAuditReport, longDate, lockupRows, plantRegisterRows, RegisterItem, ReportLine } from './auditReport';
 import { todayISO } from './siteAuditLogic';
 import { uniqueName } from './timesheetBulkExport';
@@ -320,7 +321,9 @@ export async function buildAuditPdfBlob(src: AuditPdfSource, company: string, ge
 
 /** "Download all" on Audit records: one ZIP of audit PDFs for the current filter. */
 export async function downloadAuditsZip(ids: string[], fetchSource: (id: string) => Promise<AuditPdfSource>, company: string, generatedBy: string,
-  getUrl: (p: string) => Promise<string>, range: { from: string | null; to: string | null }, onProgress?: (done: number, total: number) => void) {
+  getUrl: (p: string) => Promise<string>, range: { from: string | null; to: string | null }, onProgress?: (done: number, total: number) => void,
+  /** runs before the ZIP is handed over (the Downloaded records: on iPhone the page may stop once it is) */
+  beforeSave?: (doneIds: string[]) => Promise<void>) {
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
   const used = new Set<string>();
@@ -336,7 +339,11 @@ export async function downloadAuditsZip(ids: string[], fetchSource: (id: string)
     }
     onProgress?.(i + 1, ids.length);
   }
-  if (used.size) saveBlob(await zip.generateAsync({ type: 'blob' }), auditsZipName(range.from, range.to));
+  if (used.size) {
+    const blob = await zip.generateAsync({ type: 'blob' });
+    await beforeSave?.(doneIds);
+    saveBlob(blob, auditsZipName(range.from, range.to));
+  }
   return { done: used.size, failed, doneIds };
 }
 
@@ -346,25 +353,28 @@ const today = () => todayISO();
 const genLine = (by: string) => `Generated ${longDate(today())} ${new Date().toTimeString().slice(0, 5)} by ${by}`;
 const fileDate = () => longDate(today());
 
-export async function renderPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string): Promise<Doc> {
-  const { doc, autoTable, logo } = await newDoc('Plant Register', company);
-  const rows = plantRegisterRows(kit);
-  let y = header(doc, company, 'Plant Register', `${rows.length} items · ${longDate(today())}`, logo);
+/** Kit & Plant PDF: All / Fosters kit / Hire kit (7 Nov 2026); every item shows Fosters or Hire. */
+export async function renderPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string, filter: OwnershipFilter = 'all'): Promise<Doc> {
+  const title = `Kit & Plant – ${filter === 'all' ? 'All kit' : filter === 'hire' ? 'Hire kit' : 'Fosters kit'}`;
+  const { doc, autoTable, logo } = await newDoc(title, company);
+  const rows = plantRegisterRows(filterByOwnership(kit, filter));
+  let y = header(doc, company, title, `${rows.length} items · ${longDate(today())}`, logo);
   const types = [...new Set(rows.map((r) => r.type))];
   for (const t of types) {
     const tr = rows.filter((r) => r.type === t);
     y = ensure(doc, y, 60);
     y = heading(doc, `${t} (${tr.length})`, y);
-    y = table(doc, autoTable, y, ['Plant no', 'Who / where', 'Service', 'Expiry', 'Status'],
-      tr.map((r) => [r.plantNo || '—', r.where, longDate(r.serviceDate), longDate(r.expiryDate), r.status]),
-      [80, 175, 85, 85, 90]);
+    y = table(doc, autoTable, y, ['Plant no', 'Fosters / Hire', 'Who / where', 'Service', 'Expiry', 'Status'],
+      tr.map((r) => [r.plantNo || '—', r.owner, r.where, longDate(r.serviceDate), longDate(r.expiryDate), r.status]),
+      [70, 70, 145, 75, 75, 80]);
   }
   footer(doc, genLine(by), company);
   return doc;
 }
 
-export async function downloadPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string) {
-  saveBlob(blobOf(await renderPlantRegisterPdf(kit, company, by)), `Plant register ${fileDate()}.pdf`);
+export async function downloadPlantRegisterPdf<T extends RegisterItem>(kit: T[], company: string, by: string, filter: OwnershipFilter = 'all') {
+  const which = filter === 'all' ? 'All kit' : filter === 'hire' ? 'Hire kit' : 'Fosters kit';
+  saveBlob(blobOf(await renderPlantRegisterPdf(kit, company, by, filter)), `Kit & Plant - ${which} ${fileDate()}.pdf`);
 }
 
 export interface HolderSheet {
